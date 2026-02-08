@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { Suspense, useState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import {
   Box,
@@ -51,7 +51,7 @@ interface ReportRow {
 
 const MONTH_NAMES = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 
-export default function ReportsPage() {
+function ReportsContent() {
   const searchParams = useSearchParams()
   const [siteId, setSiteId] = useState<string>(() => searchParams.get("siteId") || "")
   const [sites, setSites] = useState<SiteOption[]>([])
@@ -301,5 +301,17 @@ export default function ReportsPage() {
         )}
       </Container>
     </Box>
+  )
+}
+
+export default function ReportsPage() {
+  return (
+    <Suspense fallback={
+      <Box sx={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#fafafa" }}>
+        <CircularProgress />
+      </Box>
+    }>
+      <ReportsContent />
+    </Suspense>
   )
 }

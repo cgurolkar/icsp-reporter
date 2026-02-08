@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { Suspense, useState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import { ThemeProvider } from "@mui/material/styles"
 import CssBaseline from "@mui/material/CssBaseline"
@@ -8,7 +8,7 @@ import { theme } from "@/lib/theme"
 import { LanguageProvider } from "@/contexts/language-context"
 import ReportForm from "@/components/ReportForm"
 
-export default function BilgiGirisiPage() {
+function FormContent() {
   const searchParams = useSearchParams()
   const siteIdParam = searchParams.get("siteId")
   const initialSiteId = siteIdParam ? parseInt(siteIdParam, 10) : undefined
@@ -27,10 +27,18 @@ export default function BilgiGirisiPage() {
   }, [initialSiteId])
 
   return (
+    <ReportForm initialSiteId={initialSiteId} initialSiteName={initialSiteName || undefined} />
+  )
+}
+
+export default function BilgiGirisiPage() {
+  return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <LanguageProvider>
-        <ReportForm initialSiteId={initialSiteId} initialSiteName={initialSiteName || undefined} />
+        <Suspense fallback={<div style={{ padding: 24, textAlign: "center" }}>Yükleniyor...</div>}>
+          <FormContent />
+        </Suspense>
       </LanguageProvider>
     </ThemeProvider>
   )

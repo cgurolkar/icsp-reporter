@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { initializeDatabase, getAllSites, createSite } from "@/lib/database"
 
+export const dynamic = "force-dynamic"
+
 const DEFAULT_SITE = {
   name: "North Light Shaqlawa",
   code: "ICSP001",
