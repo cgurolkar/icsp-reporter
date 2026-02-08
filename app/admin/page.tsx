@@ -710,10 +710,10 @@ function AdminPanel() {
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.site_name || "—"}</TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.selected_machine_name || "—"}</TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.total_production_summary ?? r.total_production ?? "—"}</TableCell>
-                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.daily_pile_count ?? r.total_pile_count ?? r.concrete_poured ?? "—"}</TableCell>
-                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.concrete_poured ?? "—"}</TableCell>
-                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.remaining_piles ?? "—"}</TableCell>
-                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.daily_fuel_usage ?? "—"}</TableCell>
+                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{[r.daily_pile_count, r.total_pile_count, r.concrete_poured].find((v) => v != null && String(v).trim() !== "") ?? "—"}</TableCell>
+                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.concrete_poured != null && String(r.concrete_poured).trim() !== "" ? r.concrete_poured : "—"}</TableCell>
+                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.remaining_piles != null && String(r.remaining_piles).trim() !== "" ? r.remaining_piles : "—"}</TableCell>
+                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.daily_fuel_usage != null && String(r.daily_fuel_usage).trim() !== "" ? r.daily_fuel_usage : "—"}</TableCell>
                         </TableRow>
                       ))
                     )}
@@ -961,8 +961,8 @@ function AdminPanel() {
                       <TableCell>{r.project ?? "—"}</TableCell>
                       <TableCell>{r.site_name ?? "—"}</TableCell>
                       <TableCell>{r.selected_machine_name ?? "—"}</TableCell>
-                      <TableCell>{r.daily_pile_count ?? r.total_pile_count ?? r.concrete_poured ?? "—"}</TableCell>
-                      <TableCell>{r.remaining_piles ?? "—"}</TableCell>
+                      <TableCell>{[r.daily_pile_count, r.total_pile_count, r.concrete_poured].find((v) => v != null && String(v).trim() !== "") ?? "—"}</TableCell>
+                      <TableCell>{r.remaining_piles != null && String(r.remaining_piles).trim() !== "" ? r.remaining_piles : "—"}</TableCell>
                       <TableCell>
                         <IconButton size="small" onClick={() => window.open(`/api/reports/${r.id}/preview`, "_blank")} title="Görüntüle" sx={{ color: "#1976d2" }}>
                           <Visibility />
@@ -972,13 +972,14 @@ function AdminPanel() {
                           onClick={() => {
                             setReportEditDialog({ open: true, report: r })
                             const d = r.date && String(r.date).slice(0, 10)
+                            const dailyVal = [r.daily_pile_count, r.total_pile_count, r.concrete_poured].find((v) => v != null && String(v).trim() !== "")
                             setReportEditForm({
                               date: d || "",
                               project: r.project || "",
                               notes: r.notes || "",
                               totalProductionSummary: r.total_production_summary || "",
-                              dailyPileCount: r.daily_pile_count || "",
-                              remainingPiles: r.remaining_piles || "",
+                              dailyPileCount: dailyVal != null ? String(dailyVal) : "",
+                              remainingPiles: r.remaining_piles != null && String(r.remaining_piles).trim() !== "" ? String(r.remaining_piles) : "",
                               dailyFuelUsage: r.daily_fuel_usage || "",
                               personnelTotal: r.personnel_total != null ? String(r.personnel_total) : "",
                             })

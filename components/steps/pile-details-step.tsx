@@ -60,8 +60,10 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
   const totalPreBorehole = productionSummary.reduce((sum, m) => sum + (parseInt(m.preBorehole) || 0), 0)
   const dailyPiles = productionSummary.reduce((sum, m) => sum + (parseInt(m.concretePoured) || 0), 0)
 
-  // Kalan kazık sayısı: proje toplam - (bugüne kadar yapılan toplam + bugün yapılan)
-  const remainingPiles = projectTotalPiles - (totalCompletedBeforeToday + dailyPiles)
+  // Bugüne kadar (bugün dahil) = son rapor sonu itibarıyla yapılan + bugün yapılan
+  const totalCompletedIncludingToday = totalCompletedBeforeToday + dailyPiles
+  // Kalan kazık = proje toplam − bugüne kadar (bugün dahil)
+  const remainingPiles = projectTotalPiles - totalCompletedIncludingToday
 
   const addPile = () => {
     const newPileNumber = Math.max(...data.map((p) => p.pileNumber), 0) + 1
@@ -116,10 +118,10 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
             sx={{ minWidth: 200, backgroundColor: "#fffde7" }}
           />
           <TextField
-            label="Kazık İmalatı (m)"
-            value={totalProduction.toFixed(2)}
+            label="Bugüne kadar yapılan (bugün dahil değil)"
+            value={totalCompletedBeforeToday}
             InputProps={{ readOnly: true }}
-            sx={{ minWidth: 200, backgroundColor: "#fffde7" }}
+            sx={{ minWidth: 220, backgroundColor: "#e3f2fd" }}
           />
           <TextField
             label="O gün yapılan kazık sayısı (Ad.)"
@@ -128,8 +130,20 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
             sx={{ minWidth: 200, backgroundColor: "#fffde7" }}
           />
           <TextField
+            label="Bugüne kadar yapılan (bugün dahil)"
+            value={totalCompletedIncludingToday}
+            InputProps={{ readOnly: true }}
+            sx={{ minWidth: 220, backgroundColor: "#e3f2fd" }}
+          />
+          <TextField
             label="Kalan kazık sayısı (Ad.)"
             value={remainingPiles}
+            InputProps={{ readOnly: true }}
+            sx={{ minWidth: 200, backgroundColor: "#e8f5e9" }}
+          />
+          <TextField
+            label="Kazık İmalatı (m)"
+            value={totalProduction.toFixed(2)}
             InputProps={{ readOnly: true }}
             sx={{ minWidth: 200, backgroundColor: "#fffde7" }}
           />

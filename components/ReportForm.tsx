@@ -183,9 +183,10 @@ export default function ReportForm({ initialSiteId, initialSiteName }: ReportFor
         )
       case 3: {
         const projectTotalPiles = siteSummary?.totalPiles ?? undefined
+        const remainingValid = siteSummary?.remainingPiles != null && String(siteSummary.remainingPiles).trim() !== ""
         const totalCompletedBeforeToday =
-          siteSummary?.totalPiles != null && siteSummary?.remainingPiles != null
-            ? siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles, 10) || 0)
+          siteSummary?.totalPiles != null && remainingValid
+            ? siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles!, 10) || 0)
             : (siteSummary?.initialPilesDone != null ? siteSummary.initialPilesDone : 0)
         return (
           <PileDetailsStep

@@ -27,7 +27,16 @@ export async function GET(request: NextRequest) {
         if (d instanceof Date) return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
         return String(d).slice(0, 10)
       }
-      const normalized = list.map((r: { date?: string | Date; [k: string]: unknown }) => ({ ...r, date: normalizeDate(r.date) }))
+      const normalized = list.map((r: { date?: string | Date; [k: string]: unknown }) => {
+        const row = { ...r, date: normalizeDate(r.date) }
+        // Eski raporlarda daily_pile_count boş olabilir; beton dökülen varsa gösterim için doldur
+        const daily = row.daily_pile_count
+        const concrete = row.concrete_poured
+        if ((daily == null || String(daily).trim() === "") && concrete != null && String(concrete).trim() !== "") {
+          row.daily_pile_count = concrete
+        }
+        return row
+      })
       return NextResponse.json(normalized)
     }
 

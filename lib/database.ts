@@ -397,8 +397,13 @@ export async function getAggregatedStats(options: { siteId?: number | null; star
 
     const piles = parseInt(r.total_pile_count || r.daily_pile_count || r.concrete_poured || '0', 10) || 0
     const production = parseFloat(r.total_production_summary || r.total_production || '0') || 0
-    const fuelStr = String(r.daily_fuel_usage || '')
-    const fuel = parseFloat(fuelStr) || (() => { const m = fuelStr.match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : 0 })()
+    const fuelStr = String(r.daily_fuel_usage || '').trim()
+    const fuel = (() => {
+      const n = parseFloat(fuelStr.replace(',', '.'))
+      if (!Number.isNaN(n)) return n
+      const m = fuelStr.match(/\d+([.,]\d+)?/)
+      return m ? parseFloat(m[0].replace(',', '.')) : 0
+    })()
     let expenses = 0
     if (r.expenses && Array.isArray(r.expenses)) {
       expenses = r.expenses.reduce((sum: number, e: { amount?: number }) => sum + (e?.amount || 0), 0)

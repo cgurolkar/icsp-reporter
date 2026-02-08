@@ -163,12 +163,15 @@ export default function BasicInfoStep({
             </FormControl>
           )}
         </Box>
-        {(siteSummary.totalPiles != null || siteSummary.remainingPiles != null) && (
+        {(siteSummary.totalPiles != null || siteSummary.remainingPiles != null || siteSummary.initialPilesDone != null) && (
           <Box sx={{ mt: 2 }}>
             <Typography variant="subtitle2" sx={{ color: "#e65100", fontWeight: 600, mb: 1.5 }}>
               Proje özeti
             </Typography>
-            <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 2 }}>
+            <Typography variant="caption" display="block" sx={{ color: "text.secondary", mb: 1 }}>
+              Son rapor sonu itibarıyla. Bugün yapılan, Üretim Özeti adımında girilir; kalan = toplam − bugüne kadar − bugün yapılan.
+            </Typography>
+            <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 2 }}>
               <TextField
                 fullWidth
                 label="Proje durumu"
@@ -187,16 +190,6 @@ export default function BasicInfoStep({
                   sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#f5f5f5" } }}
                 />
               )}
-              {siteSummary.isOngoing && siteSummary.initialPilesDone != null && (
-                <TextField
-                  fullWidth
-                  label="Raporların başladığı gün yapılan toplam kazık (Ad.)"
-                  value={siteSummary.initialPilesDone}
-                  InputProps={{ readOnly: true }}
-                  size="small"
-                  sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#e3f2fd" } }}
-                />
-              )}
               {siteSummary.totalPiles != null && (
                 <TextField
                   fullWidth
@@ -207,26 +200,46 @@ export default function BasicInfoStep({
                   sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#fff8e1" } }}
                 />
               )}
-              {siteSummary.totalPiles != null && siteSummary.remainingPiles != null && (
+              {siteSummary.isOngoing && siteSummary.initialPilesDone != null && (
                 <TextField
                   fullWidth
-                  label="Yapılan toplam kazık sayısı (Ad.)"
-                  value={siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles, 10) || 0)}
+                  label="Raporların başladığı gün yapılan toplam kazık (Ad.)"
+                  value={siteSummary.initialPilesDone}
                   InputProps={{ readOnly: true }}
                   size="small"
                   sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#e3f2fd" } }}
                 />
               )}
-              {siteSummary.remainingPiles != null && (
-                <TextField
-                  fullWidth
-                  label="Kalan kazık sayısı (Ad.)"
-                  value={siteSummary.remainingPiles}
-                  InputProps={{ readOnly: true }}
-                  size="small"
-                  sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#e8f5e9" } }}
-                />
-              )}
+              {siteSummary.totalPiles != null && (() => {
+                const remainingValid = siteSummary.remainingPiles != null && String(siteSummary.remainingPiles).trim() !== ""
+                const initialDone = siteSummary.initialPilesDone != null
+                const buguneKadar = remainingValid
+                  ? siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles!, 10) || 0)
+                  : (initialDone ? siteSummary.initialPilesDone! : null)
+                const kalan = remainingValid
+                  ? siteSummary.remainingPiles
+                  : (initialDone ? String(siteSummary.totalPiles - siteSummary.initialPilesDone!) : null)
+                return (
+                  <>
+                    <TextField
+                      fullWidth
+                      label="Bugüne kadar yapılan (son rapor sonu, bugün dahil değil)"
+                      value={buguneKadar != null ? buguneKadar : "—"}
+                      InputProps={{ readOnly: true }}
+                      size="small"
+                      sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#e3f2fd" } }}
+                    />
+                    <TextField
+                      fullWidth
+                      label="Kalan kazık (son rapor sonu)"
+                      value={kalan != null ? kalan : "—"}
+                      InputProps={{ readOnly: true }}
+                      size="small"
+                      sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#e8f5e9" } }}
+                    />
+                  </>
+                )
+              })()}
             </Box>
           </Box>
         )}

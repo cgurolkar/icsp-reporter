@@ -17,7 +17,8 @@ export async function GET(
     const last = await getLastReportRemainingBySite(siteId)
     const totalPiles = site.total_piles ?? null
     let remainingPiles = last?.remainingPiles ?? null
-    if (remainingPiles == null && totalPiles != null && site.is_ongoing && site.initial_piles_done != null) {
+    if (remainingPiles != null && String(remainingPiles).trim() === "") remainingPiles = null
+    if (remainingPiles == null && totalPiles != null && site.is_ongoing && site.initial_piles_done != null && !last) {
       remainingPiles = String(Number(totalPiles) - Number(site.initial_piles_done))
     }
     return NextResponse.json({
