@@ -1,0 +1,675 @@
+import { Pool } from 'pg'
+
+const pool = new Pool({
+  user: process.env.POSTGRES_USER || 'postgres',
+  host: process.env.POSTGRES_HOST || 'localhost',
+  database: process.env.POSTGRES_DB || 'work_report_db',
+  password: process.env.POSTGRES_PASSWORD || 'postgres',
+  port: parseInt(process.env.POSTGRES_PORT || '5432'),
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+// Veritabanı tablolarını oluştur
+export async function initializeDatabase() {
+  const client = await pool.connect()
+  
+  try {
+    // Work reports tablosu
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS work_reports (
+        id SERIAL PRIMARY KEY,
+        date DATE NOT NULL,
+        project VARCHAR(255) NOT NULL,
+        selected_machine_id VARCHAR(100),
+        selected_machine_name VARCHAR(255),
+        machine_hours VARCHAR(50),
+        total_production VARCHAR(100),
+        pile_count VARCHAR(50),
+        drilled_pile VARCHAR(50),
+        concrete_pile VARCHAR(50),
+        total_production_summary VARCHAR(100),
+        total_pile_count VARCHAR(50),
+        daily_pile_count VARCHAR(50),
+        total_completed_piles VARCHAR(50),
+        remaining_piles VARCHAR(50),
+        steel_lowered_piles VARCHAR(50),
+        concrete_poured VARCHAR(100),
+        engineer_count INTEGER DEFAULT 0,
+        foreman_count INTEGER DEFAULT 0,
+        operator_count INTEGER DEFAULT 0,
+        oiler_count INTEGER DEFAULT 0,
+        welder_count INTEGER DEFAULT 0,
+        other_count INTEGER DEFAULT 0,
+        personnel_total INTEGER DEFAULT 0,
+        crane_count INTEGER DEFAULT 0,
+        loader_count INTEGER DEFAULT 0,
+        truck_count INTEGER DEFAULT 0,
+        pickup_count INTEGER DEFAULT 0,
+        car_count INTEGER DEFAULT 0,
+        service_count INTEGER DEFAULT 0,
+        vehicles_total INTEGER DEFAULT 0,
+        daily_fuel_usage VARCHAR(100),
+        expenses JSONB,
+        pile_details JSONB,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    // Makine seçimleri tablosu
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS machine_selections (
+        id SERIAL PRIMARY KEY,
+        report_id INTEGER REFERENCES work_reports(id) ON DELETE CASCADE,
+        machine_id VARCHAR(100) NOT NULL,
+        machine_name VARCHAR(255) NOT NULL,
+        machine_type VARCHAR(100) NOT NULL,
+        is_primary BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    // Yakıt kayıtları tablosu
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS fuel_records (
+        id SERIAL PRIMARY KEY,
+        report_id INTEGER REFERENCES work_reports(id) ON DELETE CASCADE,
+        machine_name VARCHAR(255) NOT NULL,
+        shift VARCHAR(50),
+        incoming VARCHAR(50),
+        remaining VARCHAR(50),
+        used VARCHAR(50),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    // Kullanıcılar tablosu
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(100) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(20) DEFAULT 'user',
+        email VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    // Projeler tablosu
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        total_piles INTEGER DEFAULT 0,
+        status VARCHAR(50) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    // Kullanıcı-proje ilişki tablosu
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_projects (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, project_id)
+      )
+    `)
+
+    // Şantiyeler tablosu (multi-site: farklı şantiyeler tek veritabanında)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sites (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        code VARCHAR(50) UNIQUE NOT NULL,
+        email_list JSONB DEFAULT '[]',
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    // work_reports'a site_id ekle (mevcut tabloya sonradan eklenirse ALTER)
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_schema = 'public' AND table_name = 'work_reports' AND column_name = 'site_id'
+        ) THEN
+          ALTER TABLE work_reports ADD COLUMN site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'site_id column may already exist or work_reports missing: %', SQLERRM;
+      END $$
+    `)
+    // sites tablosuna projedeki toplam kazık sayısı
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'total_piles'
+        ) THEN
+          ALTER TABLE sites ADD COLUMN total_piles INTEGER DEFAULT NULL;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'total_piles column: %', SQLERRM;
+      END $$
+    `)
+    // Proje yeri: bölge, şehir, ülke ve harita için koordinat
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'region') THEN
+          ALTER TABLE sites ADD COLUMN region VARCHAR(255) DEFAULT NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'city') THEN
+          ALTER TABLE sites ADD COLUMN city VARCHAR(255) DEFAULT NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'country') THEN
+          ALTER TABLE sites ADD COLUMN country VARCHAR(255) DEFAULT NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'latitude') THEN
+          ALTER TABLE sites ADD COLUMN latitude DOUBLE PRECISION DEFAULT NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'longitude') THEN
+          ALTER TABLE sites ADD COLUMN longitude DOUBLE PRECISION DEFAULT NULL;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'sites location columns: %', SQLERRM;
+      END $$
+    `)
+
+    console.log('Database tables created successfully')
+  } catch (error) {
+    console.error('Error initializing database:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+// Work report kaydet
+export async function saveWorkReport(reportData: any) {
+  const client = await pool.connect()
+  
+  try {
+    const result = await client.query(`
+      INSERT INTO work_reports (
+        date, project, site_id, selected_machine_id, selected_machine_name,
+        machine_hours, total_production, pile_count, drilled_pile, concrete_pile,
+        total_production_summary, total_pile_count, daily_pile_count,
+        total_completed_piles, remaining_piles, steel_lowered_piles, concrete_poured,
+        engineer_count, foreman_count, operator_count, oiler_count, welder_count, other_count, personnel_total,
+        crane_count, loader_count, truck_count, pickup_count, car_count, service_count, vehicles_total,
+        daily_fuel_usage, expenses, pile_details, notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35)
+      RETURNING id
+    `, [
+      reportData.date,
+      reportData.project,
+      reportData.siteId != null && reportData.siteId !== "" ? (Number(reportData.siteId) || null) : null,
+      reportData.selectedMachineId ?? null,
+      reportData.selectedMachineName ?? null,
+      reportData.machineHours,
+      reportData.totalProduction,
+      reportData.pileCount,
+      reportData.drilledPile,
+      reportData.concretePile,
+      reportData.totalProductionSummary,
+      reportData.totalPileCount,
+      reportData.dailyPileCount,
+      reportData.totalCompletedPiles,
+      reportData.remainingPiles,
+      reportData.steelLoweredPiles,
+      reportData.concretePoured,
+      reportData.engineerCount,
+      reportData.foremanCount,
+      reportData.operatorCount,
+      reportData.oilerCount,
+      reportData.welderCount,
+      reportData.otherCount,
+      reportData.personnelTotal,
+      reportData.craneCount,
+      reportData.loaderCount,
+      reportData.truckCount,
+      reportData.pickupCount,
+      reportData.carCount,
+      reportData.serviceCount,
+      reportData.vehiclesTotal,
+      reportData.dailyFuelUsage,
+      JSON.stringify(reportData.expenses),
+      JSON.stringify(reportData.pileDetails),
+      reportData.notes
+    ])
+
+    const reportId = result.rows[0].id
+
+    // Makine seçimlerini kaydet
+    if (reportData.selectedMachine) {
+      await client.query(`
+        INSERT INTO machine_selections (report_id, machine_id, machine_name, machine_type, is_primary)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [
+        reportId,
+        reportData.selectedMachine.id,
+        reportData.selectedMachine.name,
+        reportData.selectedMachine.type,
+        true
+      ])
+    }
+
+    // Ek makineleri kaydet
+    for (const machine of reportData.additionalMachines || []) {
+      await client.query(`
+        INSERT INTO machine_selections (report_id, machine_id, machine_name, machine_type, is_primary)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [
+        reportId,
+        machine.id,
+        machine.name,
+        machine.type,
+        false
+      ])
+    }
+
+    // Yakıt kayıtlarını kaydet
+    for (const fuelRecord of reportData.fuelMachines || []) {
+      await client.query(`
+        INSERT INTO fuel_records (report_id, machine_name, shift, incoming, remaining, used)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [
+        reportId,
+        fuelRecord.name,
+        fuelRecord.shift,
+        fuelRecord.incoming,
+        fuelRecord.remaining,
+        fuelRecord.used
+      ])
+    }
+
+    return reportId
+  } catch (error) {
+    console.error('Error saving work report:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+// Tüm raporları getir
+export async function getAllWorkReports() {
+  const client = await pool.connect()
+  
+  try {
+    const result = await client.query(`
+      SELECT wr.*, s.name as site_name, s.code as site_code 
+      FROM work_reports wr 
+      LEFT JOIN sites s ON wr.site_id = s.id
+      ORDER BY wr.created_at DESC
+    `)
+    return result.rows
+  } catch (error) {
+    console.error('Error fetching work reports:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+// Raporları filtrele (tarih ve şantiye) - istatistikler için
+export async function getWorkReportsFiltered(options: { siteId?: number | null; startDate?: string; endDate?: string } = {}) {
+  const client = await pool.connect()
+  const { siteId, startDate, endDate } = options
+  try {
+    let query = `
+      SELECT wr.*, s.name as site_name, s.code as site_code 
+      FROM work_reports wr 
+      LEFT JOIN sites s ON wr.site_id = s.id
+      WHERE 1=1
+    `
+    const params: (number | string)[] = []
+    let i = 1
+    if (siteId != null && siteId > 0) {
+      query += ` AND wr.site_id = $${i++}`
+      params.push(siteId)
+    }
+    if (startDate) {
+      query += ` AND wr.date >= $${i++}`
+      params.push(startDate)
+    }
+    if (endDate) {
+      query += ` AND wr.date <= $${i++}`
+      params.push(endDate)
+    }
+    query += ` ORDER BY wr.date ASC`
+    const result = await client.query(query, params)
+    return result.rows
+  } catch (error) {
+    console.error('Error fetching filtered work reports:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+// Günlük/haftalık/aylık agregasyon (istatistik sayfası için)
+export async function getAggregatedStats(options: { siteId?: number | null; startDate?: string; endDate?: string } = {}) {
+  const rows = await getWorkReportsFiltered(options)
+  const daily: Record<string, { date: string; dayLabel: string; piles: number; fuel: number; production: number; expenses: number; reportCount: number }> = {}
+  const weekly: Record<string, { piles: number; fuel: number; production: number; expenses: number; reportCount: number }> = {}
+  const monthly: Record<string, { piles: number; fuel: number; production: number; expenses: number; reportCount: number }> = {}
+
+  for (const r of rows) {
+    const d = new Date(r.date)
+    const dateStr = typeof r.date === 'string' ? r.date.slice(0, 10) : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const dayLabel = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`
+    const weekKey = getWeekKey(d)
+    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+
+    const piles = parseInt(r.total_pile_count || r.daily_pile_count || '0', 10) || 0
+    const production = parseFloat(r.total_production_summary || r.total_production || '0') || 0
+    const fuel = parseFloat(r.daily_fuel_usage || '0') || 0
+    let expenses = 0
+    if (r.expenses && Array.isArray(r.expenses)) {
+      expenses = r.expenses.reduce((sum: number, e: { amount?: number }) => sum + (e?.amount || 0), 0)
+    }
+
+    if (!daily[dateStr]) daily[dateStr] = { date: dateStr, dayLabel, piles: 0, fuel: 0, production: 0, expenses: 0, reportCount: 0 }
+    daily[dateStr].piles += piles
+    daily[dateStr].fuel += fuel
+    daily[dateStr].production += production
+    daily[dateStr].expenses += expenses
+    daily[dateStr].reportCount += 1
+
+    if (!weekly[weekKey]) weekly[weekKey] = { piles: 0, fuel: 0, production: 0, expenses: 0, reportCount: 0 }
+    weekly[weekKey].piles += piles
+    weekly[weekKey].fuel += fuel
+    weekly[weekKey].production += production
+    weekly[weekKey].expenses += expenses
+    weekly[weekKey].reportCount += 1
+
+    if (!monthly[monthKey]) monthly[monthKey] = { piles: 0, fuel: 0, production: 0, expenses: 0, reportCount: 0 }
+    monthly[monthKey].piles += piles
+    monthly[monthKey].fuel += fuel
+    monthly[monthKey].production += production
+    monthly[monthKey].expenses += expenses
+    monthly[monthKey].reportCount += 1
+  }
+
+  const weekLabels: Record<string, string> = {}
+  Object.keys(weekly).sort().forEach((key) => {
+    const parts = key.split('-')
+    const y = parseInt(parts[0], 10)
+    const w = parseInt(parts[1], 10)
+    const start = getWeekStart(y, w)
+    const end = new Date(start)
+    end.setDate(end.getDate() + 6)
+    const fmt = (d: Date) => `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`
+    weekLabels[key] = `${fmt(start)}-${fmt(end)}`
+  })
+
+  const monthNames = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
+
+  // Makine bazlı özet (aynı şantiyede birden çok makine karşılaştırması)
+  const byMachine: Record<string, { machineName: string; totalProduction: number; totalPiles: number; reportCount: number }> = {}
+  for (const r of rows) {
+    const name = r.selected_machine_name || 'Belirtilmemiş'
+    const rPiles = parseInt(r.total_pile_count || r.daily_pile_count || '0', 10) || 0
+    const rProduction = parseFloat(r.total_production_summary || r.total_production || '0') || 0
+    if (!byMachine[name]) byMachine[name] = { machineName: name, totalProduction: 0, totalPiles: 0, reportCount: 0 }
+    byMachine[name].totalProduction += rProduction
+    byMachine[name].totalPiles += rPiles
+    byMachine[name].reportCount += 1
+  }
+  const machineComparison = Object.values(byMachine).sort((a, b) => b.totalProduction - a.totalProduction)
+
+  const dailyList = Object.entries(daily)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, v]) => v)
+
+  return {
+    daily: dailyList,
+    weekly: Object.entries(weekly)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, v]) => ({ week: weekLabels[key] || key, ...v })),
+    monthly: Object.entries(monthly)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, v]) => {
+        const [y, m] = key.split('-').map(Number)
+        return { month: monthNames[m - 1] || key, monthKey: key, ...v }
+      }),
+    totalReports: rows.length,
+    machineComparison,
+  }
+}
+
+function getWeekKey(d: Date): string {
+  const date = new Date(d)
+  const day = date.getDay()
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1)
+  const monday = new Date(date)
+  monday.setDate(diff)
+  const y = monday.getFullYear()
+  const jan1 = new Date(y, 0, 1)
+  const jan1Day = jan1.getDay()
+  const firstMonday = new Date(jan1)
+  firstMonday.setDate(jan1.getDate() + (jan1Day === 0 ? -6 : 1 - jan1Day))
+  const w = Math.round((monday.getTime() - firstMonday.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1
+  return `${y}-${String(Math.max(1, w)).padStart(2, '0')}`
+}
+
+function getWeekStart(year: number, week: number): Date {
+  const jan1 = new Date(year, 0, 1)
+  const day = jan1.getDay()
+  const toMonday = day === 0 ? -6 : 1 - day
+  const firstMonday = new Date(jan1)
+  firstMonday.setDate(jan1.getDate() + toMonday)
+  firstMonday.setDate(firstMonday.getDate() + (week - 1) * 7)
+  return firstMonday
+}
+
+// ----- Şantiyeler (sites) -----
+export async function getAllSites() {
+  const client = await pool.connect()
+  try {
+    const result = await client.query(`SELECT * FROM sites WHERE is_active = true ORDER BY name`)
+    return result.rows
+  } catch (error) {
+    console.error('Error fetching sites:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+/** Şantiyeleri rapor sayılarıyla getir */
+export async function getSitesWithReportCount() {
+  const client = await pool.connect()
+  try {
+    const result = await client.query(`
+      SELECT s.*,
+        (SELECT COUNT(*) FROM work_reports wr WHERE wr.site_id = s.id) AS report_count
+      FROM sites s
+      WHERE s.is_active = true
+      ORDER BY s.name
+    `)
+    return result.rows.map((r: any) => ({
+      ...r,
+      report_count: parseInt(r.report_count, 10) || 0,
+    }))
+  } catch (error) {
+    console.error('Error fetching sites with report count:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+/** Bir şantiyenin bir önceki rapor tarihine ait kalan kazık (son rapor) */
+export async function getLastReportRemainingBySite(siteId: number | null) {
+  if (siteId == null) return null
+  const client = await pool.connect()
+  try {
+    const result = await client.query(
+      `SELECT date, remaining_piles FROM work_reports WHERE site_id = $1 ORDER BY date DESC LIMIT 1`,
+      [siteId]
+    )
+    const row = result.rows[0]
+    return row ? { date: row.date, remainingPiles: row.remaining_piles } : null
+  } catch (error) {
+    console.error('Error fetching last report remaining:', error)
+    return null
+  } finally {
+    client.release()
+  }
+}
+
+export async function getSiteById(id: number) {
+  const client = await pool.connect()
+  try {
+    const result = await client.query(`SELECT * FROM sites WHERE id = $1`, [id])
+    return result.rows[0] || null
+  } catch (error) {
+    console.error('Error fetching site:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function getSiteByCode(code: string) {
+  const client = await pool.connect()
+  try {
+    const result = await client.query(`SELECT * FROM sites WHERE code = $1 AND is_active = true`, [code])
+    return result.rows[0] || null
+  } catch (error) {
+    console.error('Error fetching site by code:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function createSite(data: {
+  name: string
+  code: string
+  emailList?: string[]
+  totalPiles?: number | null
+  region?: string | null
+  city?: string | null
+  country?: string | null
+  latitude?: number | null
+  longitude?: number | null
+}) {
+  const client = await pool.connect()
+  try {
+    const result = await client.query(
+      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, latitude, longitude)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [
+        data.name,
+        data.code,
+        JSON.stringify(data.emailList || []),
+        data.totalPiles ?? null,
+        data.region ?? null,
+        data.city ?? null,
+        data.country ?? null,
+        data.latitude ?? null,
+        data.longitude ?? null,
+      ]
+    )
+    return result.rows[0]
+  } catch (error) {
+    console.error('Error creating site:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function updateSite(id: number, data: {
+  name?: string
+  code?: string
+  emailList?: string[]
+  isActive?: boolean
+  totalPiles?: number | null
+  region?: string | null
+  city?: string | null
+  country?: string | null
+  latitude?: number | null
+  longitude?: number | null
+}) {
+  const client = await pool.connect()
+  try {
+    const updates: string[] = []
+    const values: (string | number | boolean | null)[] = []
+    let i = 1
+    if (data.name !== undefined) { updates.push(`name = $${i++}`); values.push(data.name) }
+    if (data.code !== undefined) { updates.push(`code = $${i++}`); values.push(data.code) }
+    if (data.emailList !== undefined) { updates.push(`email_list = $${i++}`); values.push(JSON.stringify(data.emailList)) }
+    if (data.isActive !== undefined) { updates.push(`is_active = $${i++}`); values.push(data.isActive) }
+    if (data.totalPiles !== undefined) { updates.push(`total_piles = $${i++}`); values.push(data.totalPiles) }
+    if (data.region !== undefined) { updates.push(`region = $${i++}`); values.push(data.region) }
+    if (data.city !== undefined) { updates.push(`city = $${i++}`); values.push(data.city) }
+    if (data.country !== undefined) { updates.push(`country = $${i++}`); values.push(data.country) }
+    if (data.latitude !== undefined) { updates.push(`latitude = $${i++}`); values.push(data.latitude) }
+    if (data.longitude !== undefined) { updates.push(`longitude = $${i++}`); values.push(data.longitude) }
+    if (updates.length === 0) return await getSiteById(id)
+    updates.push(`updated_at = CURRENT_TIMESTAMP`)
+    values.push(id)
+    const result = await client.query(
+      `UPDATE sites SET ${updates.join(', ')} WHERE id = $${i} RETURNING *`,
+      values
+    )
+    return result.rows[0] || null
+  } catch (error) {
+    console.error('Error updating site:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function getSiteReportEmails(siteId: number | null): Promise<string[]> {
+  if (siteId) {
+    const site = await getSiteById(siteId)
+    if (site?.email_list && Array.isArray(site.email_list)) return site.email_list as string[]
+  }
+  return []
+}
+
+// Rapor detayını getir
+export async function getWorkReportById(id: number) {
+  const client = await pool.connect()
+  
+  try {
+    const reportResult = await client.query(`
+      SELECT * FROM work_reports WHERE id = $1
+    `, [id])
+
+    const machinesResult = await client.query(`
+      SELECT * FROM machine_selections WHERE report_id = $1
+    `, [id])
+
+    const fuelResult = await client.query(`
+      SELECT * FROM fuel_records WHERE report_id = $1
+    `, [id])
+
+    return {
+      report: reportResult.rows[0],
+      machines: machinesResult.rows,
+      fuelRecords: fuelResult.rows
+    }
+  } catch (error) {
+    console.error('Error fetching work report:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export default pool 
