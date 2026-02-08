@@ -1,21 +1,13 @@
 import { NextResponse } from "next/server"
-import pool from "@/lib/db"
+import pool from "@/lib/database"
 
 export async function GET() {
   try {
-    // Veritabanı bağlantısını test et
-    const connection = await pool.getConnection()
-    
-    // Basit bir sorgu çalıştır
-    const [rows] = await connection.execute("SELECT 1 as test")
-    
-    // Bağlantıyı serbest bırak
-    connection.release()
-    
+    const result = await pool.query("SELECT 1 as test")
     return NextResponse.json({
       success: true,
       message: "Veritabanı bağlantısı başarılı",
-      test: rows
+      test: result.rows
     })
 
   } catch (error) {
