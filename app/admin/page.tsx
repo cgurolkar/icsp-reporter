@@ -82,11 +82,13 @@ function AdminPanel() {
   const [dbUsers, setDbUsers] = useState<any[]>([])
   const [dbProjects, setDbProjects] = useState<any[]>([])
   const [userProjects, setUserProjects] = useState<{[key: number]: number[]}>({})
+  const [addDbUserDialogOpen, setAddDbUserDialogOpen] = useState(false)
+  const [addDbUserForm, setAddDbUserForm] = useState({ username: "", password: "", role: "user", siteId: "" as string | number })
 
   // Şantiye yönetimi
-  const [dbSites, setDbSites] = useState<{ id: number; name: string; code: string; email_list: string[]; report_count?: number; total_piles?: number | null; region?: string | null; city?: string | null; country?: string | null; latitude?: number | null; longitude?: number | null }[]>([])
+  const [dbSites, setDbSites] = useState<{ id: number; name: string; code: string; email_list: string[]; report_count?: number; total_piles?: number | null; region?: string | null; city?: string | null; country?: string | null; authorized_person?: string | null; employer?: string | null }[]>([])
   const [siteDialogOpen, setSiteDialogOpen] = useState(false)
-  const [siteDialogData, setSiteDialogData] = useState<{ id?: number; name: string; code: string; emailList: string[]; totalPiles: string; region: string; city: string; country: string; latitude: string; longitude: string }>({
+  const [siteDialogData, setSiteDialogData] = useState<{ id?: number; name: string; code: string; emailList: string[]; totalPiles: string; region: string; city: string; country: string; authorizedPerson: string; employer: string }>({
     name: "",
     code: "",
     emailList: [],
@@ -94,8 +96,8 @@ function AdminPanel() {
     region: "",
     city: "",
     country: "",
-    latitude: "",
-    longitude: "",
+    authorizedPerson: "",
+    employer: "",
   })
 
   // Dashboard
@@ -706,7 +708,7 @@ function AdminPanel() {
         <TabPanel value={tabValue} index={2}>
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
             <Typography variant="h6" sx={{ color: "#e6edf3" }}>Kullanıcı Yönetimi</Typography>
-            <Button variant="contained" startIcon={<Add />} onClick={() => handleAdd("user")}>
+            <Button variant="contained" startIcon={<Add />} onClick={() => { setAddDbUserForm({ username: "", password: "", role: "user", siteId: "" }); setAddDbUserDialogOpen(true) }}>
               Kullanıcı Ekle
             </Button>
           </Box>
@@ -715,9 +717,44 @@ function AdminPanel() {
               <ListItem key={user.id} divider>
                 <ListItemText 
                   primary={user.username} 
-                  secondary={`Rol: ${user.role} | Email: ${user.email || 'N/A'}`}
+                  secondary={
+                    <>
+                      Rol: {user.role} | Email: {user.email || "N/A"}
+                      {(user as any).site_name && (
+                        <> | Sorumlu şantiye: <strong>{(user as any).site_name}</strong> ({(user as any).site_code})</>
+                      )}
+                    </>
+                  }
                 />
-                <ListItemSecondaryAction>
+                <ListItemSecondaryAction sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <FormControl size="small" sx={{ minWidth: 180 }}>
+                    <InputLabel>Sorumlu şantiye</InputLabel>
+                    <Select
+                      value={(user as any).site_id ?? ""}
+                      label="Sorumlu şantiye"
+                      onChange={async (e) => {
+                        const v = e.target.value
+                        const siteId = v === "" ? null : Number(v)
+                        try {
+                          const res = await fetch(`/api/users/${user.id}`, {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ siteId }),
+                          })
+                          if (res.ok) {
+                            setDbUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, site_id: siteId, site_name: dbSites.find((s) => s.id === siteId)?.name, site_code: dbSites.find((s) => s.id === siteId)?.code } : u)))
+                          }
+                        } catch (err) {
+                          console.error(err)
+                        }
+                      }}
+                    >
+                      <MenuItem value="">—</MenuItem>
+                      {dbSites.map((s) => (
+                        <MenuItem key={s.id} value={s.id}>{s.name} ({s.code})</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
                   <IconButton onClick={() => handleEdit("user", user.id, user.username)}>
                     <Edit />
                   </IconButton>
@@ -819,7 +856,7 @@ function AdminPanel() {
                 variant="contained"
                 startIcon={<Add />}
                 onClick={() => {
-                  setSiteDialogData({ name: "", code: "", emailList: [], totalPiles: "", region: "", city: "", country: "", latitude: "", longitude: "" })
+                  setSiteDialogData({ name: "", code: "", emailList: [], totalPiles: "", region: "", city: "", country: "", authorizedPerson: "", employer: "" })
                   setSiteDialogOpen(true)
                 }}
               >
@@ -854,8 +891,8 @@ function AdminPanel() {
                     region: site.region != null ? String(site.region) : "",
                     city: site.city != null ? String(site.city) : "",
                     country: site.country != null ? String(site.country) : "",
-                    latitude: site.latitude != null ? String(site.latitude) : "",
-                    longitude: site.longitude != null ? String(site.longitude) : "",
+                    authorizedPerson: (site as any).authorized_person != null ? String((site as any).authorized_person) : "",
+                    employer: (site as any).employer != null ? String((site as any).employer) : "",
                   })
                   setSiteDialogOpen(true)
                 }}
@@ -923,6 +960,8 @@ function AdminPanel() {
               disabled={!!siteDialogData.id}
               helperText={siteDialogData.id ? "Kod düzenlenemez" : "Raporlarda görünecek kısa kod"}
             />
+            <TextField margin="dense" fullWidth label="Yetkili kişi" value={siteDialogData.authorizedPerson} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, authorizedPerson: e.target.value }))} placeholder="Şantiye yetkilisi adı" />
+            <TextField margin="dense" fullWidth label="İşveren" value={siteDialogData.employer} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, employer: e.target.value }))} placeholder="İşveren / firma adı" />
             <Typography variant="subtitle2" sx={{ mt: 1.5, mb: 0.5 }} color="text.secondary">Proje yeri</Typography>
             <Grid container spacing={1}>
               <Grid size={{ xs: 12 }}>
@@ -934,40 +973,7 @@ function AdminPanel() {
               <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField margin="dense" fullWidth size="small" label="Şehir" value={siteDialogData.city} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, city: e.target.value }))} placeholder="İstanbul" />
               </Grid>
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField margin="dense" fullWidth size="small" type="number" label="Enlem" value={siteDialogData.latitude} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, latitude: e.target.value }))} placeholder="41.0082" inputProps={{ step: "any" }} />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField margin="dense" fullWidth size="small" type="number" label="Boylam" value={siteDialogData.longitude} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, longitude: e.target.value }))} placeholder="28.9784" inputProps={{ step: "any" }} />
-              </Grid>
             </Grid>
-            {siteDialogData.latitude && siteDialogData.longitude && parseFloat(siteDialogData.latitude) && parseFloat(siteDialogData.longitude) && (() => {
-              const lat = Number(siteDialogData.latitude)
-              const lon = Number(siteDialogData.longitude)
-              const zoom = 14
-              const n = 2 ** zoom
-              const x = Math.floor((lon + 180) / 360 * n)
-              const latRad = lat * Math.PI / 180
-              const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n)
-              const osmLink = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}&zoom=15`
-              return (
-                <Box sx={{ mt: 1, borderRadius: 1, overflow: "hidden", border: "1px solid var(--icsp-nav-border)", background: "#f5f5f5" }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", px: 1, py: 0.5 }}>Haritada konum</Typography>
-                  <a href={osmLink} target="_blank" rel="noopener noreferrer" style={{ display: "block", lineHeight: 0 }}>
-                    <img
-                      src={`https://tile.openstreetmap.org/${zoom}/${Math.max(0, Math.min(x, n - 1))}/${Math.max(0, Math.min(y, n - 1))}.png`}
-                      alt="Konum"
-                      width="100%"
-                      height="200"
-                      style={{ objectFit: "cover", display: "block", maxHeight: 200 }}
-                    />
-                  </a>
-                  <Typography variant="caption" sx={{ display: "block", px: 1, py: 0.5 }}>
-                    <a href={osmLink} target="_blank" rel="noopener noreferrer" style={{ color: "var(--icsp-lacivert)" }}>Haritada tam konumu aç</a>
-                  </Typography>
-                </Box>
-              )
-            })()}
             <TextField
               margin="dense"
               fullWidth
@@ -1014,8 +1020,8 @@ function AdminPanel() {
                   region: siteDialogData.region.trim() || null,
                   city: siteDialogData.city.trim() || null,
                   country: siteDialogData.country.trim() || null,
-                  latitude: siteDialogData.latitude.trim() ? parseFloat(siteDialogData.latitude) || null : null,
-                  longitude: siteDialogData.longitude.trim() ? parseFloat(siteDialogData.longitude) || null : null,
+                  authorizedPerson: siteDialogData.authorizedPerson.trim() || null,
+                  employer: siteDialogData.employer.trim() || null,
                 }
                 try {
                     if (siteDialogData.id) {
@@ -1054,6 +1060,69 @@ function AdminPanel() {
               }}
             >
               {t("save")}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog open={addDbUserDialogOpen} onClose={() => setAddDbUserDialogOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Yeni kullanıcı (yetkili kişi)</DialogTitle>
+          <DialogContent>
+            <TextField autoFocus margin="dense" fullWidth label="Kullanıcı adı" value={addDbUserForm.username} onChange={(e) => setAddDbUserForm((p) => ({ ...p, username: e.target.value }))} />
+            <TextField margin="dense" fullWidth type="password" label="Şifre" value={addDbUserForm.password} onChange={(e) => setAddDbUserForm((p) => ({ ...p, password: e.target.value }))} />
+            <FormControl fullWidth margin="dense">
+              <InputLabel>Rol</InputLabel>
+              <Select value={addDbUserForm.role} label="Rol" onChange={(e) => setAddDbUserForm((p) => ({ ...p, role: e.target.value }))}>
+                <MenuItem value="user">Kullanıcı</MenuItem>
+                <MenuItem value="admin">Admin</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControl fullWidth margin="dense">
+              <InputLabel>Sorumlu olduğu şantiye</InputLabel>
+              <Select value={addDbUserForm.siteId === "" ? "" : addDbUserForm.siteId} label="Sorumlu olduğu şantiye" onChange={(e) => setAddDbUserForm((p) => ({ ...p, siteId: e.target.value === "" ? "" : Number(e.target.value) }))}>
+                <MenuItem value="">— Yok</MenuItem>
+                {dbSites.map((s) => (
+                  <MenuItem key={s.id} value={s.id}>{s.name} ({s.code})</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setAddDbUserDialogOpen(false)}>İptal</Button>
+            <Button
+              variant="contained"
+              onClick={async () => {
+                if (!addDbUserForm.username.trim()) {
+                  alert("Kullanıcı adı gerekli.")
+                  return
+                }
+                if (!addDbUserForm.password.trim()) {
+                  alert("Şifre gerekli.")
+                  return
+                }
+                try {
+                  const res = await fetch("/api/users", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      username: addDbUserForm.username.trim(),
+                      password: addDbUserForm.password,
+                      role: addDbUserForm.role,
+                      siteId: addDbUserForm.siteId === "" ? null : addDbUserForm.siteId,
+                    }),
+                  })
+                  const data = await res.json().catch(() => ({}))
+                  if (res.ok) {
+                    setAddDbUserDialogOpen(false)
+                    await loadUsersAndProjects()
+                  } else {
+                    alert(data.error || "Kullanıcı eklenemedi.")
+                  }
+                } catch (e) {
+                  alert("İstek gönderilemedi.")
+                }
+              }}
+            >
+              Ekle
             </Button>
           </DialogActions>
         </Dialog>

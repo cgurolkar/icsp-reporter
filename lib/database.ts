@@ -161,7 +161,7 @@ export async function initializeDatabase() {
         RAISE NOTICE 'total_piles column: %', SQLERRM;
       END $$
     `)
-    // Proje yeri: bölge, şehir, ülke ve harita için koordinat
+    // Proje yeri: bölge, şehir, ülke
     await client.query(`
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'region') THEN
@@ -173,13 +173,23 @@ export async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'country') THEN
           ALTER TABLE sites ADD COLUMN country VARCHAR(255) DEFAULT NULL;
         END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'latitude') THEN
-          ALTER TABLE sites ADD COLUMN latitude DOUBLE PRECISION DEFAULT NULL;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'authorized_person') THEN
+          ALTER TABLE sites ADD COLUMN authorized_person VARCHAR(255) DEFAULT NULL;
         END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'longitude') THEN
-          ALTER TABLE sites ADD COLUMN longitude DOUBLE PRECISION DEFAULT NULL;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'employer') THEN
+          ALTER TABLE sites ADD COLUMN employer VARCHAR(255) DEFAULT NULL;
         END IF;
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'sites location columns: %', SQLERRM;
+      END $$
+    `)
+
+    // users tablosuna sorumlu şantiye (site_id)
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'site_id') THEN
+          ALTER TABLE users ADD COLUMN site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'users site_id: %', SQLERRM;
       END $$
     `)
 
@@ -486,17 +496,28 @@ export async function getAllSites() {
   }
 }
 
-/** Şantiyeleri rapor sayılarıyla getir */
-export async function getSitesWithReportCount() {
+/** Şantiyeleri rapor sayılarıyla getir; siteId verilirse sadece o şantiye (kullanıcı kendi şantiyesini görsün) */
+export async function getSitesWithReportCount(siteId?: number | null) {
   const client = await pool.connect()
   try {
-    const result = await client.query(`
+    const query = siteId != null
+      ? `
+      SELECT s.*,
+        (SELECT COUNT(*) FROM work_reports wr WHERE wr.site_id = s.id) AS report_count
+      FROM sites s
+      WHERE s.is_active = true AND s.id = $1
+      ORDER BY s.name
+      `
+      : `
       SELECT s.*,
         (SELECT COUNT(*) FROM work_reports wr WHERE wr.site_id = s.id) AS report_count
       FROM sites s
       WHERE s.is_active = true
       ORDER BY s.name
-    `)
+      `
+    const result = siteId != null
+      ? await client.query(query, [siteId])
+      : await client.query(query)
     return result.rows.map((r: any) => ({
       ...r,
       report_count: parseInt(r.report_count, 10) || 0,
@@ -562,13 +583,13 @@ export async function createSite(data: {
   region?: string | null
   city?: string | null
   country?: string | null
-  latitude?: number | null
-  longitude?: number | null
+  authorizedPerson?: string | null
+  employer?: string | null
 }) {
   const client = await pool.connect()
   try {
     const result = await client.query(
-      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, latitude, longitude)
+      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [
         data.name,
@@ -578,8 +599,8 @@ export async function createSite(data: {
         data.region ?? null,
         data.city ?? null,
         data.country ?? null,
-        data.latitude ?? null,
-        data.longitude ?? null,
+        data.authorizedPerson ?? null,
+        data.employer ?? null,
       ]
     )
     return result.rows[0]
@@ -600,8 +621,8 @@ export async function updateSite(id: number, data: {
   region?: string | null
   city?: string | null
   country?: string | null
-  latitude?: number | null
-  longitude?: number | null
+  authorizedPerson?: string | null
+  employer?: string | null
 }) {
   const client = await pool.connect()
   try {
@@ -616,8 +637,8 @@ export async function updateSite(id: number, data: {
     if (data.region !== undefined) { updates.push(`region = $${i++}`); values.push(data.region) }
     if (data.city !== undefined) { updates.push(`city = $${i++}`); values.push(data.city) }
     if (data.country !== undefined) { updates.push(`country = $${i++}`); values.push(data.country) }
-    if (data.latitude !== undefined) { updates.push(`latitude = $${i++}`); values.push(data.latitude) }
-    if (data.longitude !== undefined) { updates.push(`longitude = $${i++}`); values.push(data.longitude) }
+    if (data.authorizedPerson !== undefined) { updates.push(`authorized_person = $${i++}`); values.push(data.authorizedPerson) }
+    if (data.employer !== undefined) { updates.push(`employer = $${i++}`); values.push(data.employer) }
     if (updates.length === 0) return await getSiteById(id)
     updates.push(`updated_at = CURRENT_TIMESTAMP`)
     values.push(id)

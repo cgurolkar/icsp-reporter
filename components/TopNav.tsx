@@ -71,7 +71,7 @@ export default function TopNav() {
             fontSize: "0.9rem",
           }}
         >
-          Admin girişi
+          Yönetici Girişi
         </Link>
       </div>
     </nav>

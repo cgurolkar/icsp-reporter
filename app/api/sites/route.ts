@@ -6,7 +6,12 @@ export async function GET(request: NextRequest) {
     await initializeDatabase()
     const { searchParams } = new URL(request.url)
     const withReportCount = searchParams.get("withReportCount") === "1"
-    const sites = withReportCount ? await getSitesWithReportCount() : await getAllSites()
+    const siteIdParam = searchParams.get("siteId")
+    const siteIdNum = siteIdParam ? parseInt(siteIdParam, 10) : NaN
+    const filterSiteId = Number.isInteger(siteIdNum) ? siteIdNum : undefined
+    const sites = withReportCount
+      ? await getSitesWithReportCount(filterSiteId)
+      : await getAllSites()
     return NextResponse.json(sites)
   } catch (error) {
     console.error("Error fetching sites:", error)
@@ -25,12 +30,12 @@ export async function POST(request: NextRequest) {
     const region = body.region != null ? String(body.region).trim() || null : null
     const city = body.city != null ? String(body.city).trim() || null : null
     const country = body.country != null ? String(body.country).trim() || null : null
-    const latitude = body.latitude != null && body.latitude !== "" ? parseFloat(String(body.latitude)) || null : null
-    const longitude = body.longitude != null && body.longitude !== "" ? parseFloat(String(body.longitude)) || null : null
+    const authorizedPerson = body.authorizedPerson != null ? String(body.authorizedPerson).trim() || null : null
+    const employer = body.employer != null ? String(body.employer).trim() || null : null
     if (!name || !code) {
       return NextResponse.json({ error: "Şantiye adı ve kod zorunludur." }, { status: 400 })
     }
-    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, latitude, longitude })
+    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, authorizedPerson, employer })
     return NextResponse.json(site)
   } catch (error: unknown) {
     console.error("Error creating site:", error)

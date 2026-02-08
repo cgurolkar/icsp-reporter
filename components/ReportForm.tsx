@@ -238,12 +238,12 @@ export default function ReportForm({ initialSiteId, initialSiteName }: ReportFor
           {renderStepContent(activeStep)}
         </Box>
         <Grid container spacing={2} sx={{ width: "100%" }}>
-          <Grid item xs={6}>
+          <Grid size={{ xs: 6 }}>
             <Button fullWidth disabled={activeStep === 0} onClick={handleBack} variant="outlined" sx={{ py: 1.5, fontSize: { xs: 14, sm: 16 } }}>
               {t("previous")}
             </Button>
           </Grid>
-          <Grid item xs={6}>
+          <Grid size={{ xs: 6 }}>
             {activeStep < steps.length - 1 && (
               <Button fullWidth variant="contained" onClick={handleNext} sx={{ py: 1.5, fontSize: { xs: 14, sm: 16 } }}>
                 {t("next")}

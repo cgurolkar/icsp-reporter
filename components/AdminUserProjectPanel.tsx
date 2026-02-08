@@ -1,6 +1,25 @@
 import { Typography, Paper, Table, TableHead, TableRow, TableCell, TableBody, Select, MenuItem } from "@mui/material";
 
-export default function AdminUserProjectPanel({ users, projects, onRoleChange, onProjectAssign }) {
+interface User {
+  id: number
+  username: string
+  role: string
+  projects: number[]
+}
+
+interface Project {
+  id: number
+  name: string
+}
+
+interface AdminUserProjectPanelProps {
+  users: User[]
+  projects: Project[]
+  onRoleChange: (userId: number, role: string) => void
+  onProjectAssign: (userId: number, projectIds: number[]) => void
+}
+
+export default function AdminUserProjectPanel({ users, projects, onRoleChange, onProjectAssign }: AdminUserProjectPanelProps) {
   return (
     <Paper sx={{ p: 3, mt: 4, maxWidth: 900, mx: "auto" }}>
       <Typography variant="h6" mb={2}>Kullanıcı Yönetimi</Typography>
@@ -13,7 +32,7 @@ export default function AdminUserProjectPanel({ users, projects, onRoleChange, o
           </TableRow>
         </TableHead>
         <TableBody>
-          {users.map(user => (
+          {users.map((user: User) => (
             <TableRow key={user.id}>
               <TableCell>{user.username}</TableCell>
               <TableCell>
@@ -31,12 +50,12 @@ export default function AdminUserProjectPanel({ users, projects, onRoleChange, o
                 <Select
                   multiple
                   value={user.projects}
-                  onChange={e => onProjectAssign(user.id, e.target.value)}
-                  renderValue={selected => selected.map(pid => projects.find(p => p.id === pid)?.name).join(", ")}
+                  onChange={e => onProjectAssign(user.id, e.target.value as number[])}
+                  renderValue={selected => selected.map((pid: number) => projects.find((p: Project) => p.id === pid)?.name).join(", ")}
                   size="small"
                   sx={{ minWidth: 200 }}
                 >
-                  {projects.map(p => (
+                  {projects.map((p: Project) => (
                     <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>
                   ))}
                 </Select>

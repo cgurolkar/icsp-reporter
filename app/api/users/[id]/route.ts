@@ -7,16 +7,28 @@ export async function PUT(
 ) {
   try {
     const userId = parseInt(params.id);
-    const { role } = await request.json();
+    const { role, siteId } = await request.json();
     
     const client = await pool.connect();
     
+    const updates: string[] = ['updated_at = CURRENT_TIMESTAMP'];
+    const values: (string | number | null)[] = [];
+    let i = 1;
+    if (role !== undefined) {
+      updates.push(`role = $${i++}`);
+      values.push(role);
+    }
+    if (siteId !== undefined) {
+      updates.push(`site_id = $${i++}`);
+      values.push(siteId != null && siteId !== '' ? (typeof siteId === 'number' ? siteId : parseInt(String(siteId), 10)) : null);
+    }
+    values.push(userId);
     const result = await client.query(`
       UPDATE users 
-      SET role = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2
-      RETURNING id, username, role, email
-    `, [role, userId]);
+      SET ${updates.join(', ')}
+      WHERE id = $${i}
+      RETURNING id, username, role, email, site_id
+    `, values);
     
     client.release();
     

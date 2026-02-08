@@ -6,9 +6,11 @@ export async function GET(request: NextRequest) {
     const client = await pool.connect();
     
     const result = await client.query(`
-      SELECT id, username, role, email, created_at 
-      FROM users 
-      ORDER BY created_at DESC
+      SELECT u.id, u.username, u.role, u.email, u.created_at, u.site_id,
+        s.name AS site_name, s.code AS site_code
+      FROM users u
+      LEFT JOIN sites s ON u.site_id = s.id
+      ORDER BY u.created_at DESC
     `);
     
     client.release();
@@ -28,18 +30,19 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { username, password, role, email } = await request.json();
+    const { username, password, role, email, siteId } = await request.json();
     
     const client = await pool.connect();
     
     // Basit şifre hash'i (production'da bcrypt kullan)
     const passwordHash = Buffer.from(password).toString('base64');
     
+    const siteIdVal = siteId != null && siteId !== '' ? (typeof siteId === 'number' ? siteId : parseInt(String(siteId), 10)) : null;
     const result = await client.query(`
-      INSERT INTO users (username, password_hash, role, email)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, username, role, email
-    `, [username, passwordHash, role || 'user', email]);
+      INSERT INTO users (username, password_hash, role, email, site_id)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, username, role, email, site_id
+    `, [username, passwordHash, role || 'user', email || null, Number.isInteger(siteIdVal) ? siteIdVal : null]);
     
     client.release();
     

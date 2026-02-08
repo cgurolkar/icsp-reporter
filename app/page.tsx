@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Container, Paper, Typography, Box, Button, Grid } from "@mui/material"
+import { Container, Paper, Typography, Box, Button, Table, TableHead, TableBody, TableRow, TableCell } from "@mui/material"
 import Link from "next/link"
 import { ThemeProvider } from "@mui/material/styles"
 import CssBaseline from "@mui/material/CssBaseline"
@@ -14,6 +14,11 @@ interface SiteItem {
   name: string
   code: string
   report_count?: number
+  total_piles?: number | null
+  authorized_person?: string | null
+  employer?: string | null
+  region?: string | null
+  city?: string | null
 }
 
 function HomePage() {
@@ -56,54 +61,53 @@ function HomePage() {
           <Typography variant="subtitle1" sx={{ color: "var(--icsp-lacivert)", fontWeight: 600, mb: 2 }}>
             Şantiyeler
           </Typography>
-          <Grid container spacing={2}>
-            {sites.map((site) => (
-              <Grid item xs={12} sm={6} key={site.id}>
-                <Box
-                  sx={{
-                    p: 2,
-                    border: "1px solid var(--icsp-nav-border)",
-                    borderRadius: 2,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 1,
-                  }}
-                >
-                  <Typography fontWeight={600} sx={{ color: "var(--icsp-lacivert)" }}>
-                    {site.name}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {site.code}
-                    {site.report_count != null && (
-                      <> · <strong>{site.report_count}</strong> rapor</>
-                    )}
-                  </Typography>
-                  <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
-                    <Link href={`/reports?siteId=${site.id}`} style={{ textDecoration: "none" }}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        fullWidth
-                        sx={{ borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}
-                      >
-                        Raporları gör
-                      </Button>
-                    </Link>
-                    <Link href={`/form?siteId=${site.id}`} style={{ textDecoration: "none" }}>
-                      <Button
-                        size="small"
-                        variant="contained"
-                        fullWidth
-                        sx={{ backgroundColor: "var(--icsp-lacivert)" }}
-                      >
-                        Bilgi girişi
-                      </Button>
-                    </Link>
-                  </Box>
-                </Box>
-              </Grid>
-            ))}
-          </Grid>
+          <Box sx={{ overflowX: "auto" }}>
+            <Table size="small" sx={{ minWidth: 560, "& th, & td": { borderColor: "var(--icsp-nav-border)" } }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 600 }}>Şantiye Adı</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Yetkili Kişi</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>İşveren</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }} align="right">Kazık Sayısı</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Bölge / Şehir</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }} align="center">İşlem</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {sites.map((site) => (
+                  <TableRow key={site.id}>
+                    <TableCell>
+                      <Typography fontWeight={600} sx={{ color: "var(--icsp-lacivert)" }}>{site.name}</Typography>
+                      <Typography variant="caption" color="text.secondary">{site.code}</Typography>
+                      {site.report_count != null && (
+                        <Typography variant="caption" display="block" color="text.secondary">
+                          {site.report_count} rapor
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>{site.authorized_person || "—"}</TableCell>
+                    <TableCell>{site.employer || "—"}</TableCell>
+                    <TableCell align="right">{site.total_piles != null ? site.total_piles : "—"}</TableCell>
+                    <TableCell>
+                      {[site.region, site.city].filter(Boolean).join(" / ") || "—"}
+                    </TableCell>
+                    <TableCell align="center" sx={{ whiteSpace: "nowrap" }}>
+                      <Link href={`/reports?siteId=${site.id}`} style={{ textDecoration: "none" }}>
+                        <Button size="small" variant="outlined" sx={{ mr: 0.5, borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}>
+                          Raporlar
+                        </Button>
+                      </Link>
+                      <Link href={`/form?siteId=${site.id}`} style={{ textDecoration: "none" }}>
+                        <Button size="small" variant="contained" sx={{ backgroundColor: "var(--icsp-lacivert)" }}>
+                          Bilgi girişi
+                        </Button>
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Box>
         </Paper>
       ) : (
         <Paper elevation={0} sx={{ p: 3, background: "#ffffff", border: "1px solid var(--icsp-nav-border)", borderRadius: 2 }}>
