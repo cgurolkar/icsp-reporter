@@ -104,7 +104,7 @@ export default function ExpensesStep({ data, onChange }: ExpensesStepProps) {
             <Grid item xs={4}>
               <TextField
                 fullWidth
-                label={`${t("amount")} (${t("currency")})`}
+                label={t("amount_iqd")}
                 type="number"
                 value={expense.amount}
                 onChange={(e) => updateExpense(index, "amount", Number.parseFloat(e.target.value) || 0)}

@@ -12,6 +12,15 @@ interface SiteOption {
   code: string
 }
 
+export interface SiteSummaryForForm {
+  totalPiles: number | null
+  lastDate: string | null
+  remainingPiles: string | null
+  projectStartDate?: string | null
+  isOngoing?: boolean
+  initialPilesDone?: number | null
+}
+
 interface BasicInfoStepProps {
   data: BasicInfo
   onChange: (data: BasicInfo) => void
@@ -21,6 +30,7 @@ interface BasicInfoStepProps {
   allMachines?: MachineBasicInfo[] // Tüm makinelerin bilgileri
   onAddMachine?: (machine: any) => void // Ek makine ekleme fonksiyonu
   onMachineIndexChange?: (index: number) => void // Makine indeksi değişikliği
+  onSiteSummaryChange?: (summary: SiteSummaryForForm) => void
 }
 
 export default function BasicInfoStep({ 
@@ -31,11 +41,12 @@ export default function BasicInfoStep({
   onMachineChange,
   allMachines = [],
   onAddMachine,
-  onMachineIndexChange
+  onMachineIndexChange,
+  onSiteSummaryChange,
 }: BasicInfoStepProps) {
   const { t } = useLanguage()
   const [sites, setSites] = useState<SiteOption[]>([])
-  const [siteSummary, setSiteSummary] = useState<{ totalPiles: number | null; lastDate: string | null; remainingPiles: string | null }>({ totalPiles: null, lastDate: null, remainingPiles: null })
+  const [siteSummary, setSiteSummary] = useState<SiteSummaryForForm>({ totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null })
 
   useEffect(() => {
     fetch("/api/sites")
@@ -46,19 +57,30 @@ export default function BasicInfoStep({
 
   useEffect(() => {
     if (data.siteId == null) {
-      setSiteSummary({ totalPiles: null, lastDate: null, remainingPiles: null })
+      const empty: SiteSummaryForForm = { totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null }
+      setSiteSummary(empty)
+      onSiteSummaryChange?.(empty)
       return
     }
     fetch(`/api/sites/${data.siteId}/last-report`)
       .then((res) => (res.ok ? res.json() : {}))
-      .then((d: { totalPiles?: number | null; lastDate?: string | null; remainingPiles?: string | null }) =>
-        setSiteSummary({
+      .then((d: { totalPiles?: number | null; lastDate?: string | null; remainingPiles?: string | null; projectStartDate?: string | null; isOngoing?: boolean; initialPilesDone?: number | null }) => {
+        const next: SiteSummaryForForm = {
           totalPiles: d.totalPiles ?? null,
           lastDate: d.lastDate ?? null,
           remainingPiles: d.remainingPiles ?? null,
-        })
-      )
-      .catch(() => setSiteSummary({ totalPiles: null, lastDate: null, remainingPiles: null }))
+          projectStartDate: d.projectStartDate ?? null,
+          isOngoing: d.isOngoing === true,
+          initialPilesDone: d.initialPilesDone ?? null,
+        }
+        setSiteSummary(next)
+        onSiteSummaryChange?.(next)
+      })
+      .catch(() => {
+        const empty: SiteSummaryForForm = { totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null }
+        setSiteSummary(empty)
+        onSiteSummaryChange?.(empty)
+      })
   }, [data.siteId])
 
   const handleChange = (field: keyof BasicInfo) => (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -142,27 +164,70 @@ export default function BasicInfoStep({
           )}
         </Box>
         {(siteSummary.totalPiles != null || siteSummary.remainingPiles != null) && (
-          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 2, mt: 2 }}>
-            {siteSummary.totalPiles != null && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" sx={{ color: "#e65100", fontWeight: 600, mb: 1.5 }}>
+              Proje özeti
+            </Typography>
+            <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 2 }}>
               <TextField
                 fullWidth
-                label="Projedeki toplam kazık sayısı"
-                value={siteSummary.totalPiles}
+                label="Proje durumu"
+                value={siteSummary.isOngoing ? "Devam Eden" : "Yeni"}
                 InputProps={{ readOnly: true }}
                 size="small"
-                sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#fff8e1" } }}
+                sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#f5f5f5" } }}
               />
-            )}
-            {siteSummary.lastDate != null && siteSummary.remainingPiles != null && (
-              <TextField
-                fullWidth
-                label={`Önceki günden kalan (${siteSummary.lastDate})`}
-                value={siteSummary.remainingPiles}
-                InputProps={{ readOnly: true }}
-                size="small"
-                sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#e8f5e9" } }}
-              />
-            )}
+              {siteSummary.projectStartDate && (
+                <TextField
+                  fullWidth
+                  label="İşin başlama tarihi"
+                  value={String(siteSummary.projectStartDate).slice(0, 10)}
+                  InputProps={{ readOnly: true }}
+                  size="small"
+                  sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#f5f5f5" } }}
+                />
+              )}
+              {siteSummary.isOngoing && siteSummary.initialPilesDone != null && (
+                <TextField
+                  fullWidth
+                  label="Raporların başladığı gün yapılan toplam kazık (Ad.)"
+                  value={siteSummary.initialPilesDone}
+                  InputProps={{ readOnly: true }}
+                  size="small"
+                  sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#e3f2fd" } }}
+                />
+              )}
+              {siteSummary.totalPiles != null && (
+                <TextField
+                  fullWidth
+                  label="Projedeki toplam kazık sayısı (Ad.)"
+                  value={siteSummary.totalPiles}
+                  InputProps={{ readOnly: true }}
+                  size="small"
+                  sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#fff8e1" } }}
+                />
+              )}
+              {siteSummary.totalPiles != null && siteSummary.remainingPiles != null && (
+                <TextField
+                  fullWidth
+                  label="Yapılan toplam kazık sayısı (Ad.)"
+                  value={siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles, 10) || 0)}
+                  InputProps={{ readOnly: true }}
+                  size="small"
+                  sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#e3f2fd" } }}
+                />
+              )}
+              {siteSummary.remainingPiles != null && (
+                <TextField
+                  fullWidth
+                  label="Kalan kazık sayısı (Ad.)"
+                  value={siteSummary.remainingPiles}
+                  InputProps={{ readOnly: true }}
+                  size="small"
+                  sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#e8f5e9" } }}
+                />
+              )}
+            </Box>
           </Box>
         )}
       </Paper>

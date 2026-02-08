@@ -32,10 +32,13 @@ export async function POST(request: NextRequest) {
     const country = body.country != null ? String(body.country).trim() || null : null
     const authorizedPerson = body.authorizedPerson != null ? String(body.authorizedPerson).trim() || null : null
     const employer = body.employer != null ? String(body.employer).trim() || null : null
+    const projectStartDate = body.projectStartDate != null ? String(body.projectStartDate).trim() || null : null
+    const isOngoing = body.isOngoing === true
+    const initialPilesDone = body.initialPilesDone != null ? (typeof body.initialPilesDone === "number" ? body.initialPilesDone : parseInt(String(body.initialPilesDone), 10) || null) : null
     if (!name || !code) {
       return NextResponse.json({ error: "Şantiye adı ve kod zorunludur." }, { status: 400 })
     }
-    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, authorizedPerson, employer })
+    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone })
     return NextResponse.json(site)
   } catch (error: unknown) {
     console.error("Error creating site:", error)

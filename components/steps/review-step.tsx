@@ -4,21 +4,22 @@ import { Typography, Box, Button } from "@mui/material"
 import { Save, Print } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
 import type { FormData } from "@/types/form-data"
+import type { SiteSummaryForForm } from "@/components/steps/basic-info-step"
 
 interface ReviewStepProps {
   data: FormData
   onSubmit: () => void
+  siteSummary?: SiteSummaryForForm | null
 }
 
-export default function ReviewStep({ data, onSubmit }: ReviewStepProps) {
+export default function ReviewStep({ data, onSubmit, siteSummary }: ReviewStepProps) {
   const { t } = useLanguage()
 
   const handlePrint = () => {
-    // Create a new window for printing
     const printWindow = window.open("", "_blank")
     if (!printWindow) return
 
-    const printContent = generatePrintableContent(data)
+    const printContent = generatePrintableContent(data, siteSummary)
 
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -140,30 +141,36 @@ export default function ReviewStep({ data, onSubmit }: ReviewStepProps) {
     }
   }
 
-  const generatePrintableContent = (data: FormData) => {
-    // Toplamlar için dizi kontrolü ve toplama
-    const isArray = Array.isArray(data.productionSummary);
+  const generatePrintableContent = (data: FormData, summary?: SiteSummaryForForm | null) => {
+    const isArray = Array.isArray(data.productionSummary)
     const totalProduction = isArray
       ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseFloat(m.totalProduction) || 0), 0)
-      : data.productionSummary.totalProduction;
-    const totalPileCount = isArray
+      : data.productionSummary.totalProduction
+    const concreteSum = isArray
       ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.concretePoured) || 0), 0)
-      : data.productionSummary.totalPileCount;
-    const dailyPileCount = isArray
+      : (parseInt(data.productionSummary?.concretePoured ?? "", 10) || 0)
+    const totalPileCountFromForm = isArray
+      ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.totalPileCount) || 0), 0)
+      : (parseInt(data.productionSummary?.totalPileCount ?? "", 10) || 0)
+    const totalPileCount = totalPileCountFromForm > 0 ? totalPileCountFromForm : concreteSum
+    const dailyPileCountFromForm = isArray
       ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.dailyPileCount) || 0), 0)
-      : data.productionSummary.dailyPileCount;
+      : (parseInt(data.productionSummary?.dailyPileCount ?? "", 10) || 0)
+    const dailyPileCount = dailyPileCountFromForm > 0 ? dailyPileCountFromForm : concreteSum
     const totalCompletedPiles = isArray
       ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.totalCompletedPiles) || 0), 0)
-      : data.productionSummary.totalCompletedPiles;
-    const remainingPiles = isArray
+      : data.productionSummary.totalCompletedPiles
+    const remainingFromForm = isArray
       ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.remainingPiles) || 0), 0)
-      : data.productionSummary.remainingPiles;
+      : (parseInt(data.productionSummary?.remainingPiles ?? "", 10) || 0)
+    const remainingPiles =
+      summary?.remainingPiles != null && summary.remainingPiles !== ""
+        ? Math.max(0, (parseInt(summary.remainingPiles, 10) || 0) - concreteSum)
+        : remainingFromForm
     const steelLoweredPiles = isArray
       ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.steelLoweredPiles) || 0), 0)
-      : data.productionSummary.steelLoweredPiles;
-    const concretePoured = isArray
-      ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.concretePoured) || 0), 0)
-      : data.productionSummary.concretePoured;
+      : data.productionSummary.steelLoweredPiles
+    const concretePoured = concreteSum
 
     return `
       <!-- Page 1 - Production Data -->
@@ -376,11 +383,10 @@ export default function ReviewStep({ data, onSubmit }: ReviewStepProps) {
             GÜNLÜK ÇALIŞMA RAPORU - {data.basicInfo.date}
           </Typography>
           <Typography variant="body2" sx={{ mb: 1 }}>
-            📊 Temel Bilgiler: Makine Saat ({data.basicInfo.machineHours}), Toplam İmalat (
-            {data.basicInfo.totalProduction})
+            📊 Temel Bilgiler: Makine Saat ({data.basicInfo.machineHours}), Kazık İmalatı (m): {data.basicInfo.totalProduction}
           </Typography>
           <Typography variant="body2" sx={{ mb: 1 }}>
-            📈 Üretim Özeti: {data.productionSummary.dailyPileCount} günlük kazık
+            📈 Üretim Özeti: {data.productionSummary.dailyPileCount} günlük kazık (Ad.)
           </Typography>
           <Typography variant="body2" sx={{ mb: 1 }}>
             👥 Personel: {data.personnel.total} toplam personel

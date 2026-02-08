@@ -25,28 +25,34 @@ interface PileDetailsStepProps {
   data: PileDetail[]
   onChange: (data: PileDetail[]) => void
   productionSummary?: MachineProductionSummary[]
-  previousDayRemaining?: number
+  /** Şantiye proje özetinden gelen toplam kazık (yoksa ayarlardan alınır) */
+  projectTotalPiles?: number
+  /** Bugünden önce yapılan toplam kazık sayısı (son rapordaki kalan üzerinden hesaplanır) */
+  totalCompletedBeforeToday?: number
 }
 
-export default function PileDetailsStep({ data, onChange, productionSummary = [], previousDayRemaining = 0 }: PileDetailsStepProps) {
+export default function PileDetailsStep({ data, onChange, productionSummary = [], projectTotalPiles: projectTotalFromProps, totalCompletedBeforeToday = 0 }: PileDetailsStepProps) {
   const { t } = useLanguage()
-  const [projectTotalPiles, setProjectTotalPiles] = useState<number>(120) // Varsayılan değer
+  const [projectTotalFromSettings, setProjectTotalFromSettings] = useState<number>(120)
 
-  // Yönetici panelinden toplam kazık sayısını al
+  // Şantiye seçilmemişse yönetici panelinden toplam kazık sayısını al
   useEffect(() => {
+    if (projectTotalFromProps != null) return
     const loadProjectSettings = async () => {
       try {
         const response = await fetch("/api/admin/settings")
         if (response.ok) {
           const settings = await response.json()
-          setProjectTotalPiles(parseInt(settings.totalPiles) || 120)
+          setProjectTotalFromSettings(parseInt(settings.totalPiles) || 120)
         }
       } catch (error) {
         console.error("Error loading project settings:", error)
       }
     }
     loadProjectSettings()
-  }, [])
+  }, [projectTotalFromProps])
+
+  const projectTotalPiles = projectTotalFromProps ?? projectTotalFromSettings
 
   // Tüm makinelerin toplam değerlerini hesapla
   const totalProduction = productionSummary.reduce((sum, m) => sum + (parseFloat(m.totalProduction) || 0), 0)
@@ -54,8 +60,8 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
   const totalPreBorehole = productionSummary.reduce((sum, m) => sum + (parseInt(m.preBorehole) || 0), 0)
   const dailyPiles = productionSummary.reduce((sum, m) => sum + (parseInt(m.concretePoured) || 0), 0)
 
-  // Kalan kazık sayısı
-  const remainingPiles = projectTotalPiles - (previousDayRemaining + dailyPiles)
+  // Kalan kazık sayısı: proje toplam - (bugüne kadar yapılan toplam + bugün yapılan)
+  const remainingPiles = projectTotalPiles - (totalCompletedBeforeToday + dailyPiles)
 
   const addPile = () => {
     const newPileNumber = Math.max(...data.map((p) => p.pileNumber), 0) + 1
@@ -104,25 +110,25 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
         {/* Toplam Değerler */}
         <Box sx={{ display: "flex", gap: 3, flexWrap: "wrap", mb: 3 }}>
           <TextField
-            label="Toplam Kazık Sayısı"
+            label="Projedeki toplam kazık sayısı (Ad.)"
             value={projectTotalPiles}
             InputProps={{ readOnly: true }}
             sx={{ minWidth: 200, backgroundColor: "#fffde7" }}
           />
           <TextField
-            label="Toplam İmalat (m)"
+            label="Kazık İmalatı (m)"
             value={totalProduction.toFixed(2)}
             InputProps={{ readOnly: true }}
             sx={{ minWidth: 200, backgroundColor: "#fffde7" }}
           />
           <TextField
-            label="Günlük Yapılan Kazık Sayısı"
+            label="O gün yapılan kazık sayısı (Ad.)"
             value={dailyPiles}
             InputProps={{ readOnly: true }}
             sx={{ minWidth: 200, backgroundColor: "#fffde7" }}
           />
           <TextField
-            label="Kalan Kazık Sayısı"
+            label="Kalan kazık sayısı (Ad.)"
             value={remainingPiles}
             InputProps={{ readOnly: true }}
             sx={{ minWidth: 200, backgroundColor: "#fffde7" }}
@@ -148,7 +154,7 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
                     Makine
                   </TableCell>
                   <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                    İmalat (m)
+                    Kazık İmalatı (m)
                   </TableCell>
                   <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
                     Boş Foraj

@@ -133,13 +133,13 @@ export default function FuelStep({ data, onChange, selectedMachine, additionalMa
                 DEVİR
               </TableCell>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "15%" }}>
-                GELEN
+                Gelen (lt)
               </TableCell>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "15%" }}>
-                KALAN
+                Kalan (lt)
               </TableCell>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "15%" }}>
-                KULLANILAN
+                Kullanılan (lt)
               </TableCell>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "10%" }}>
                 İŞLEM

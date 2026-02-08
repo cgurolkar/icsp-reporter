@@ -32,7 +32,7 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid site id" }, { status: 400 })
     }
     const body = await request.json()
-    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer } = body
+    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone } = body
     const site = await updateSite(siteId, {
       ...(name !== undefined && { name }),
       ...(code !== undefined && { code }),
@@ -44,6 +44,9 @@ export async function PUT(
       ...(country !== undefined && { country: country != null ? String(country).trim() || null : undefined }),
       ...(authorizedPerson !== undefined && { authorizedPerson: authorizedPerson != null ? String(authorizedPerson).trim() || null : undefined }),
       ...(employer !== undefined && { employer: employer != null ? String(employer).trim() || null : undefined }),
+      ...(projectStartDate !== undefined && { projectStartDate: projectStartDate != null ? String(projectStartDate).trim() || null : undefined }),
+      ...(isOngoing !== undefined && { isOngoing: isOngoing === true }),
+      ...(initialPilesDone !== undefined && { initialPilesDone: initialPilesDone != null ? (typeof initialPilesDone === "number" ? initialPilesDone : parseInt(String(initialPilesDone), 10) || null) : null }),
     })
     if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
     return NextResponse.json(site)

@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { saveWorkReport, initializeDatabase, getSiteReportEmails, getSiteById } from "@/lib/database"
+import fs from "fs"
+import path from "path"
+import { saveWorkReport, initializeDatabase, getSiteReportEmails, getSiteById, getLastReportRemainingBySite } from "@/lib/database"
 import { isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 
 export async function POST(request: NextRequest) {
@@ -31,15 +33,35 @@ export async function POST(request: NextRequest) {
     // Save report to PostgreSQL
     const currentMachine = basicInfoMachines[currentIndex]
     const currentProductionSummary = productionSummary[currentIndex]
-    
+    // Yapılan kazık sayısı: Beton Dökülen (concretePoured) = o gün yapılan; tüm makineler toplamı (kümülatif mantık)
+    const concretePouredSum = productionSummary.reduce((s: number, m: { concretePoured?: string }) => s + (parseInt(m?.concretePoured ?? "", 10) || 0), 0)
+    const dailyPileForDb = currentProductionSummary?.dailyPileCount?.trim() || (concretePouredSum ? String(concretePouredSum) : "")
+    const totalPileForDb = currentProductionSummary?.totalPileCount?.trim() || dailyPileForDb
+
     const rawSiteId = formData.basicInfo?.siteId
     const siteId = rawSiteId == null || rawSiteId === "" ? null : Number(rawSiteId)
     const siteIdForDb = siteId != null && !Number.isNaN(siteId) ? siteId : null
-    // Proje adı: şantiye seçiliyse veritabanındaki şantiye adını kullan (tutarlı görünsün)
     let projectName = (formData.basicInfo?.project ?? "").trim()
+    let site: Awaited<ReturnType<typeof getSiteById>> = null
     if (siteIdForDb) {
-      const site = await getSiteById(siteIdForDb)
+      site = await getSiteById(siteIdForDb)
       if (site?.name) projectName = site.name
+    }
+    // Kalan kazık: Yeni proje = 0 başlangıç; Devam eden = rapor başlangıcında girilen yapılan düşülür. Kümülatif = önceki yapılan + bugün
+    let remainingPilesForDb = currentProductionSummary?.remainingPiles ?? ""
+    if (siteIdForDb && site) {
+      const totalPiles = site.total_piles != null ? Number(site.total_piles) : null
+      const last = await getLastReportRemainingBySite(siteIdForDb)
+      let cumulativeDoneBeforeToday = 0
+      if (last?.remainingPiles != null && totalPiles != null) {
+        cumulativeDoneBeforeToday = totalPiles - (parseInt(String(last.remainingPiles), 10) || 0)
+      } else if (site.is_ongoing && site.initial_piles_done != null) {
+        cumulativeDoneBeforeToday = Number(site.initial_piles_done)
+      }
+      const todayPiles = concretePouredSum || 0
+      if (totalPiles != null) {
+        remainingPilesForDb = String(Math.max(0, totalPiles - cumulativeDoneBeforeToday - todayPiles))
+      }
     }
     const reportId = await saveWorkReport({
       date: formData.basicInfo.date,
@@ -53,10 +75,10 @@ export async function POST(request: NextRequest) {
       drilledPile: currentMachine?.drilledPile || "",
       concretePile: currentMachine?.concretePile || "",
       totalProductionSummary: currentProductionSummary?.totalProduction || "",
-      totalPileCount: currentProductionSummary?.totalPileCount || "",
-      dailyPileCount: currentProductionSummary?.dailyPileCount || "",
+      totalPileCount: totalPileForDb || currentProductionSummary?.totalPileCount || "",
+      dailyPileCount: dailyPileForDb || currentProductionSummary?.dailyPileCount || "",
       totalCompletedPiles: currentProductionSummary?.totalCompletedPiles || "",
-      remainingPiles: currentProductionSummary?.remainingPiles || "",
+      remainingPiles: remainingPilesForDb,
       steelLoweredPiles: currentProductionSummary?.steelLoweredPiles || "",
       concretePoured: currentProductionSummary?.concretePoured || "",
       engineerCount: formData.personnel.engineer,
@@ -73,7 +95,13 @@ export async function POST(request: NextRequest) {
       carCount: formData.vehicles.car,
       serviceCount: formData.vehicles.service,
       vehiclesTotal: formData.vehicles.total,
-      dailyFuelUsage: formData.fuel.dailyUsage,
+      dailyFuelUsage: (() => {
+        const note = formData.fuel.dailyUsage?.trim()
+        const machinesSum = (formData.fuel.machines || []).reduce((s: number, m: { used?: string }) => s + (parseFloat(m?.used ?? "") || 0), 0)
+        if (note) return note
+        if (machinesSum > 0) return String(machinesSum)
+        return ""
+      })(),
       expenses: formData.expenses,
       pileDetails: formData.pileDetails,
       notes: formData.notes,
@@ -88,11 +116,29 @@ export async function POST(request: NextRequest) {
       ? { emails: siteEmails, users: [], customFields: [] }
       : await getDefaultEmailSettings()
 
-    // Rapor HTML içeriği (e-posta gövdesi / yazdırma için)
-    const mainReportContent = generatePDFMainReport(formData)
+    // Rapor HTML içeriği (e-posta gövdesi / yazdırma için) — hesaplanan kalan/günlük kazık kullanılsın
+    const mainReportContent = generatePDFMainReport(formData, {
+      computedRemainingPiles: remainingPilesForDb,
+      computedDailyPileCount: dailyPileForDb,
+      concretePouredSum,
+    })
     const expensesPageContent = generatePDFExpensesPage(formData)
     const fullHtml = mainReportContent + expensesPageContent
     const subject = `Günlük Çalışma Raporu - ${formData.basicInfo.date} - ${formData.basicInfo.project}`
+
+    // Şantiye proje koduyla klasöre PDF/HTML kaydet (public/reports/{siteCode}/report-{date}-{id}.html)
+    try {
+      const siteCode = (site?.code && String(site.code).trim()) || "genel"
+      const safeCode = siteCode.replace(/[^a-zA-Z0-9_-]/g, "_")
+      const dateStr = (formData.basicInfo.date || "").slice(0, 10).replace(/-/g, "-")
+      const dir = path.join(process.cwd(), "public", "reports", safeCode)
+      fs.mkdirSync(dir, { recursive: true })
+      const filename = `report-${dateStr}-${reportId}.html`
+      const filePath = path.join(dir, filename)
+      fs.writeFileSync(filePath, fullHtml, "utf-8")
+    } catch (saveErr) {
+      console.warn("Report HTML save to disk failed:", saveErr)
+    }
 
     let emailSent = false
     let emailError: string | undefined
@@ -146,7 +192,10 @@ async function getDefaultEmailSettings() {
   }
 }
 
-function generatePDFMainReport(formData: any) {
+function generatePDFMainReport(
+  formData: any,
+  opts?: { computedRemainingPiles?: string; computedDailyPileCount?: string; concretePouredSum?: number }
+) {
   const machines = formData.basicInfo?.machines ?? []
   const additionalMachines = formData.machineSelection?.additionalMachines ?? []
   const fuelMachines = formData.fuel?.machines ?? []
@@ -155,23 +204,31 @@ function generatePDFMainReport(formData: any) {
   const currentMachine = machines[idx]
   const currentProductionSummary = Array.isArray(formData.productionSummary) ? formData.productionSummary[idx] : null
 
-  // Toplamlar için dizi kontrolü ve toplama
-  const isArray = Array.isArray(formData.productionSummary);
+  const isArray = Array.isArray(formData.productionSummary)
   const totalProduction = isArray
     ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseFloat(m.totalProduction) || 0), 0)
-    : formData.productionSummary.totalProduction;
-  const totalPileCount = isArray
+    : formData.productionSummary.totalProduction
+  const concreteSum = opts?.concretePouredSum ?? (isArray
     ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.concretePoured) || 0), 0)
-    : formData.productionSummary.totalPileCount;
-  const dailyPileCount = isArray
+    : parseInt(formData.productionSummary?.concretePoured ?? "", 10) || 0)
+  const totalPileCountFromForm = isArray
+    ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.totalPileCount) || 0), 0)
+    : parseInt(formData.productionSummary?.totalPileCount ?? "", 10) || 0
+  const totalPileCount = totalPileCountFromForm > 0 ? totalPileCountFromForm : concreteSum
+  const dailyPileCountFromForm = isArray
     ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.dailyPileCount) || 0), 0)
-    : formData.productionSummary.dailyPileCount;
+    : parseInt(formData.productionSummary?.dailyPileCount ?? "", 10) || 0
+  const dailyPileCount = opts?.computedDailyPileCount?.trim()
+    ? opts.computedDailyPileCount
+    : (dailyPileCountFromForm > 0 ? String(dailyPileCountFromForm) : (concreteSum > 0 ? String(concreteSum) : ""))
   const totalCompletedPiles = isArray
     ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.totalCompletedPiles) || 0), 0)
-    : formData.productionSummary.totalCompletedPiles;
-  const remainingPiles = isArray
-    ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.remainingPiles) || 0), 0)
-    : formData.productionSummary.remainingPiles;
+    : formData.productionSummary.totalCompletedPiles
+  const remainingPiles = (opts?.computedRemainingPiles != null && opts.computedRemainingPiles !== "")
+    ? opts.computedRemainingPiles
+    : (isArray
+        ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.remainingPiles) || 0), 0)
+        : formData.productionSummary.remainingPiles)
   const steelLoweredPiles = isArray
     ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.steelLoweredPiles) || 0), 0)
     : formData.productionSummary.steelLoweredPiles;

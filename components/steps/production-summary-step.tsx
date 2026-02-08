@@ -58,6 +58,20 @@ export default function ProductionSummaryStep({
   const currentMachine = data[currentMachineIndex]
   const allMachines = [data[0]?.machineName, ...additionalMachines.map(m => m.name)].filter(Boolean)
 
+  // O gün yapılan kazık sayısı = toplam Beton Dökülen (tek kaynak; ilk makineye yazılır)
+  const dailyPileCount = data.length > 0 ? String((parseInt(data[0].concretePoured, 10) || 0) + data.slice(1).reduce((s, m) => s + (parseInt(m.concretePoured, 10) || 0), 0)) : ""
+
+  const handleDailyPileCountChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value
+    const num = value.trim() === "" ? "" : value
+    const updatedData = data.map((m, i) => ({
+      ...m,
+      concretePoured: i === 0 ? num : m.concretePoured,
+      dailyPileCount: i === 0 ? num : (m as any).dailyPileCount ?? "",
+    }))
+    onChange(updatedData)
+  }
+
   const handleChange = (field: keyof MachineProductionSummary) => (event: React.ChangeEvent<HTMLInputElement>) => {
     const updatedData = [...data]
     updatedData[currentMachineIndex] = {
@@ -130,11 +144,28 @@ export default function ProductionSummaryStep({
       )}
       
       <Paper sx={{ p: 3, background: "linear-gradient(135deg, #e1f5fe 0%, #b3e5fc 100%)", border: "1px solid #03a9f4" }}>
+        {/* O gün yapılan kazık sayısı = Beton Dökülen Kazık (Ad.) ile aynı */}
+        <Box sx={{ mb: 3 }}>
+          <TextField
+            fullWidth
+            label="O gün yapılan kazık sayısı (Ad.)"
+            value={dailyPileCount}
+            onChange={handleDailyPileCountChange}
+            helperText="Bu değer aynı zamanda Beton Dökülen Kazık (Ad.) olarak kullanılır."
+            sx={{
+              maxWidth: 320,
+              "& .MuiOutlinedInput-root": {
+                backgroundColor: "white",
+                "&:hover fieldset": { borderColor: "info.main" },
+              },
+            }}
+          />
+        </Box>
         {/* Form Fields */}
         <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 3 }}>
           <TextField
             fullWidth
-            label="İmalat Miktarı (m)"
+            label="Kazık İmalatı (m)"
             value={currentMachine.totalProduction}
             onChange={handleChange("totalProduction")}
             sx={{
@@ -170,9 +201,10 @@ export default function ProductionSummaryStep({
           />
           <TextField
             fullWidth
-            label="Beton Dökülen Kazık Sayısı"
+            label="Beton Dökülen Kazık (Ad.)"
             value={currentMachine.concretePoured}
             onChange={handleChange("concretePoured")}
+            placeholder={dailyPileCount || "O gün yapılan ile aynı"}
             sx={{
               "& .MuiOutlinedInput-root": {
                 backgroundColor: "white",
@@ -191,7 +223,7 @@ export default function ProductionSummaryStep({
             <TableBody>
               <TableRow>
                 <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-                  İmalat Miktarı (m)
+                  Kazık İmalatı (m)
                 </TableCell>
                 <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
                   {currentMachine.totalProduction}
@@ -215,7 +247,7 @@ export default function ProductionSummaryStep({
               </TableRow>
               <TableRow>
                 <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-                  Beton Dökülen Kazık Sayısı
+                  Beton Dökülen Kazık Sayısı (Ad.)
                 </TableCell>
                 <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
                   {currentMachine.concretePoured}
@@ -235,7 +267,7 @@ export default function ProductionSummaryStep({
               <TableBody>
                 <TableRow>
                   <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#c8e6c9" }}>
-                    Toplam İmalat Miktarı (m)
+                    Toplam Kazık İmalatı (m)
                   </TableCell>
                   <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
                     {data.reduce((sum, m) => sum + (parseFloat(m.totalProduction) || 0), 0).toFixed(2)}
@@ -259,7 +291,7 @@ export default function ProductionSummaryStep({
                 </TableRow>
                 <TableRow>
                   <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#c8e6c9" }}>
-                    Toplam Beton Dökülen Kazık Sayısı
+                    Toplam Beton Dökülen Kazık Sayısı(Ad.)
                   </TableCell>
                   <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
                     {data.reduce((sum, m) => sum + (parseInt(m.concretePoured) || 0), 0)}

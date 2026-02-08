@@ -15,10 +15,18 @@ export async function GET(
     const site = await getSiteById(siteId)
     if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
     const last = await getLastReportRemainingBySite(siteId)
+    const totalPiles = site.total_piles ?? null
+    let remainingPiles = last?.remainingPiles ?? null
+    if (remainingPiles == null && totalPiles != null && site.is_ongoing && site.initial_piles_done != null) {
+      remainingPiles = String(Number(totalPiles) - Number(site.initial_piles_done))
+    }
     return NextResponse.json({
-      totalPiles: site.total_piles ?? null,
+      totalPiles,
       lastDate: last?.date ?? null,
-      remainingPiles: last?.remainingPiles ?? null,
+      remainingPiles,
+      projectStartDate: site.project_start_date ?? null,
+      isOngoing: site.is_ongoing === true,
+      initialPilesDone: site.initial_piles_done ?? null,
     })
   } catch (error) {
     console.error("Error fetching last report:", error)

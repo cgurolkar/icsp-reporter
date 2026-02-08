@@ -35,8 +35,10 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  FormControlLabel,
+  Checkbox,
 } from "@mui/material"
-import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh } from "@mui/icons-material"
+import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility } from "@mui/icons-material"
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts"
 import { ThemeProvider } from "@mui/material/styles"
 import CssBaseline from "@mui/material/CssBaseline"
@@ -88,7 +90,7 @@ function AdminPanel() {
   // Şantiye yönetimi
   const [dbSites, setDbSites] = useState<{ id: number; name: string; code: string; email_list: string[]; report_count?: number; total_piles?: number | null; region?: string | null; city?: string | null; country?: string | null; authorized_person?: string | null; employer?: string | null }[]>([])
   const [siteDialogOpen, setSiteDialogOpen] = useState(false)
-  const [siteDialogData, setSiteDialogData] = useState<{ id?: number; name: string; code: string; emailList: string[]; totalPiles: string; region: string; city: string; country: string; authorizedPerson: string; employer: string }>({
+  const [siteDialogData, setSiteDialogData] = useState<{ id?: number; name: string; code: string; emailList: string[]; totalPiles: string; region: string; city: string; country: string; authorizedPerson: string; employer: string; projectStartDate: string; isOngoing: boolean; initialPilesDone: string }>({
     name: "",
     code: "",
     emailList: [],
@@ -98,6 +100,9 @@ function AdminPanel() {
     country: "",
     authorizedPerson: "",
     employer: "",
+    projectStartDate: "",
+    isOngoing: false,
+    initialPilesDone: "",
   })
 
   // Dashboard
@@ -113,6 +118,16 @@ function AdminPanel() {
   const [dashboardSiteId, setDashboardSiteId] = useState<string>("")
   const [dashboardChartMetric, setDashboardChartMetric] = useState<"piles" | "fuel" | "production" | "expenses">("piles")
 
+  // Raporlar sekmesi
+  const [reportList, setReportList] = useState<any[]>([])
+  const [reportListLoading, setReportListLoading] = useState(false)
+  const [reportFilterStart, setReportFilterStart] = useState("")
+  const [reportFilterEnd, setReportFilterEnd] = useState("")
+  const [reportFilterSiteId, setReportFilterSiteId] = useState<string>("")
+  const [reportEditDialog, setReportEditDialog] = useState<{ open: boolean; report: any }>({ open: false, report: null })
+  const [reportEditForm, setReportEditForm] = useState<{ date: string; project: string; notes: string; totalProductionSummary: string; dailyPileCount: string; remainingPiles: string; dailyFuelUsage: string; personnelTotal: string }>({ date: "", project: "", notes: "", totalProductionSummary: "", dailyPileCount: "", remainingPiles: "", dailyFuelUsage: "", personnelTotal: "" })
+  const [reportDeleteId, setReportDeleteId] = useState<number | null>(null)
+
   const { t } = useLanguage()
 
   useEffect(() => {
@@ -126,8 +141,33 @@ function AdminPanel() {
   }, [dashboardSiteId])
 
   useEffect(() => {
-    if (tabValue === 5) loadSites()
+    if (tabValue === 3) loadSites()
   }, [tabValue])
+  useEffect(() => {
+    if (tabValue === 4) loadReportList()
+  }, [tabValue])
+
+  const loadReportList = async () => {
+    setReportListLoading(true)
+    try {
+      const params = new URLSearchParams({ raw: "1", limit: "50" })
+      if (reportFilterStart) params.set("startDate", reportFilterStart)
+      if (reportFilterEnd) params.set("endDate", reportFilterEnd)
+      if (reportFilterSiteId) params.set("siteId", reportFilterSiteId)
+      const res = await fetch(`/api/reports?${params}`)
+      if (res.ok) {
+        const data = await res.json()
+        setReportList(Array.isArray(data) ? data : [])
+      } else {
+        setReportList([])
+      }
+    } catch (e) {
+      console.error("Report list load error:", e)
+      setReportList([])
+    } finally {
+      setReportListLoading(false)
+    }
+  }
 
   const loadDashboard = async () => {
     setDashboardLoading(true)
@@ -436,16 +476,15 @@ function AdminPanel() {
             onChange={(_, newValue) => setTabValue(newValue)}
             sx={{
               "& .MuiTab-root": { color: "rgba(255,255,255,0.7)" },
-              "& .Mui-selected": { color: "#fff", fontWeight: 600 },
+              "& .Mui-selected": { color: "#fff", fontWeight: 600, backgroundColor: "transparent" },
               "& .MuiTabs-indicator": { backgroundColor: "#4caf50" },
             }}
           >
             <Tab label="Dashboard" icon={<Assessment />} iconPosition="start" />
             <Tab label={t("email_settings")} />
             <Tab label={t("user_management")} />
-            <Tab label={t("custom_fields")} />
-            <Tab label="Proje Ayarları" />
             <Tab label="Şantiyeler" />
+            <Tab label="Raporlar" />
           </Tabs>
         </Box>
 
@@ -551,10 +590,10 @@ function AdminPanel() {
                     onChange={(e) => setDashboardChartMetric(e.target.value as "piles" | "fuel" | "production" | "expenses")}
                     sx={{ background: "#fff" }}
                   >
-                    <MenuItem value="piles">Kazık</MenuItem>
-                    <MenuItem value="fuel">Mazot</MenuItem>
-                    <MenuItem value="production">İmalat</MenuItem>
-                    <MenuItem value="expenses">Harcama</MenuItem>
+                    <MenuItem value="piles">Kazık Sayısı (Ad.)</MenuItem>
+                    <MenuItem value="fuel">Mazot Miktarı (lt)</MenuItem>
+                    <MenuItem value="production">Kazık İmalatı (m)</MenuItem>
+                    <MenuItem value="expenses">Harcama (IQD)</MenuItem>
                   </Select>
                 </FormControl>
               </Box>
@@ -564,7 +603,7 @@ function AdminPanel() {
                     <Grid size={{ xs: 12 }}>
                       <Paper sx={{ p: 2, background: "#fff", border: "1px solid var(--icsp-nav-border)", height: "100%" }}>
                         <Typography variant="subtitle2" sx={{ color: "var(--icsp-lacivert)", mb: 2, fontWeight: 600 }}>
-                          Günlük — {dashboardChartMetric === "piles" ? "Kazık" : dashboardChartMetric === "fuel" ? "Mazot" : dashboardChartMetric === "production" ? "İmalat" : "Harcama"}
+                          Günlük — {dashboardChartMetric === "piles" ? "Kazık Sayısı (Ad.)" : dashboardChartMetric === "fuel" ? "Mazot Miktarı (lt)" : dashboardChartMetric === "production" ? "Kazık İmalatı (m)" : "Harcama (IQD)"}
                         </Typography>
                         <ResponsiveContainer width="100%" height={280}>
                           <BarChart data={dashboardStats?.daily ?? []} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -576,7 +615,7 @@ function AdminPanel() {
                             <Bar
                               dataKey={dashboardChartMetric}
                               fill={dashboardChartMetric === "piles" ? "var(--icsp-lacivert)" : dashboardChartMetric === "fuel" ? "var(--icsp-kirmizi)" : dashboardChartMetric === "production" ? "#2e7d32" : "#ed6c02"}
-                              name={dashboardChartMetric === "piles" ? "Kazık" : dashboardChartMetric === "fuel" ? "Mazot" : dashboardChartMetric === "production" ? "İmalat" : "Harcamalar"}
+                              name={dashboardChartMetric === "piles" ? "Kazık Sayısı (Ad.)" : dashboardChartMetric === "fuel" ? "Mazot Miktarı (lt)" : dashboardChartMetric === "production" ? "Kazık İmalatı (m)" : "Harcama (IQD)"}
                               radius={[4, 4, 0, 0]}
                             />
                           </BarChart>
@@ -588,7 +627,7 @@ function AdminPanel() {
                     <Grid container spacing={2} sx={{ mb: 3 }}>
                       <Grid size={{ xs: 12, md: 6 }}>
                         <Paper sx={{ p: 2, background: "#fff", border: "1px solid var(--icsp-nav-border)", height: "100%" }}>
-                          <Typography variant="subtitle2" sx={{ color: "var(--icsp-lacivert)", mb: 2, fontWeight: 600 }}>Aylık Kazık / Üretim</Typography>
+                          <Typography variant="subtitle2" sx={{ color: "var(--icsp-lacivert)", mb: 2, fontWeight: 600 }}>Aylık Kazık Sayısı (Ad.) / Kazık İmalatı (m)</Typography>
                           <ResponsiveContainer width="100%" height={220}>
                             <BarChart data={dashboardStats?.monthly ?? []} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
@@ -596,14 +635,14 @@ function AdminPanel() {
                               <YAxis tick={{ fill: "#616161", fontSize: 10 }} />
                               <Tooltip contentStyle={{ background: "#fff", border: "1px solid var(--icsp-nav-border)" }} />
                               <Legend />
-                              <Bar dataKey="piles" fill="var(--icsp-lacivert)" name="Kazık" radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="piles" fill="var(--icsp-lacivert)" name="Kazık Sayısı (Ad.)" radius={[4, 4, 0, 0]} />
                             </BarChart>
                           </ResponsiveContainer>
                         </Paper>
                       </Grid>
                       <Grid size={{ xs: 12, md: 6 }}>
                         <Paper sx={{ p: 2, background: "#fff", border: "1px solid var(--icsp-nav-border)", height: "100%" }}>
-                          <Typography variant="subtitle2" sx={{ color: "var(--icsp-lacivert)", mb: 2, fontWeight: 600 }}>Aylık Mazot & Harcamalar</Typography>
+                          <Typography variant="subtitle2" sx={{ color: "var(--icsp-lacivert)", mb: 2, fontWeight: 600 }}>Aylık Mazot Miktarı (lt) & Harcama (IQD)</Typography>
                           <ResponsiveContainer width="100%" height={220}>
                             <BarChart data={dashboardStats?.monthly ?? []} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
@@ -611,8 +650,8 @@ function AdminPanel() {
                               <YAxis tick={{ fill: "#616161", fontSize: 10 }} />
                               <Tooltip contentStyle={{ background: "#fff", border: "1px solid var(--icsp-nav-border)" }} />
                               <Legend />
-                              <Bar dataKey="fuel" fill="var(--icsp-kirmizi)" name="Mazot" radius={[4, 4, 0, 0]} />
-                              <Bar dataKey="expenses" fill="#ed6c02" name="Harcamalar" radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="fuel" fill="var(--icsp-kirmizi)" name="Mazot Miktarı (lt)" radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="expenses" fill="#ed6c02" name="Harcama (IQD)" radius={[4, 4, 0, 0]} />
                             </BarChart>
                           </ResponsiveContainer>
                         </Paper>
@@ -632,8 +671,8 @@ function AdminPanel() {
                       <XAxis dataKey="machineName" tick={{ fill: "#616161", fontSize: 11 }} />
                       <YAxis tick={{ fill: "#616161", fontSize: 11 }} />
                       <Tooltip contentStyle={{ background: "#fff", border: "1px solid var(--icsp-nav-border)" }} />
-                      <Bar dataKey="totalProduction" fill="var(--icsp-lacivert)" name="İmalat (m)" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="totalPiles" fill="var(--icsp-kirmizi)" name="Yapılan kazık" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="totalProduction" fill="var(--icsp-lacivert)" name="Kazık İmalatı (m)" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="totalPiles" fill="var(--icsp-kirmizi)" name="Kazık Sayısı (Ad.)" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </Paper>
@@ -649,15 +688,17 @@ function AdminPanel() {
                       <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Proje</TableCell>
                       <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Şantiye</TableCell>
                       <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Makine</TableCell>
-                      <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>İmalat (m)</TableCell>
-                      <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Yapılan kazık</TableCell>
+                      <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Kazık İmalatı (m)</TableCell>
+                      <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Kazık Sayısı (Ad.)</TableCell>
                       <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Beton dökülen</TableCell>
+                      <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Kalan kazık (Ad.)</TableCell>
+                      <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Mazot (lt) / not</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {recentReports.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} sx={{ color: "#616161", borderColor: "var(--icsp-nav-border)" }}>
+                        <TableCell colSpan={9} sx={{ color: "#616161", borderColor: "var(--icsp-nav-border)" }}>
                           Henüz rapor yok
                         </TableCell>
                       </TableRow>
@@ -669,8 +710,10 @@ function AdminPanel() {
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.site_name || "—"}</TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.selected_machine_name || "—"}</TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.total_production_summary ?? r.total_production ?? "—"}</TableCell>
-                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.daily_pile_count ?? r.total_pile_count ?? "—"}</TableCell>
+                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.daily_pile_count ?? r.total_pile_count ?? r.concrete_poured ?? "—"}</TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.concrete_poured ?? "—"}</TableCell>
+                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.remaining_piles ?? "—"}</TableCell>
+                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.daily_fuel_usage ?? "—"}</TableCell>
                         </TableRow>
                       ))
                     )}
@@ -693,10 +736,10 @@ function AdminPanel() {
               <ListItem key={index} divider>
                 <ListItemText primary={email} />
                 <ListItemSecondaryAction>
-                  <IconButton onClick={() => handleEdit("email", index, email)}>
+                  <IconButton onClick={() => handleEdit("email", index, email)} sx={{ color: "#fff" }}>
                     <Edit />
                   </IconButton>
-                  <IconButton onClick={() => handleDelete("email", index)}>
+                  <IconButton onClick={() => handleDelete("email", index)} sx={{ color: "#fff" }}>
                     <Delete />
                   </IconButton>
                 </ListItemSecondaryAction>
@@ -755,10 +798,10 @@ function AdminPanel() {
                       ))}
                     </Select>
                   </FormControl>
-                  <IconButton onClick={() => handleEdit("user", user.id, user.username)}>
+                  <IconButton onClick={() => handleEdit("user", user.id, user.username)} sx={{ color: "#fff" }}>
                     <Edit />
                   </IconButton>
-                  <IconButton onClick={() => handleDelete("user", user.id)}>
+                  <IconButton onClick={() => handleDelete("user", user.id)} sx={{ color: "#fff" }}>
                     <Delete />
                   </IconButton>
                 </ListItemSecondaryAction>
@@ -776,10 +819,10 @@ function AdminPanel() {
               <ListItem key={index} divider>
                 <ListItemText primary={user} />
                 <ListItemSecondaryAction>
-                  <IconButton onClick={() => handleEdit("user", index, user)}>
+                  <IconButton onClick={() => handleEdit("user", index, user)} sx={{ color: "#fff" }}>
                     <Edit />
                   </IconButton>
-                  <IconButton onClick={() => handleDelete("user", index)}>
+                  <IconButton onClick={() => handleDelete("user", index)} sx={{ color: "#fff" }}>
                     <Delete />
                   </IconButton>
                 </ListItemSecondaryAction>
@@ -789,80 +832,21 @@ function AdminPanel() {
         </TabPanel>
 
         <TabPanel value={tabValue} index={3}>
-          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-            <Typography variant="h6" sx={{ color: "#e6edf3" }}>{t("custom_form_fields")}</Typography>
-            <Button variant="contained" startIcon={<Add />} onClick={() => handleAdd("field")}>
-              {t("add_field")}
-            </Button>
-          </Box>
-          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mb: 2 }}>
-            {customFields.map((field, index) => (
-              <Chip
-                key={index}
-                label={field}
-                onDelete={() => handleDelete("field", index)}
-                onClick={() => handleEdit("field", index, field)}
-                sx={{ cursor: "pointer" }}
-              />
-            ))}
-          </Box>
-        </TabPanel>
-
-        <TabPanel value={tabValue} index={4}>
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="h6" gutterBottom sx={{ color: "#e6edf3" }}>
-              Proje Ayarları
-            </Typography>
-            <TextField
-              fullWidth
-              label="Toplam Kazık Sayısı"
-              type="number"
-              value={totalPiles}
-              onChange={(e) => setTotalPiles(e.target.value)}
-              helperText="Bu değer proje için sabit kalacak ve raporlarda kullanılacaktır"
-              sx={{ mb: 2 }}
-            />
-          </Box>
-        </TabPanel>
-
-        <TabPanel value={tabValue} index={5}>
           <Typography variant="subtitle2" sx={{ color: "rgba(255,255,255,0.8)", mb: 2 }}>
             Farklı şantiyeler tek veritabanında toplanır. Her şantiye için rapor e-postası alacak adresleri tanımlayın.
           </Typography>
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 1 }}>
             <Typography variant="h6" sx={{ color: "#fff", fontWeight: 600 }}>Şantiyeler</Typography>
-            <Box sx={{ display: "flex", gap: 1 }}>
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={async () => {
-                  try {
-                    const res = await fetch("/api/seed-default-site")
-                    const data = await res.json().catch(() => ({}))
-                    if (res.ok) {
-                      await loadSites()
-                      alert(data.message || "Şantiye eklendi.")
-                    } else {
-                      alert(data.error || "Eklenemedi.")
-                    }
-                  } catch (e) {
-                    alert("İstek gönderilemedi. Veritabanı bağlantısını kontrol edin.")
-                  }
-                }}
-              >
-                North Light Shaqlawa (ICSP001) ekle
-              </Button>
-              <Button
-                variant="contained"
-                startIcon={<Add />}
-                onClick={() => {
-                  setSiteDialogData({ name: "", code: "", emailList: [], totalPiles: "", region: "", city: "", country: "", authorizedPerson: "", employer: "" })
-                  setSiteDialogOpen(true)
-                }}
-              >
-                Şantiye Ekle
-              </Button>
-            </Box>
+            <Button
+              variant="contained"
+              startIcon={<Add />}
+              onClick={() => {
+                setSiteDialogData({ name: "", code: "", emailList: [], totalPiles: "", region: "", city: "", country: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "" })
+                setSiteDialogOpen(true)
+              }}
+            >
+              Şantiye Ekle
+            </Button>
           </Box>
           <List>
             {dbSites.map((site) => (
@@ -875,12 +859,13 @@ function AdminPanel() {
                         ? `E-posta: ${site.email_list.slice(0, 2).join(", ")}${site.email_list.length > 2 ? "..." : ""} · `
                         : ""}
                       <strong>Rapor sayısı: {Number(site.report_count) || 0}</strong>
-                      {site.total_piles != null ? ` · Proje toplam kazık: ${site.total_piles}` : ""}
+                      {site.total_piles != null ? ` · Proje toplam kazık sayısı (Ad.): ${site.total_piles}` : ""}
                     </>
                   }
                 />
                 <ListItemSecondaryAction>
                   <IconButton
+                sx={{ color: "#fff" }}
                 onClick={() => {
                   setSiteDialogData({
                     id: site.id,
@@ -893,6 +878,9 @@ function AdminPanel() {
                     country: site.country != null ? String(site.country) : "",
                     authorizedPerson: (site as any).authorized_person != null ? String((site as any).authorized_person) : "",
                     employer: (site as any).employer != null ? String((site as any).employer) : "",
+                    projectStartDate: (site as any).project_start_date ? String((site as any).project_start_date).slice(0, 10) : "",
+                    isOngoing: (site as any).is_ongoing === true,
+                    initialPilesDone: (site as any).initial_piles_done != null ? String((site as any).initial_piles_done) : "",
                   })
                   setSiteDialogOpen(true)
                 }}
@@ -908,6 +896,108 @@ function AdminPanel() {
               Henüz şantiye yok. Formda şantiye seçeneği çıkmaz; raporlar varsayılan e-posta listesine gider.
             </Typography>
           )}
+        </TabPanel>
+
+        <TabPanel value={tabValue} index={4}>
+          <Typography variant="h6" sx={{ color: "#fff", fontWeight: 600, mb: 2 }}>Raporlar</Typography>
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, alignItems: "center", mb: 2 }}>
+            <TextField
+              size="small"
+              type="date"
+              label="Başlangıç tarihi"
+              value={reportFilterStart}
+              onChange={(e) => setReportFilterStart(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              sx={{ background: "#fff", minWidth: 160 }}
+            />
+            <TextField
+              size="small"
+              type="date"
+              label="Bitiş tarihi"
+              value={reportFilterEnd}
+              onChange={(e) => setReportFilterEnd(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              sx={{ background: "#fff", minWidth: 160 }}
+            />
+            <FormControl size="small" sx={{ minWidth: 200, background: "#fff" }}>
+              <InputLabel>Şantiye</InputLabel>
+              <Select
+                value={reportFilterSiteId}
+                label="Şantiye"
+                onChange={(e) => setReportFilterSiteId(e.target.value)}
+              >
+                <MenuItem value="">Tümü</MenuItem>
+                {dbSites.map((s: any) => (
+                  <MenuItem key={s.id} value={String(s.id)}>{s.name} ({s.code})</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Button variant="contained" onClick={loadReportList} disabled={reportListLoading}>
+              {reportListLoading ? "Yükleniyor..." : "Filtrele / Listele"}
+            </Button>
+          </Box>
+          <Paper sx={{ background: "#fff", border: "1px solid var(--icsp-nav-border)", overflow: "auto" }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 600 }}>Tarih</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Proje</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Şantiye</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Makine</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Kazık Sayısı</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Kalan</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>İşlemler</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {reportListLoading ? (
+                  <TableRow><TableCell colSpan={7}>Yükleniyor...</TableCell></TableRow>
+                ) : reportList.length === 0 ? (
+                  <TableRow><TableCell colSpan={7}>Rapor bulunamadı.</TableCell></TableRow>
+                ) : (
+                  reportList.map((r: any) => (
+                    <TableRow key={r.id}>
+                      <TableCell>{typeof r.date === "string" ? r.date.slice(0, 10) : r.date}</TableCell>
+                      <TableCell>{r.project ?? "—"}</TableCell>
+                      <TableCell>{r.site_name ?? "—"}</TableCell>
+                      <TableCell>{r.selected_machine_name ?? "—"}</TableCell>
+                      <TableCell>{r.daily_pile_count ?? r.total_pile_count ?? r.concrete_poured ?? "—"}</TableCell>
+                      <TableCell>{r.remaining_piles ?? "—"}</TableCell>
+                      <TableCell>
+                        <IconButton size="small" onClick={() => window.open(`/api/reports/${r.id}/preview`, "_blank")} title="Görüntüle" sx={{ color: "#1976d2" }}>
+                          <Visibility />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            setReportEditDialog({ open: true, report: r })
+                            const d = r.date && String(r.date).slice(0, 10)
+                            setReportEditForm({
+                              date: d || "",
+                              project: r.project || "",
+                              notes: r.notes || "",
+                              totalProductionSummary: r.total_production_summary || "",
+                              dailyPileCount: r.daily_pile_count || "",
+                              remainingPiles: r.remaining_piles || "",
+                              dailyFuelUsage: r.daily_fuel_usage || "",
+                              personnelTotal: r.personnel_total != null ? String(r.personnel_total) : "",
+                            })
+                          }}
+                          title="Düzenle"
+                          sx={{ color: "#ed6c02" }}
+                        >
+                          <Edit />
+                        </IconButton>
+                        <IconButton size="small" onClick={() => setReportDeleteId(r.id)} title="Sil" sx={{ color: "#d32f2f" }}>
+                          <Delete />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </Paper>
         </TabPanel>
 
         <Box sx={{ mt: 4, display: "flex", justifyContent: "center" }}>
@@ -978,12 +1068,44 @@ function AdminPanel() {
               margin="dense"
               fullWidth
               type="number"
-              label="Projedeki toplam kazık sayısı"
+              label="Projedeki toplam kazık sayısı (Ad.)"
               value={siteDialogData.totalPiles}
               onChange={(e) => setSiteDialogData((prev) => ({ ...prev, totalPiles: e.target.value }))}
               placeholder="Örn: 150"
               inputProps={{ min: 0 }}
             />
+            <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }} color="text.secondary">Proje durumu</Typography>
+            <TextField
+              margin="dense"
+              fullWidth
+              type="date"
+              label="İşin başlama tarihi"
+              value={siteDialogData.projectStartDate}
+              onChange={(e) => setSiteDialogData((prev) => ({ ...prev, projectStartDate: e.target.value }))}
+              InputLabelProps={{ shrink: true }}
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={siteDialogData.isOngoing}
+                  onChange={(e) => setSiteDialogData((prev) => ({ ...prev, isOngoing: e.target.checked }))}
+                />
+              }
+              label="Devam Eden (rapor başlamadan önce yapılan kazık sayısı girilecek)"
+            />
+            {siteDialogData.isOngoing && (
+              <TextField
+                margin="dense"
+                fullWidth
+                type="number"
+                label="Raporların başladığı gün yapılan toplam kazık sayısı (Ad.)"
+                value={siteDialogData.initialPilesDone}
+                onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialPilesDone: e.target.value }))}
+                placeholder="Rapor öncesi kümülatif yapılan"
+                inputProps={{ min: 0 }}
+                helperText="Kalan kazık = Proje toplamı − bu değer − günlük yapılanlar"
+              />
+            )}
             <Typography variant="body2" sx={{ mt: 2, mb: 1 }} color="text.secondary">
               Rapor PDF’inin gideceği e-posta adresleri (her satıra bir adres)
             </Typography>
@@ -1022,6 +1144,9 @@ function AdminPanel() {
                   country: siteDialogData.country.trim() || null,
                   authorizedPerson: siteDialogData.authorizedPerson.trim() || null,
                   employer: siteDialogData.employer.trim() || null,
+                  projectStartDate: siteDialogData.projectStartDate.trim() || null,
+                  isOngoing: siteDialogData.isOngoing,
+                  initialPilesDone: siteDialogData.isOngoing && siteDialogData.initialPilesDone.trim() ? parseInt(siteDialogData.initialPilesDone, 10) || null : null,
                 }
                 try {
                     if (siteDialogData.id) {
@@ -1060,6 +1185,91 @@ function AdminPanel() {
               }}
             >
               {t("save")}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog open={reportEditDialog.open} onClose={() => setReportEditDialog({ open: false, report: null })} maxWidth="sm" fullWidth>
+          <DialogTitle>Rapor düzenle</DialogTitle>
+          <DialogContent>
+            {reportEditDialog.report && (
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 1, pt: 1 }}>
+                <TextField size="small" label="Tarih" type="date" value={reportEditForm.date} onChange={(e) => setReportEditForm((p) => ({ ...p, date: e.target.value }))} InputLabelProps={{ shrink: true }} fullWidth />
+                <TextField size="small" label="Proje" value={reportEditForm.project} onChange={(e) => setReportEditForm((p) => ({ ...p, project: e.target.value }))} fullWidth />
+                <TextField size="small" label="Kazık İmalatı (m)" value={reportEditForm.totalProductionSummary} onChange={(e) => setReportEditForm((p) => ({ ...p, totalProductionSummary: e.target.value }))} fullWidth />
+                <TextField size="small" label="Kazık Sayısı (Ad.)" value={reportEditForm.dailyPileCount} onChange={(e) => setReportEditForm((p) => ({ ...p, dailyPileCount: e.target.value }))} fullWidth />
+                <TextField size="small" label="Kalan kazık (Ad.)" value={reportEditForm.remainingPiles} onChange={(e) => setReportEditForm((p) => ({ ...p, remainingPiles: e.target.value }))} fullWidth />
+                <TextField size="small" label="Mazot (lt) / not" value={reportEditForm.dailyFuelUsage} onChange={(e) => setReportEditForm((p) => ({ ...p, dailyFuelUsage: e.target.value }))} fullWidth />
+                <TextField size="small" label="Personel toplam" value={reportEditForm.personnelTotal} onChange={(e) => setReportEditForm((p) => ({ ...p, personnelTotal: e.target.value }))} fullWidth />
+                <TextField size="small" label="Notlar" multiline rows={3} value={reportEditForm.notes} onChange={(e) => setReportEditForm((p) => ({ ...p, notes: e.target.value }))} fullWidth />
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setReportEditDialog({ open: false, report: null })}>İptal</Button>
+            <Button
+              variant="contained"
+              onClick={async () => {
+                if (!reportEditDialog.report?.id) return
+                try {
+                  const res = await fetch(`/api/reports/${reportEditDialog.report.id}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      date: reportEditForm.date || undefined,
+                      project: reportEditForm.project || undefined,
+                      totalProductionSummary: reportEditForm.totalProductionSummary || undefined,
+                      dailyPileCount: reportEditForm.dailyPileCount || undefined,
+                      remainingPiles: reportEditForm.remainingPiles || undefined,
+                      dailyFuelUsage: reportEditForm.dailyFuelUsage || undefined,
+                      personnelTotal: reportEditForm.personnelTotal !== "" ? parseInt(reportEditForm.personnelTotal, 10) : undefined,
+                      notes: reportEditForm.notes !== undefined ? reportEditForm.notes : undefined,
+                    }),
+                  })
+                  if (res.ok) {
+                    setReportEditDialog({ open: false, report: null })
+                    loadReportList()
+                  } else {
+                    const data = await res.json().catch(() => ({}))
+                    alert(data.error || "Güncelleme başarısız.")
+                  }
+                } catch (e) {
+                  console.error(e)
+                  alert("İstek gönderilemedi.")
+                }
+              }}
+            >
+              Kaydet
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog open={reportDeleteId != null} onClose={() => setReportDeleteId(null)}>
+          <DialogTitle>Raporu sil</DialogTitle>
+          <DialogContent>Bu raporu silmek istediğinize emin misiniz? Bu işlem geri alınamaz.</DialogContent>
+          <DialogActions>
+            <Button onClick={() => setReportDeleteId(null)}>İptal</Button>
+            <Button
+              color="error"
+              variant="contained"
+              onClick={async () => {
+                if (reportDeleteId == null) return
+                try {
+                  const res = await fetch(`/api/reports/${reportDeleteId}`, { method: "DELETE" })
+                  if (res.ok) {
+                    setReportDeleteId(null)
+                    loadReportList()
+                  } else {
+                    const data = await res.json().catch(() => ({}))
+                    alert(data.error || "Silme başarısız.")
+                  }
+                } catch (e) {
+                  console.error(e)
+                  alert("İstek gönderilemedi.")
+                }
+              }}
+            >
+              Sil
             </Button>
           </DialogActions>
         </Dialog>

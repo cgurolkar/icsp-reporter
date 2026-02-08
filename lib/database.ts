@@ -182,6 +182,21 @@ export async function initializeDatabase() {
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'sites location columns: %', SQLERRM;
       END $$
     `)
+    // Proje durumu: Yeni / Devam Eden (işin başlama tarihi, rapor başlangıcında yapılan kazık)
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'project_start_date') THEN
+          ALTER TABLE sites ADD COLUMN project_start_date DATE DEFAULT NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'is_ongoing') THEN
+          ALTER TABLE sites ADD COLUMN is_ongoing BOOLEAN DEFAULT false;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'initial_piles_done') THEN
+          ALTER TABLE sites ADD COLUMN initial_piles_done INTEGER DEFAULT NULL;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'sites project columns: %', SQLERRM;
+      END $$
+    `)
 
     // users tablosuna sorumlu şantiye (site_id)
     await client.query(`
@@ -380,9 +395,10 @@ export async function getAggregatedStats(options: { siteId?: number | null; star
     const weekKey = getWeekKey(d)
     const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
-    const piles = parseInt(r.total_pile_count || r.daily_pile_count || '0', 10) || 0
+    const piles = parseInt(r.total_pile_count || r.daily_pile_count || r.concrete_poured || '0', 10) || 0
     const production = parseFloat(r.total_production_summary || r.total_production || '0') || 0
-    const fuel = parseFloat(r.daily_fuel_usage || '0') || 0
+    const fuelStr = String(r.daily_fuel_usage || '')
+    const fuel = parseFloat(fuelStr) || (() => { const m = fuelStr.match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : 0 })()
     let expenses = 0
     if (r.expenses && Array.isArray(r.expenses)) {
       expenses = r.expenses.reduce((sum: number, e: { amount?: number }) => sum + (e?.amount || 0), 0)
@@ -428,7 +444,7 @@ export async function getAggregatedStats(options: { siteId?: number | null; star
   const byMachine: Record<string, { machineName: string; totalProduction: number; totalPiles: number; reportCount: number }> = {}
   for (const r of rows) {
     const name = r.selected_machine_name || 'Belirtilmemiş'
-    const rPiles = parseInt(r.total_pile_count || r.daily_pile_count || '0', 10) || 0
+    const rPiles = parseInt(r.total_pile_count || r.daily_pile_count || r.concrete_poured || '0', 10) || 0
     const rProduction = parseFloat(r.total_production_summary || r.total_production || '0') || 0
     if (!byMachine[name]) byMachine[name] = { machineName: name, totalProduction: 0, totalPiles: 0, reportCount: 0 }
     byMachine[name].totalProduction += rProduction
@@ -585,12 +601,15 @@ export async function createSite(data: {
   country?: string | null
   authorizedPerson?: string | null
   employer?: string | null
+  projectStartDate?: string | null
+  isOngoing?: boolean
+  initialPilesDone?: number | null
 }) {
   const client = await pool.connect()
   try {
     const result = await client.query(
-      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
       [
         data.name,
         data.code,
@@ -601,6 +620,9 @@ export async function createSite(data: {
         data.country ?? null,
         data.authorizedPerson ?? null,
         data.employer ?? null,
+        data.projectStartDate?.trim() || null,
+        data.isOngoing ?? false,
+        data.initialPilesDone ?? null,
       ]
     )
     return result.rows[0]
@@ -623,6 +645,9 @@ export async function updateSite(id: number, data: {
   country?: string | null
   authorizedPerson?: string | null
   employer?: string | null
+  projectStartDate?: string | null
+  isOngoing?: boolean
+  initialPilesDone?: number | null
 }) {
   const client = await pool.connect()
   try {
@@ -639,6 +664,9 @@ export async function updateSite(id: number, data: {
     if (data.country !== undefined) { updates.push(`country = $${i++}`); values.push(data.country) }
     if (data.authorizedPerson !== undefined) { updates.push(`authorized_person = $${i++}`); values.push(data.authorizedPerson) }
     if (data.employer !== undefined) { updates.push(`employer = $${i++}`); values.push(data.employer) }
+    if (data.projectStartDate !== undefined) { updates.push(`project_start_date = $${i++}`); values.push(data.projectStartDate?.trim() || null) }
+    if (data.isOngoing !== undefined) { updates.push(`is_ongoing = $${i++}`); values.push(data.isOngoing) }
+    if (data.initialPilesDone !== undefined) { updates.push(`initial_piles_done = $${i++}`); values.push(data.initialPilesDone) }
     if (updates.length === 0) return await getSiteById(id)
     updates.push(`updated_at = CURRENT_TIMESTAMP`)
     values.push(id)
@@ -663,23 +691,18 @@ export async function getSiteReportEmails(siteId: number | null): Promise<string
   return []
 }
 
-// Rapor detayını getir
+// Rapor detayını getir (site_name, site_code ile)
 export async function getWorkReportById(id: number) {
   const client = await pool.connect()
-  
   try {
     const reportResult = await client.query(`
-      SELECT * FROM work_reports WHERE id = $1
+      SELECT wr.*, s.name as site_name, s.code as site_code
+      FROM work_reports wr
+      LEFT JOIN sites s ON wr.site_id = s.id
+      WHERE wr.id = $1
     `, [id])
-
-    const machinesResult = await client.query(`
-      SELECT * FROM machine_selections WHERE report_id = $1
-    `, [id])
-
-    const fuelResult = await client.query(`
-      SELECT * FROM fuel_records WHERE report_id = $1
-    `, [id])
-
+    const machinesResult = await client.query(`SELECT * FROM machine_selections WHERE report_id = $1`, [id])
+    const fuelResult = await client.query(`SELECT * FROM fuel_records WHERE report_id = $1`, [id])
     return {
       report: reportResult.rows[0],
       machines: machinesResult.rows,
@@ -687,6 +710,68 @@ export async function getWorkReportById(id: number) {
     }
   } catch (error) {
     console.error('Error fetching work report:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+// Rapor güncelle (ana alanlar)
+export async function updateWorkReport(id: number, data: {
+  date?: string
+  project?: string
+  siteId?: number | null
+  selectedMachineName?: string
+  totalProductionSummary?: string
+  totalPileCount?: string
+  dailyPileCount?: string
+  remainingPiles?: string
+  concretePoured?: string
+  personnelTotal?: number
+  dailyFuelUsage?: string
+  notes?: string
+  [key: string]: unknown
+}) {
+  const client = await pool.connect()
+  try {
+    const updates: string[] = []
+    const values: unknown[] = []
+    let i = 1
+    if (data.date !== undefined) { updates.push(`date = $${i++}`); values.push(data.date) }
+    if (data.project !== undefined) { updates.push(`project = $${i++}`); values.push(data.project) }
+    if (data.siteId !== undefined) { updates.push(`site_id = $${i++}`); values.push(data.siteId) }
+    if (data.selectedMachineName !== undefined) { updates.push(`selected_machine_name = $${i++}`); values.push(data.selectedMachineName) }
+    if (data.totalProductionSummary !== undefined) { updates.push(`total_production_summary = $${i++}`); values.push(data.totalProductionSummary) }
+    if (data.totalPileCount !== undefined) { updates.push(`total_pile_count = $${i++}`); values.push(data.totalPileCount) }
+    if (data.dailyPileCount !== undefined) { updates.push(`daily_pile_count = $${i++}`); values.push(data.dailyPileCount) }
+    if (data.remainingPiles !== undefined) { updates.push(`remaining_piles = $${i++}`); values.push(data.remainingPiles) }
+    if (data.concretePoured !== undefined) { updates.push(`concrete_poured = $${i++}`); values.push(data.concretePoured) }
+    if (data.personnelTotal !== undefined) { updates.push(`personnel_total = $${i++}`); values.push(data.personnelTotal) }
+    if (data.dailyFuelUsage !== undefined) { updates.push(`daily_fuel_usage = $${i++}`); values.push(data.dailyFuelUsage) }
+    if (data.notes !== undefined) { updates.push(`notes = $${i++}`); values.push(data.notes) }
+    if (updates.length === 0) return (await getWorkReportById(id))?.report ?? null
+    updates.push(`updated_at = CURRENT_TIMESTAMP`)
+    values.push(id)
+    await client.query(`UPDATE work_reports SET ${updates.join(', ')} WHERE id = $${i}`, values)
+    return (await getWorkReportById(id))?.report ?? null
+  } catch (error) {
+    console.error('Error updating work report:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+// Rapor sil (ilişkili kayıtlar CASCADE veya manuel silinir)
+export async function deleteWorkReport(id: number) {
+  const client = await pool.connect()
+  try {
+    await client.query(`DELETE FROM machine_selections WHERE report_id = $1`, [id])
+    await client.query(`DELETE FROM fuel_records WHERE report_id = $1`, [id])
+    const result = await client.query(`DELETE FROM work_reports WHERE id = $1 RETURNING id`, [id])
+    return (result.rowCount ?? 0) > 0
+  } catch (error) {
+    console.error('Error deleting work report:', error)
     throw error
   } finally {
     client.release()

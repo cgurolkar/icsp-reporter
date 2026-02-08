@@ -5,7 +5,7 @@ import { Container, Paper, Stepper, Step, StepLabel, Box, Button, Typography, Gr
 import { useLanguage } from "@/contexts/language-context"
 import LanguageSelector from "@/components/language-selector"
 import MachineSelectionStep from "@/components/steps/machine-selection-step"
-import BasicInfoStep from "@/components/steps/basic-info-step"
+import BasicInfoStep, { type SiteSummaryForForm } from "@/components/steps/basic-info-step"
 import ProductionSummaryStep from "@/components/steps/production-summary-step"
 import PileDetailsStep from "@/components/steps/pile-details-step"
 import PersonnelStep from "@/components/steps/personnel-step"
@@ -42,6 +42,7 @@ export default function ReportForm({ initialSiteId, initialSiteName }: ReportFor
   const [activeStep, setActiveStep] = useState(0)
   const [formData, setFormData] = useState<FormData>(initialFormData)
   const [showAddMachinePrompt, setShowAddMachinePrompt] = useState(false)
+  const [siteSummary, setSiteSummary] = useState<SiteSummaryForForm | null>(null)
   const { t } = useLanguage()
 
   useEffect(() => {
@@ -160,6 +161,7 @@ export default function ReportForm({ initialSiteId, initialSiteName }: ReportFor
               updateFormData("machineSelection", { ...formData.machineSelection, additionalMachines: [...formData.machineSelection.additionalMachines, machine], showAddMachineAfterStep2: true })
             }}
             onMachineIndexChange={(index) => updateFormData("machineSelection", { ...formData.machineSelection, currentMachineIndex: index })}
+            onSiteSummaryChange={(s) => setSiteSummary(s)}
           />
         )
       case 2:
@@ -179,8 +181,22 @@ export default function ReportForm({ initialSiteId, initialSiteName }: ReportFor
             onMachineIndexChange={(index) => updateFormData("machineSelection", { ...formData.machineSelection, currentMachineIndex: index })}
           />
         )
-      case 3:
-        return <PileDetailsStep data={formData.pileDetails} onChange={(d) => updateFormData("pileDetails", d)} productionSummary={formData.productionSummary} />
+      case 3: {
+        const projectTotalPiles = siteSummary?.totalPiles ?? undefined
+        const totalCompletedBeforeToday =
+          siteSummary?.totalPiles != null && siteSummary?.remainingPiles != null
+            ? siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles, 10) || 0)
+            : (siteSummary?.initialPilesDone != null ? siteSummary.initialPilesDone : 0)
+        return (
+          <PileDetailsStep
+            data={formData.pileDetails}
+            onChange={(d) => updateFormData("pileDetails", d)}
+            productionSummary={formData.productionSummary}
+            projectTotalPiles={projectTotalPiles}
+            totalCompletedBeforeToday={totalCompletedBeforeToday}
+          />
+        )
+      }
       case 4:
         return <IronStepComponent data={formData.iron} onChange={(d) => updateFormData("iron", d)} />
       case 5:
@@ -199,7 +215,7 @@ export default function ReportForm({ initialSiteId, initialSiteName }: ReportFor
       case 8:
         return <ExpensesStep data={formData.expenses} onChange={(d) => updateFormData("expenses", d)} />
       case 9:
-        return <ReviewStep data={formData} onSubmit={handleSubmit} />
+        return <ReviewStep data={formData} onSubmit={handleSubmit} siteSummary={siteSummary ?? undefined} />
       default:
         return null
     }
