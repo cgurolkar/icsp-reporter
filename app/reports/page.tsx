@@ -141,15 +141,15 @@ function ReportsContent() {
   const reportCount = currentSite?.report_count ?? (siteId ? reports.length : 0)
 
   return (
-    <Box sx={{ minHeight: "100vh", background: "#fafafa", py: 3 }}>
-      <Container maxWidth="lg">
+    <Box sx={{ minHeight: "100vh", background: "#fafafa", py: 2, px: 0, overflowX: "hidden", maxWidth: "100%" }}>
+      <Container maxWidth="lg" sx={{ maxWidth: "100%", px: { xs: 1.5, sm: 2 } }}>
         <Typography variant="h6" fontWeight={600} sx={{ color: "var(--icsp-lacivert)", mb: 2 }}>
           Şantiyeler – Tarihe göre rapor özeti
         </Typography>
 
         {sites.length > 0 && (
-          <Box sx={{ maxWidth: 420, mb: 3, display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
-            <FormControl fullWidth size="small" sx={{ minWidth: 280 }}>
+          <Box sx={{ width: "100%", maxWidth: 420, mb: 3, display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
+            <FormControl fullWidth size="small" sx={{ minWidth: 0, flex: "1 1 200px" }}>
               <InputLabel id="report-site-label">Şantiye</InputLabel>
               <Select
                 labelId="report-site-label"
@@ -267,18 +267,18 @@ function ReportsContent() {
               </Table>
             </Paper>
 
-            <Paper sx={{ p: 2, background: "#fff", border: "1px solid var(--icsp-nav-border)" }}>
+            <Paper sx={{ p: 2, background: "#fff", border: "1px solid var(--icsp-nav-border)", overflow: "hidden", maxWidth: "100%" }}>
               <Typography variant="subtitle1" fontWeight={600} sx={{ color: "var(--icsp-lacivert)", mb: 2 }}>
                 {selectedDate ? `${selectedDate} — Rapor özeti` : "Rapor özeti"}
               </Typography>
               {!selectedDate ? (
-                <Typography color="text.secondary">Takvimden bir gün seçin; seçilen tarihe ait rapor özeti burada görünür.</Typography>
+                <Typography color="text.secondary" sx={{ wordBreak: "break-word" }}>Takvimden bir gün seçin; seçilen tarihe ait rapor özeti burada görünür.</Typography>
               ) : selectedReports.length === 0 ? (
                 <Typography color="text.secondary">Bu tarihte rapor yok.</Typography>
               ) : (
                 selectedReports.map((r) => (
-                  <Box key={r.id} sx={{ mb: 2 }}>
-                    <Table size="small">
+                  <Box key={r.id} sx={{ mb: 2, overflowX: "auto", maxWidth: "100%" }}>
+                    <Table size="small" sx={{ minWidth: 260 }}>
                       <TableBody>
                         <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Proje</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.project}</TableCell></TableRow>
                         <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Makine</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.selected_machine_name || "—"}</TableCell></TableRow>

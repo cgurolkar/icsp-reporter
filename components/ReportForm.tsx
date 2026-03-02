@@ -12,6 +12,7 @@ import PersonnelStep from "@/components/steps/personnel-step"
 import VehiclesStep from "@/components/steps/vehicles-step"
 import FuelStep from "@/components/steps/fuel-step"
 import ExpensesStep from "@/components/steps/expenses-step"
+import DailyInfoStep from "@/components/steps/daily-info-step"
 import ReviewStep from "@/components/steps/review-step"
 import IronStepComponent from "@/components/steps/iron-step"
 import { type FormData, initialFormData } from "@/types/form-data"
@@ -24,12 +25,11 @@ const steps = [
   "machine_selection",
   "basic_info",
   "production_summary",
-  "pile_details",
   "iron_step",
-  "personnel",
-  "vehicles",
+  "personnel_vehicles",
   "fuel",
   "expenses",
+  "daily_info",
   "review",
 ]
 
@@ -81,19 +81,6 @@ export default function ReportForm({ initialSiteId, initialSiteName }: ReportFor
       setActiveStep(1)
     } else if (activeStep === 2) {
       setShowAddMachinePrompt(true)
-    } else if (activeStep === 3 && formData.machineSelection.showAddMachineAfterStep2) {
-      const hasAdditionalMachines = formData.machineSelection.additionalMachines.length > 0
-      if (hasAdditionalMachines) {
-        setActiveStep(1)
-        const nextMachineIndex = formData.machineSelection.currentMachineIndex + 1
-        updateFormData("machineSelection", {
-          ...formData.machineSelection,
-          currentMachineIndex: nextMachineIndex,
-          showAddMachineAfterStep2: false,
-        })
-      } else {
-        setActiveStep((prev) => prev + 1)
-      }
     } else {
       setActiveStep((prev) => prev + 1)
     }
@@ -164,24 +151,7 @@ export default function ReportForm({ initialSiteId, initialSiteName }: ReportFor
             onSiteSummaryChange={(s) => setSiteSummary(s)}
           />
         )
-      case 2:
-        return (
-          <ProductionSummaryStep
-            data={formData.productionSummary}
-            onChange={(d) => updateFormData("productionSummary", d)}
-            currentMachineIndex={formData.machineSelection.currentMachineIndex}
-            additionalMachines={formData.machineSelection.additionalMachines}
-            onAddMachine={(machine) => {
-              const newProductionSummary = { machineId: machine.id, machineName: machine.name, totalProduction: "", emptyBorehole: "", preBorehole: "", concretePoured: "" }
-              const newBasicInfoMachine = { machineId: machine.id, machineName: machine.name, machineHours: "", usedFuel: "", changedDiamondCount: "", note: "" }
-              updateFormData("productionSummary", [...formData.productionSummary, newProductionSummary])
-              updateFormData("basicInfo", { ...formData.basicInfo, machines: [...formData.basicInfo.machines, newBasicInfoMachine] })
-              updateFormData("machineSelection", { ...formData.machineSelection, additionalMachines: [...formData.machineSelection.additionalMachines, machine], showAddMachineAfterStep2: true })
-            }}
-            onMachineIndexChange={(index) => updateFormData("machineSelection", { ...formData.machineSelection, currentMachineIndex: index })}
-          />
-        )
-      case 3: {
+      case 2: {
         const projectTotalPiles = siteSummary?.totalPiles ?? undefined
         const remainingValid = siteSummary?.remainingPiles != null && String(siteSummary.remainingPiles).trim() !== ""
         const totalCompletedBeforeToday =
@@ -189,33 +159,55 @@ export default function ReportForm({ initialSiteId, initialSiteName }: ReportFor
             ? siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles!, 10) || 0)
             : (siteSummary?.initialPilesDone != null ? siteSummary.initialPilesDone : 0)
         return (
-          <PileDetailsStep
-            data={formData.pileDetails}
-            onChange={(d) => updateFormData("pileDetails", d)}
-            productionSummary={formData.productionSummary}
-            projectTotalPiles={projectTotalPiles}
-            totalCompletedBeforeToday={totalCompletedBeforeToday}
-          />
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <ProductionSummaryStep
+              data={formData.productionSummary}
+              onChange={(d) => updateFormData("productionSummary", d)}
+              currentMachineIndex={formData.machineSelection.currentMachineIndex}
+              additionalMachines={formData.machineSelection.additionalMachines}
+              onAddMachine={(machine) => {
+                const newProductionSummary = { machineId: machine.id, machineName: machine.name, totalProduction: "", emptyBorehole: "", preBorehole: "", concretePoured: "" }
+                const newBasicInfoMachine = { machineId: machine.id, machineName: machine.name, machineHours: "", usedFuel: "", changedDiamondCount: "", note: "" }
+                updateFormData("productionSummary", [...formData.productionSummary, newProductionSummary])
+                updateFormData("basicInfo", { ...formData.basicInfo, machines: [...formData.basicInfo.machines, newBasicInfoMachine] })
+                updateFormData("machineSelection", { ...formData.machineSelection, additionalMachines: [...formData.machineSelection.additionalMachines, machine], showAddMachineAfterStep2: true })
+              }}
+              onMachineIndexChange={(index) => updateFormData("machineSelection", { ...formData.machineSelection, currentMachineIndex: index })}
+            />
+            <PileDetailsStep
+              data={formData.pileDetails}
+              onChange={(d) => updateFormData("pileDetails", d)}
+              productionSummary={formData.productionSummary}
+              projectTotalPiles={projectTotalPiles}
+              totalCompletedBeforeToday={totalCompletedBeforeToday}
+            />
+          </Box>
         )
       }
-      case 4:
+      case 3:
         return <IronStepComponent data={formData.iron} onChange={(d) => updateFormData("iron", d)} />
+      case 4:
+        return (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <PersonnelStep data={formData.personnel} onChange={(d) => updateFormData("personnel", d)} />
+            <VehiclesStep data={formData.vehicles} onChange={(d) => updateFormData("vehicles", d)} />
+          </Box>
+        )
       case 5:
-        return <PersonnelStep data={formData.personnel} onChange={(d) => updateFormData("personnel", d)} />
-      case 6:
-        return <VehiclesStep data={formData.vehicles} onChange={(d) => updateFormData("vehicles", d)} />
-      case 7:
         return (
           <FuelStep
             data={formData.fuel}
             onChange={(d) => updateFormData("fuel", d)}
             selectedMachine={formData.machineSelection.selectedMachine}
             additionalMachines={formData.machineSelection.additionalMachines}
+            basicInfoMachines={formData.basicInfo.machines}
           />
         )
-      case 8:
+      case 6:
         return <ExpensesStep data={formData.expenses} onChange={(d) => updateFormData("expenses", d)} />
-      case 9:
+      case 7:
+        return <DailyInfoStep data={formData.dailyInfo} onChange={(d) => updateFormData("dailyInfo", d)} />
+      case 8:
         return <ReviewStep data={formData} onSubmit={handleSubmit} siteSummary={siteSummary ?? undefined} />
       default:
         return null
@@ -223,7 +215,7 @@ export default function ReportForm({ initialSiteId, initialSiteName }: ReportFor
   }
 
   return (
-    <Container maxWidth="md" sx={{ py: { xs: 2, sm: 4 }, minHeight: "100vh", background: "#fafafa" }}>
+    <Container maxWidth="md" sx={{ py: { xs: 2, sm: 4 }, px: { xs: 1.5, sm: 2 }, minHeight: "100vh", background: "#fafafa", maxWidth: "100%", overflow: "hidden" }}>
       <Paper
         elevation={0}
         sx={{
@@ -251,7 +243,7 @@ export default function ReportForm({ initialSiteId, initialSiteName }: ReportFor
             </Step>
           ))}
         </Stepper>
-        <Box sx={{ minHeight: { xs: 200, sm: 400 }, mb: 4, p: { xs: 1, sm: 3 }, backgroundColor: "background.paper", borderRadius: 2, border: "1px solid #e0e0e0", width: "100%", boxSizing: "border-box" }}>
+        <Box sx={{ minHeight: { xs: 200, sm: 400 }, mb: 4, p: { xs: 1, sm: 3 }, backgroundColor: "background.paper", borderRadius: 2, border: "1px solid #e0e0e0", width: "100%", maxWidth: "100%", boxSizing: "border-box", overflowX: "auto" }}>
           {renderStepContent(activeStep)}
         </Box>
         <Grid container spacing={2} sx={{ width: "100%" }}>
@@ -270,13 +262,13 @@ export default function ReportForm({ initialSiteId, initialSiteName }: ReportFor
         </Grid>
       </Paper>
       <Dialog open={showAddMachinePrompt} onClose={() => setShowAddMachinePrompt(false)}>
-        <DialogTitle>Başka makine eklemek istiyor musunuz?</DialogTitle>
+        <DialogTitle>{t("add_machine_prompt_title")}</DialogTitle>
         <DialogContent>
-          <Typography>Birden fazla makine için ayrı ayrı veri girebilirsiniz. Ek makine eklemek ister misiniz?</Typography>
+          <Typography>{t("add_machine_prompt_message")}</Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => { setShowAddMachinePrompt(false); setActiveStep(3) }} color="primary" variant="contained">Hayır, devam et</Button>
-          <Button onClick={() => { setShowAddMachinePrompt(false); setActiveStep(0) }} color="secondary" variant="outlined">Evet, makine ekle</Button>
+          <Button onClick={() => { setShowAddMachinePrompt(false); setActiveStep(3) }} color="primary" variant="contained">{t("no_continue")}</Button>
+          <Button onClick={() => { setShowAddMachinePrompt(false); setActiveStep(0) }} color="secondary" variant="outlined">{t("yes_add_machine")}</Button>
         </DialogActions>
       </Dialog>
     </Container>

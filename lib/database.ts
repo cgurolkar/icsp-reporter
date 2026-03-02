@@ -53,9 +53,26 @@ export async function initializeDatabase() {
         expenses JSONB,
         pile_details JSONB,
         notes TEXT,
+        daily_notes TEXT,
+        daily_image1 TEXT,
+        daily_image2 TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
+    `)
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'work_reports' AND column_name = 'daily_notes') THEN
+          ALTER TABLE work_reports ADD COLUMN daily_notes TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'work_reports' AND column_name = 'daily_image1') THEN
+          ALTER TABLE work_reports ADD COLUMN daily_image1 TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'work_reports' AND column_name = 'daily_image2') THEN
+          ALTER TABLE work_reports ADD COLUMN daily_image2 TEXT;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'daily_* columns: %', SQLERRM;
+      END $$
     `)
 
     // Makine seçimleri tablosu
@@ -230,8 +247,8 @@ export async function saveWorkReport(reportData: any) {
         total_completed_piles, remaining_piles, steel_lowered_piles, concrete_poured,
         engineer_count, foreman_count, operator_count, oiler_count, welder_count, other_count, personnel_total,
         crane_count, loader_count, truck_count, pickup_count, car_count, service_count, vehicles_total,
-        daily_fuel_usage, expenses, pile_details, notes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35)
+        daily_fuel_usage, expenses, pile_details, notes, daily_notes, daily_image1, daily_image2
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
       RETURNING id
     `, [
       reportData.date,
@@ -268,7 +285,10 @@ export async function saveWorkReport(reportData: any) {
       reportData.dailyFuelUsage,
       JSON.stringify(reportData.expenses),
       JSON.stringify(reportData.pileDetails),
-      reportData.notes
+      reportData.notes,
+      reportData.dailyNotes ?? null,
+      reportData.dailyImage1 ?? null,
+      reportData.dailyImage2 ?? null,
     ])
 
     const reportId = result.rows[0].id
@@ -458,6 +478,17 @@ export async function getAggregatedStats(options: { siteId?: number | null; star
   }
   const machineComparison = Object.values(byMachine).sort((a, b) => b.totalProduction - a.totalProduction)
 
+  // Harcama dağılımı (türe göre toplam tutar)
+  const expenseDistribution: Record<string, number> = { santiye: 0, makine: 0, personel: 0, yakit: 0, diger: 0 }
+  for (const r of rows) {
+    if (r.expenses && Array.isArray(r.expenses)) {
+      for (const e of r.expenses as { amount?: number; category?: string }[]) {
+        const cat = (e?.category && expenseDistribution.hasOwnProperty(e.category)) ? e.category : 'diger'
+        expenseDistribution[cat] = (expenseDistribution[cat] || 0) + (e?.amount || 0)
+      }
+    }
+  }
+
   const dailyList = Object.entries(daily)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([, v]) => v)
@@ -475,6 +506,7 @@ export async function getAggregatedStats(options: { siteId?: number | null; star
       }),
     totalReports: rows.length,
     machineComparison,
+    expenseDistribution,
   }
 }
 

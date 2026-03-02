@@ -28,13 +28,13 @@ export default function IronStepComponent({ data, onChange }: IronStepProps) {
   return (
     <Box>
       <Typography variant="h6" gutterBottom sx={{ color: "success.main", fontWeight: 600, mb: 3 }}>
-        Demir İşçiliği
+        {t("iron_step")}
       </Typography>
       <Paper sx={{ p: 3, background: "linear-gradient(135deg, #e8f5e9 0%, #b2dfdb 100%)", border: "1px solid #388e3c" }}>
         <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 3 }}>
           <TextField
             fullWidth
-            label="Günlük Hazırlanan 12m Demir (Adet)"
+            label={t("iron_prepared_today")}
             value={data.preparedToday}
             onChange={e => onChange({ ...data, preparedToday: e.target.value })}
             type="number"
@@ -42,7 +42,7 @@ export default function IronStepComponent({ data, onChange }: IronStepProps) {
           />
           <TextField
             fullWidth
-            label="Sahada Bulunan 12m Demir (Adet)"
+            label={t("iron_on_site")}
             value={data.onSite}
             onChange={e => onChange({ ...data, onSite: e.target.value })}
             type="number"
@@ -50,7 +50,7 @@ export default function IronStepComponent({ data, onChange }: IronStepProps) {
           />
           <TextField
             fullWidth
-            label="İndirilen 12m Demir (Adet)"
+            label={t("iron_lowered")}
             value={data.lowered}
             onChange={e => onChange({ ...data, lowered: e.target.value })}
             type="number"
@@ -58,7 +58,7 @@ export default function IronStepComponent({ data, onChange }: IronStepProps) {
           />
           <TextField
             fullWidth
-            label="Sahada Kalan 12m Demir (Adet)"
+            label={t("iron_remaining_site")}
             value={data.remaining}
             InputProps={{ readOnly: true }}
             sx={{ backgroundColor: "#f1f8e9" }}

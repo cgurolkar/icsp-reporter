@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import {
   Card,
   CardContent,
@@ -10,6 +9,7 @@ import {
   Alert,
 } from "@mui/material"
 import { Construction } from "@mui/icons-material"
+import { useLanguage } from "@/contexts/language-context"
 import { Machine, MachineSelection } from "@/types/form-data"
 import { AVAILABLE_MACHINES } from "@/types/form-data"
 
@@ -19,8 +19,9 @@ interface MachineSelectionStepProps {
 }
 
 export default function MachineSelectionStep({ data, onChange }: MachineSelectionStepProps) {
+  const { t } = useLanguage()
+
   const handlePrimaryMachineSelect = (machine: Machine) => {
-    console.log("Selected machine:", machine)
     onChange({
       ...data,
       selectedMachine: machine,
@@ -32,17 +33,17 @@ export default function MachineSelectionStep({ data, onChange }: MachineSelectio
       <CardContent>
         <Typography variant="h5" gutterBottom sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <Construction color="primary" />
-          Makine Seçimi
+          {t("machine_selection")}
         </Typography>
 
         <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-          Çalışma için kullanılacak kazık makinelerini seçin
+          {t("machine_selection_subtitle")}
         </Typography>
 
         {/* Ana Makine Seçimi */}
         <Box sx={{ mb: 3 }}>
           <Typography variant="h6" gutterBottom>
-            Ana Makine Seçimi
+            {t("main_machine_selection")}
           </Typography>
           
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -81,13 +82,13 @@ export default function MachineSelectionStep({ data, onChange }: MachineSelectio
         {/* Seçim Durumu */}
         {data.selectedMachine && (
           <Alert severity="success" sx={{ mb: 3 }}>
-            <strong>Seçilen Makine:</strong> {data.selectedMachine.name}
+            <strong>{t("selected_machine_label")}:</strong> {data.selectedMachine.name}
           </Alert>
         )}
 
         {/* Ek Makineler Bilgisi */}
         <Alert severity="info" sx={{ mt: 2 }}>
-          Ek makineler 2. adım sonrasında eklenebilir.
+          {t("extra_machines_note")}
         </Alert>
       </CardContent>
     </Card>

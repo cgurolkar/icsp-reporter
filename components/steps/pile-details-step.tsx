@@ -106,43 +106,43 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
   return (
     <Box>
       <Typography variant="h6" gutterBottom sx={{ color: "warning.main", fontWeight: 600, mb: 3 }}>
-        Kazık Detayları
+        {t("pile_details_form_title")}
       </Typography>
       <Paper sx={{ p: 3, background: "linear-gradient(135deg, #fffde7 0%, #ffe082 100%)", border: "1px solid #ffb300", mb: 3 }}>
         {/* Toplam Değerler */}
         <Box sx={{ display: "flex", gap: 3, flexWrap: "wrap", mb: 3 }}>
           <TextField
-            label="Projedeki toplam kazık sayısı (Ad.)"
+            label={t("total_piles_in_project")}
             value={projectTotalPiles}
             InputProps={{ readOnly: true }}
             sx={{ minWidth: 200, backgroundColor: "#fffde7" }}
           />
           <TextField
-            label="Bugüne kadar yapılan (bugün dahil değil)"
+            label={t("done_until_today_excl_short")}
             value={totalCompletedBeforeToday}
             InputProps={{ readOnly: true }}
             sx={{ minWidth: 220, backgroundColor: "#e3f2fd" }}
           />
           <TextField
-            label="O gün yapılan kazık sayısı (Ad.)"
+            label={t("daily_pile_count_label")}
             value={dailyPiles}
             InputProps={{ readOnly: true }}
             sx={{ minWidth: 200, backgroundColor: "#fffde7" }}
           />
           <TextField
-            label="Bugüne kadar yapılan (bugün dahil)"
+            label={t("done_until_today_incl")}
             value={totalCompletedIncludingToday}
             InputProps={{ readOnly: true }}
             sx={{ minWidth: 220, backgroundColor: "#e3f2fd" }}
           />
           <TextField
-            label="Kalan kazık sayısı (Ad.)"
+            label={t("remaining_piles_count")}
             value={remainingPiles}
             InputProps={{ readOnly: true }}
             sx={{ minWidth: 200, backgroundColor: "#e8f5e9" }}
           />
           <TextField
-            label="Kazık İmalatı (m)"
+            label={t("total_production")}
             value={totalProduction.toFixed(2)}
             InputProps={{ readOnly: true }}
             sx={{ minWidth: 200, backgroundColor: "#fffde7" }}
@@ -151,7 +151,7 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
 
         {detayEksik && (
           <Alert severity="warning" sx={{ mb: 2 }}>
-            Yapılan kazık sayısı {yapilanKazikSayisi} olarak girildi; kazık detaylarında sadece {doldurulanDetaySayisi} adet giriş var. Lütfen en az {yapilanKazikSayisi} kazık için delinen/not bilgisi girin.
+            {t("pile_details_warning").replace(/\{count\}/g, String(yapilanKazikSayisi)).replace(/\{entered\}/g, String(doldurulanDetaySayisi))}
           </Alert>
         )}
 
@@ -159,25 +159,25 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
         {productionSummary.length > 0 && (
           <Box sx={{ mb: 3 }}>
             <Typography variant="subtitle1" gutterBottom sx={{ color: "#e65100", fontWeight: 600, mb: 2 }}>
-              📊 Makine Detayları
+              📊 {t("machine_details_title")}
             </Typography>
             <Table size="small" sx={{ border: "2px solid #000", backgroundColor: "white" }}>
               <TableHead>
                 <TableRow sx={{ backgroundColor: "#f0f0f0" }}>
                   <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                    Makine
+                    {t("machine")}
                   </TableCell>
                   <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                    Kazık İmalatı (m)
+                    {t("total_production")}
                   </TableCell>
                   <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                    Boş Foraj
+                    {t("empty_borehole")}
                   </TableCell>
                   <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                    Ön Foraj
+                    {t("pre_borehole")}
                   </TableCell>
                   <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                    Beton Dökülen
+                    {t("concrete_poured_short")}
                   </TableCell>
                 </TableRow>
               </TableHead>
@@ -204,7 +204,7 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
                 {/* Toplam Satırı */}
                 <TableRow sx={{ backgroundColor: "#f9f9f9" }}>
                   <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                    TOPLAM
+                    {t("total").toUpperCase()}
                   </TableCell>
                   <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
                     {totalProduction.toFixed(2)}
@@ -226,22 +226,22 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
 
         {/* Kazık Detayları Formu */}
         <Typography variant="subtitle1" gutterBottom sx={{ color: "#e65100", fontWeight: 600, mb: 2 }}>
-          📝 Kazık Detayları
+          📝 {t("pile_details_form_title")}
         </Typography>
         <Table size="small" sx={{ border: "2px solid #000", backgroundColor: "white", mb: 3 }}>
           <TableHead>
             <TableRow sx={{ backgroundColor: "#f0f0f0" }}>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "15%" }}>
-                KAZIK
+                {t("pile_short").toUpperCase()}
               </TableCell>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "25%" }}>
-                DELİNEN
+                {t("drilled_short").toUpperCase()}
               </TableCell>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "50%" }}>
-                NOTLAR
+                {t("notes").toUpperCase()}
               </TableCell>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "10%" }}>
-                İŞLEM
+                {t("action").toUpperCase()}
               </TableCell>
             </TableRow>
           </TableHead>
@@ -310,13 +310,13 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
               "&:hover": { backgroundColor: "#5d4037" },
             }}
           >
-            {t("add")} {t("pile")}
+            {t("add_row")}
           </Button>
         </Box>
 
         <Box sx={{ mt: 2, p: 2, backgroundColor: "rgba(121, 85, 72, 0.1)", borderRadius: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            💡 <strong>İpucu:</strong> Yeni satır eklemek için Enter tuşuna basın veya "Kazık Ekle" butonunu kullanın.
+            💡 <strong>{t("tip_prefix")}:</strong> {t("tip_pile_details")}
           </Typography>
         </Box>
       </Paper>

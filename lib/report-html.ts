@@ -173,11 +173,27 @@ export function generatePDFMainReport(
               `).join("")}
             </tbody>
           </table>
+          ${(formData.dailyInfo?.notes || formData.dailyInfo?.image1 || formData.dailyInfo?.image2) ? `
+          <div class="section-title">GÜNLÜK BİLGİLER</div>
+          ${formData.dailyInfo?.notes ? `<div style="border: 1px solid #000; min-height: 40px; padding: 8px; background: white; white-space: pre-wrap; margin-bottom: 10px;">${formData.dailyInfo.notes}</div>` : ""}
+          ${(formData.dailyInfo?.image1 || formData.dailyInfo?.image2) ? `<div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+            ${formData.dailyInfo?.image1 ? `<img src="${formData.dailyInfo.image1}" alt="Günlük 1" style="max-width: 280px; max-height: 180px; object-fit: contain; border: 1px solid #000;" />` : ""}
+            ${formData.dailyInfo?.image2 ? `<img src="${formData.dailyInfo.image2}" alt="Günlük 2" style="max-width: 280px; max-height: 180px; object-fit: contain; border: 1px solid #000;" />` : ""}
+          </div>` : ""}
+          ` : ""}
           ${formData.notes ? `<div class="section-title">BAKIM / MALZEME / NOTLAR</div><div style="border: 1px solid #000; min-height: 60px; padding: 8px; background: white; white-space: pre-wrap;">${formData.notes}</div>` : ""}
         </div>
       </body>
     </html>
   `
+}
+
+const expenseCategoryLabel: Record<string, string> = {
+  santiye: "Şantiye",
+  makine: "Makine (Kullanılan kazık makinesi)",
+  personel: "Personel",
+  yakit: "Yakıt",
+  diger: "Diğer",
 }
 
 export function generatePDFExpensesPage(formData: any) {
@@ -209,15 +225,16 @@ export function generatePDFExpensesPage(formData: any) {
         </div>
         <table>
           <thead>
-            <tr><th style="width: 10%;">#</th><th style="width: 60%;">AÇIKLAMA</th><th style="width: 30%;">TUTAR (IQD)</th></tr>
+            <tr><th style="width: 8%;">#</th><th style="width: 22%;">HARCAMA TÜRÜ</th><th style="width: 45%;">AÇIKLAMA</th><th style="width: 25%;">TUTAR (IQD)</th></tr>
           </thead>
           <tbody>
             ${Array.from({ length: Math.max(15, expenses.length) }, (_, index) => {
               const expense = expenses[index]
-              return `<tr><td style="text-align: center; font-weight: bold;">${index + 1}.</td><td>${expense?.description ?? ""}</td><td style="text-align: right; font-weight: bold;">${expense?.amount ? expense.amount.toLocaleString() : ""}</td></tr>`
+              const cat = expense?.category && expenseCategoryLabel[expense.category] ? expenseCategoryLabel[expense.category] : expenseCategoryLabel.diger
+              return `<tr><td style="text-align: center; font-weight: bold;">${index + 1}.</td><td>${cat}</td><td>${expense?.description ?? ""}</td><td style="text-align: right; font-weight: bold;">${expense?.amount ? expense.amount.toLocaleString() : ""}</td></tr>`
             }).join("")}
             <tr style="background-color: #f0f0f0;">
-              <td colspan="2" style="text-align: center; font-weight: bold;">TOPLAM:</td>
+              <td colspan="3" style="text-align: center; font-weight: bold;">TOPLAM:</td>
               <td style="text-align: right; font-weight: bold;">${expenses.reduce((sum: number, exp: any) => sum + (exp?.amount ?? 0), 0).toLocaleString()} IQD</td>
             </tr>
           </tbody>

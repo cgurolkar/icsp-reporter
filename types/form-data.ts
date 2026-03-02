@@ -73,9 +73,21 @@ export interface Fuel {
   remainingOnSite: string; // new: devir (sahada kalan mazot)
 }
 
+/** Harcama türü: Şantiye, Makine (Kullanılan kazık makinesi), Personel, Yakıt, Diğer */
+export type ExpenseCategory = "santiye" | "makine" | "personel" | "yakit" | "diger"
+
 export interface Expense {
   description: string
   amount: number
+  /** Harcama türü (Şantiye, Makine, Personel, Yakıt, Diğer) */
+  category?: ExpenseCategory
+}
+
+export interface DailyInfo {
+  notes: string
+  /** Base64 data URL veya boş */
+  image1?: string
+  image2?: string
 }
 
 // New interfaces for the missing tables
@@ -111,7 +123,8 @@ export interface FormData {
   expenses: Expense[];
   productionSummary: MachineProductionSummary[];
   pileDetails: PileDetail[];
-  iron: IronStep; // new
+  iron: IronStep;
+  dailyInfo: DailyInfo;
   notes: string;
 }
 
@@ -160,7 +173,8 @@ export const initialFormData: FormData = {
     dailyUsage: "",
     remainingOnSite: "",
   },
-  expenses: [{ description: "", amount: 0 }],
+  expenses: [{ description: "", amount: 0, category: "diger" }],
+  dailyInfo: { notes: "", image1: "", image2: "" },
   productionSummary: [{
     machineId: "",
     machineName: "",
@@ -169,7 +183,7 @@ export const initialFormData: FormData = {
     preBorehole: "",
     concretePoured: "",
   }],
-  pileDetails: Array.from({ length: 10 }, (_, i) => ({
+  pileDetails: Array.from({ length: 3 }, (_, i) => ({
     pileNumber: i + 1,
     drilled: "",
     notes: "",

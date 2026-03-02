@@ -136,10 +136,10 @@ export default function BasicInfoStep({
           />
           {sites.length > 0 && (
             <FormControl fullWidth sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "white" } }}>
-              <InputLabel id="site-label">Şantiye</InputLabel>
+              <InputLabel id="site-label">{t("site")}</InputLabel>
               <Select
                 labelId="site-label"
-                label="Şantiye"
+                label={t("site")}
                 value={data.siteId ?? ""}
                 onChange={(e) => {
                   const raw = e.target.value
@@ -153,7 +153,7 @@ export default function BasicInfoStep({
                   })
                 }}
               >
-                <MenuItem value="">Seçiniz</MenuItem>
+                <MenuItem value="">{t("select_please")}</MenuItem>
                 {sites.map((s) => (
                   <MenuItem key={s.id} value={s.id}>
                     {s.name} ({s.code})
@@ -166,16 +166,16 @@ export default function BasicInfoStep({
         {(siteSummary.totalPiles != null || siteSummary.remainingPiles != null || siteSummary.initialPilesDone != null) && (
           <Box sx={{ mt: 2 }}>
             <Typography variant="subtitle2" sx={{ color: "#e65100", fontWeight: 600, mb: 1.5 }}>
-              Proje özeti
+              {t("project_summary")}
             </Typography>
             <Typography variant="caption" display="block" sx={{ color: "text.secondary", mb: 1 }}>
-              Son rapor sonu itibarıyla. Bugün yapılan, Üretim Özeti adımında girilir; kalan = toplam − bugüne kadar − bugün yapılan.
+              {t("project_summary_caption")}
             </Typography>
             <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 2 }}>
               <TextField
                 fullWidth
-                label="Proje durumu"
-                value={siteSummary.isOngoing ? "Devam Eden" : "Yeni"}
+                label={t("project_status")}
+                value={siteSummary.isOngoing ? t("status_ongoing") : t("status_new")}
                 InputProps={{ readOnly: true }}
                 size="small"
                 sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#f5f5f5" } }}
@@ -183,7 +183,7 @@ export default function BasicInfoStep({
               {siteSummary.projectStartDate && (
                 <TextField
                   fullWidth
-                  label="İşin başlama tarihi"
+                  label={t("project_start_date")}
                   value={String(siteSummary.projectStartDate).slice(0, 10)}
                   InputProps={{ readOnly: true }}
                   size="small"
@@ -193,7 +193,7 @@ export default function BasicInfoStep({
               {siteSummary.totalPiles != null && (
                 <TextField
                   fullWidth
-                  label="Projedeki toplam kazık sayısı (Ad.)"
+                  label={t("total_piles_in_project")}
                   value={siteSummary.totalPiles}
                   InputProps={{ readOnly: true }}
                   size="small"
@@ -203,7 +203,7 @@ export default function BasicInfoStep({
               {siteSummary.isOngoing && siteSummary.initialPilesDone != null && (
                 <TextField
                   fullWidth
-                  label="Raporların başladığı gün yapılan toplam kazık (Ad.)"
+                  label={t("initial_piles_done_label")}
                   value={siteSummary.initialPilesDone}
                   InputProps={{ readOnly: true }}
                   size="small"
@@ -223,7 +223,7 @@ export default function BasicInfoStep({
                   <>
                     <TextField
                       fullWidth
-                      label="Bugüne kadar yapılan (son rapor sonu, bugün dahil değil)"
+                      label={t("done_until_today_excl")}
                       value={buguneKadar != null ? buguneKadar : "—"}
                       InputProps={{ readOnly: true }}
                       size="small"
@@ -231,7 +231,7 @@ export default function BasicInfoStep({
                     />
                     <TextField
                       fullWidth
-                      label="Kalan kazık (son rapor sonu)"
+                      label={t("remaining_piles_last_report")}
                       value={kalan != null ? kalan : "—"}
                       InputProps={{ readOnly: true }}
                       size="small"
@@ -251,12 +251,12 @@ export default function BasicInfoStep({
           sx={{ p: 3, background: "linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%)", border: "1px solid #4caf50", mb: 3 }}
         >
           <Typography variant="subtitle1" gutterBottom sx={{ color: "#2e7d32", fontWeight: 600, mb: 2 }}>
-            📊 Tüm Makinelerin Toplam Değerleri
+            📊 {t("all_machines_totals")}
           </Typography>
           <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 3 }}>
             <TextField
               fullWidth
-              label="Toplam Makine Saat"
+              label={t("total_machine_hours")}
               value={totalMachineHours.toFixed(2)}
               InputProps={{ readOnly: true }}
               sx={{
@@ -268,7 +268,7 @@ export default function BasicInfoStep({
             />
             <TextField
               fullWidth
-              label="Toplam Kullanılan Mazot (Litre)"
+              label={t("total_fuel_used")}
               value={totalUsedFuel.toFixed(2)}
               InputProps={{ readOnly: true }}
               sx={{
@@ -280,7 +280,7 @@ export default function BasicInfoStep({
             />
             <TextField
               fullWidth
-              label="Toplam Değişen Elmas Sayısı"
+              label={t("total_diamond_changed")}
               value={totalChangedDiamondCount}
               InputProps={{ readOnly: true }}
               sx={{
@@ -299,14 +299,14 @@ export default function BasicInfoStep({
         sx={{ p: 3, background: "linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)", border: "1px solid #2196f3" }}
       >
         <Typography variant="subtitle1" gutterBottom sx={{ color: "#1565c0", fontWeight: 600, mb: 2 }}>
-          🔧 Makine Bilgileri
+          🔧 {t("machine_info_title")}
         </Typography>
         
         {/* Makine Seçimi */}
         {allMachines.length > 0 && (
           <Box sx={{ mb: 3 }}>
             <FormControl fullWidth>
-              <InputLabel>Makine Seçin</InputLabel>
+              <InputLabel>{t("select_machine")}</InputLabel>
               <Select
                 value={currentMachineIndex}
                 onChange={(e) => {
@@ -314,9 +314,8 @@ export default function BasicInfoStep({
                   if (onMachineIndexChange) {
                     onMachineIndexChange(newIndex)
                   }
-                  console.log("Makine seçimi değişti:", newIndex)
                 }}
-                label="Makine Seçin"
+                label={t("select_machine")}
                 sx={{
                   backgroundColor: "white",
                   "& .MuiOutlinedInput-root": {
@@ -326,7 +325,7 @@ export default function BasicInfoStep({
               >
                 {allMachines.map((machine, index) => (
                   <MenuItem key={index} value={index}>
-                    {machine.machineName || `Makine ${index + 1}`}
+                    {machine.machineName || `${t("machine_n")} ${index + 1}`}
                   </MenuItem>
                 ))}
               </Select>
@@ -350,7 +349,7 @@ export default function BasicInfoStep({
           />
           <TextField
             fullWidth
-            label="Kullanılan Mazot (Litre)"
+            label={t("fuel_used_litre")}
             type="number"
             value={currentMachine?.usedFuel || ""}
             onChange={handleMachineChange("usedFuel")}
@@ -376,7 +375,7 @@ export default function BasicInfoStep({
           />
           <TextField
             fullWidth
-            label="Makine Notu"
+            label={t("machine_note")}
             multiline
             minRows={2}
             value={currentMachine?.note || ""}

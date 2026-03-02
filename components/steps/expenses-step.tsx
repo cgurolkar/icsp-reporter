@@ -2,10 +2,10 @@
 
 import type React from "react"
 
-import { Grid, TextField, Typography, Box, Button, IconButton, Paper } from "@mui/material"
+import { Grid, TextField, Typography, Box, Button, IconButton, Paper, FormControl, InputLabel, Select, MenuItem } from "@mui/material"
 import { Add, Delete } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
-import type { Expense } from "@/types/form-data"
+import type { Expense, ExpenseCategory } from "@/types/form-data"
 
 interface ExpensesStepProps {
   data: Expense[]
@@ -15,8 +15,16 @@ interface ExpensesStepProps {
 export default function ExpensesStep({ data, onChange }: ExpensesStepProps) {
   const { t } = useLanguage()
 
+  const expenseCategories: { value: ExpenseCategory; label: string }[] = [
+    { value: "santiye", label: t("expense_cat_santiye") },
+    { value: "makine", label: t("expense_cat_makine") },
+    { value: "personel", label: t("expense_cat_personel") },
+    { value: "yakit", label: t("expense_cat_yakit") },
+    { value: "diger", label: t("expense_cat_diger") },
+  ]
+
   const addExpense = () => {
-    onChange([...data, { description: "", amount: 0 }])
+    onChange([...data, { description: "", amount: 0, category: "diger" }])
   }
 
   const removeExpense = (index: number) => {
@@ -76,20 +84,35 @@ export default function ExpensesStep({ data, onChange }: ExpensesStepProps) {
         sx={{ p: 3, background: "linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%)", border: "1px solid #9c27b0" }}
       >
         {data.map((expense, index) => (
-          <Grid container spacing={2} key={index} sx={{ mb: 2 }}>
+          <Grid container spacing={2} key={index} sx={{ mb: 2 }} alignItems="center">
             <Grid item xs={1}>
-              <Typography variant="body1" sx={{ mt: 2, fontWeight: 600, color: "#9c27b0" }}>
+              <Typography variant="body1" sx={{ fontWeight: 600, color: "#9c27b0" }}>
                 {index + 1}.
               </Typography>
             </Grid>
-            <Grid item xs={6}>
+            <Grid item xs={12} sm={3}>
+              <FormControl fullWidth size="small" sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "white" } }}>
+                <InputLabel>{t("expense_type")}</InputLabel>
+                <Select
+                  label={t("expense_type")}
+                  value={expense.category ?? "diger"}
+                  onChange={(e) => updateExpense(index, "category", e.target.value as ExpenseCategory)}
+                >
+                  {expenseCategories.map((c) => (
+                    <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={5}>
               <TextField
                 fullWidth
+                size="small"
                 label={t("description")}
                 value={expense.description}
                 onChange={(e) => updateExpense(index, "description", e.target.value)}
                 onKeyPress={(e) => handleKeyPress(e, index, "description")}
-                placeholder="Harcama açıklaması..."
+                placeholder={t("expense_description_placeholder")}
                 InputProps={{
                   inputProps: { "data-expense-index": `${index}-description` },
                 }}
@@ -101,12 +124,13 @@ export default function ExpensesStep({ data, onChange }: ExpensesStepProps) {
                 }}
               />
             </Grid>
-            <Grid item xs={4}>
+            <Grid item xs={12} sm={2}>
               <TextField
                 fullWidth
+                size="small"
                 label={t("amount_iqd")}
                 type="number"
-                value={expense.amount}
+                value={expense.amount || ""}
                 onChange={(e) => updateExpense(index, "amount", Number.parseFloat(e.target.value) || 0)}
                 onKeyPress={(e) => handleKeyPress(e, index, "amount")}
                 placeholder="0"
@@ -122,7 +146,7 @@ export default function ExpensesStep({ data, onChange }: ExpensesStepProps) {
               />
             </Grid>
             <Grid item xs={1}>
-              <IconButton onClick={() => removeExpense(index)} color="error" disabled={data.length <= 1} sx={{ mt: 1 }}>
+              <IconButton onClick={() => removeExpense(index)} color="error" disabled={data.length <= 1} size="small">
                 <Delete />
               </IconButton>
             </Grid>
@@ -150,7 +174,7 @@ export default function ExpensesStep({ data, onChange }: ExpensesStepProps) {
 
         <Box sx={{ mt: 2, p: 2, backgroundColor: "rgba(156, 39, 176, 0.1)", borderRadius: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            💡 <strong>İpucu:</strong> Yeni satır eklemek için Enter tuşuna basın veya "Harcama Ekle" butonunu kullanın.
+            💡 <strong>{t("tip_prefix")}:</strong> {t("tip_expenses")}
           </Typography>
         </Box>
       </Paper>

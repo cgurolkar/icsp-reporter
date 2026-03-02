@@ -96,7 +96,7 @@ export default function ProductionSummaryStep({
     return (
       <Box>
         <Alert severity="error">
-          Makine bilgisi bulunamadı. Lütfen makine seçimi yapın.
+          {t("no_machine_info")}
         </Alert>
       </Box>
     )
@@ -105,17 +105,17 @@ export default function ProductionSummaryStep({
   return (
     <Box>
       <Typography variant="h6" gutterBottom sx={{ color: "info.main", fontWeight: 600, mb: 3 }}>
-        {t("production_summary")} - {currentMachine?.machineName || "Makine Seçilmedi"}
+        {t("production_summary")} - {currentMachine?.machineName || t("no_machine_selected")}
       </Typography>
       
       {/* Makine Seçimi */}
       {data.length > 0 && (
         <Paper sx={{ p: 3, background: "linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)", border: "1px solid #2196f3", mb: 3 }}>
           <Typography variant="subtitle1" gutterBottom sx={{ color: "#1565c0", fontWeight: 600, mb: 2 }}>
-            🔧 Makine Seçimi
+            🔧 {t("machine_selection_title")}
           </Typography>
           <FormControl fullWidth>
-            <InputLabel>Makine Seçin</InputLabel>
+            <InputLabel>{t("select_machine")}</InputLabel>
             <Select
               value={currentMachineIndex}
               onChange={(e) => {
@@ -123,9 +123,8 @@ export default function ProductionSummaryStep({
                 if (onMachineIndexChange) {
                   onMachineIndexChange(newIndex)
                 }
-                console.log("Üretim özeti - Makine seçimi değişti:", newIndex)
               }}
-              label="Makine Seçin"
+              label={t("select_machine")}
               sx={{
                 backgroundColor: "white",
                 "& .MuiOutlinedInput-root": {
@@ -135,7 +134,7 @@ export default function ProductionSummaryStep({
             >
               {data.map((machine, index) => (
                 <MenuItem key={index} value={index}>
-                  {machine.machineName || `Makine ${index + 1}`}
+                  {machine.machineName || `${t("machine_n")} ${index + 1}`}
                 </MenuItem>
               ))}
             </Select>
@@ -148,10 +147,10 @@ export default function ProductionSummaryStep({
         <Box sx={{ mb: 3 }}>
           <TextField
             fullWidth
-            label="O gün yapılan kazık sayısı (Ad.)"
+            label={t("daily_pile_count_label")}
             value={dailyPileCount}
             onChange={handleDailyPileCountChange}
-            helperText="Bu değer aynı zamanda Beton Dökülen Kazık (Ad.) olarak kullanılır."
+            helperText={t("helper_beton_pile")}
             sx={{
               maxWidth: 320,
               "& .MuiOutlinedInput-root": {
@@ -165,7 +164,7 @@ export default function ProductionSummaryStep({
         <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 3 }}>
           <TextField
             fullWidth
-            label="Kazık İmalatı (m)"
+            label={t("total_production")}
             value={currentMachine.totalProduction}
             onChange={handleChange("totalProduction")}
             sx={{
@@ -177,7 +176,7 @@ export default function ProductionSummaryStep({
           />
           <TextField
             fullWidth
-            label="Boş Foraj (Adet)"
+            label={t("empty_borehole")}
             value={currentMachine.emptyBorehole}
             onChange={handleChange("emptyBorehole")}
             sx={{
@@ -189,7 +188,7 @@ export default function ProductionSummaryStep({
           />
           <TextField
             fullWidth
-            label="Ön Foraj (Adet)"
+            label={t("pre_borehole")}
             value={currentMachine.preBorehole}
             onChange={handleChange("preBorehole")}
             sx={{
@@ -201,10 +200,10 @@ export default function ProductionSummaryStep({
           />
           <TextField
             fullWidth
-            label="Beton Dökülen Kazık (Ad.)"
+            label={t("concrete_pile_count")}
             value={currentMachine.concretePoured}
             onChange={handleChange("concretePoured")}
-            placeholder={dailyPileCount || "O gün yapılan ile aynı"}
+            placeholder={dailyPileCount || t("same_as_daily")}
             sx={{
               "& .MuiOutlinedInput-root": {
                 backgroundColor: "white",
@@ -223,7 +222,7 @@ export default function ProductionSummaryStep({
             <TableBody>
               <TableRow>
                 <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-                  Kazık İmalatı (m)
+                  {t("total_production")}
                 </TableCell>
                 <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
                   {currentMachine.totalProduction}
@@ -231,7 +230,7 @@ export default function ProductionSummaryStep({
               </TableRow>
               <TableRow>
                 <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-                  Boş Foraj (Adet)
+                  {t("empty_borehole")}
                 </TableCell>
                 <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
                   {currentMachine.emptyBorehole}
@@ -239,7 +238,7 @@ export default function ProductionSummaryStep({
               </TableRow>
               <TableRow>
                 <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-                  Ön Foraj (Adet)
+                  {t("pre_borehole")}
                 </TableCell>
                 <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
                   {currentMachine.preBorehole}
@@ -247,7 +246,7 @@ export default function ProductionSummaryStep({
               </TableRow>
               <TableRow>
                 <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-                  Beton Dökülen Kazık Sayısı (Ad.)
+                  {t("total_concrete_piles")}
                 </TableCell>
                 <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
                   {currentMachine.concretePoured}
@@ -261,13 +260,13 @@ export default function ProductionSummaryStep({
         {data.length > 1 && (
           <Box sx={{ mt: 3 }}>
             <Typography variant="h6" gutterBottom sx={{ color: "success.main" }}>
-              📊 Tüm Makinelerin Toplam Değerleri
+              📊 {t("all_machines_totals")}
             </Typography>
             <Table size="small" sx={{ border: "2px solid #000", backgroundColor: "#f1f8e9" }}>
               <TableBody>
                 <TableRow>
                   <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#c8e6c9" }}>
-                    Toplam Kazık İmalatı (m)
+                    {t("total_production_summary_label")}
                   </TableCell>
                   <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
                     {data.reduce((sum, m) => sum + (parseFloat(m.totalProduction) || 0), 0).toFixed(2)}
@@ -275,7 +274,7 @@ export default function ProductionSummaryStep({
                 </TableRow>
                 <TableRow>
                   <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#c8e6c9" }}>
-                    Toplam Boş Foraj (Adet)
+                    {t("total_empty_borehole")}
                   </TableCell>
                   <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
                     {data.reduce((sum, m) => sum + (parseInt(m.emptyBorehole) || 0), 0)}
@@ -283,7 +282,7 @@ export default function ProductionSummaryStep({
                 </TableRow>
                 <TableRow>
                   <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#c8e6c9" }}>
-                    Toplam Ön Foraj (Adet)
+                    {t("total_pre_borehole")}
                   </TableCell>
                   <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
                     {data.reduce((sum, m) => sum + (parseInt(m.preBorehole) || 0), 0)}
@@ -291,7 +290,7 @@ export default function ProductionSummaryStep({
                 </TableRow>
                 <TableRow>
                   <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#c8e6c9" }}>
-                    Toplam Beton Dökülen Kazık Sayısı(Ad.)
+                    {t("total_concrete_piles")}
                   </TableCell>
                   <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
                     {data.reduce((sum, m) => sum + (parseInt(m.concretePoured) || 0), 0)}
@@ -305,16 +304,16 @@ export default function ProductionSummaryStep({
 
       {/* Makine Ekleme Dialog */}
       <Dialog open={showAddMachineDialog} onClose={() => setShowAddMachineDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Ek Makine Ekle</DialogTitle>
+        <DialogTitle>{t("add_extra_machine")}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Ek olarak kullanılacak makineyi seçin
+            {t("select_extra_machine")}
           </Typography>
           <FormControl fullWidth>
-            <InputLabel>Makine Seçin</InputLabel>
+            <InputLabel>{t("select_machine")}</InputLabel>
             <Select
               value={selectedMachineId}
-              label="Makine Seçin"
+              label={t("select_machine")}
               onChange={(e) => setSelectedMachineId(e.target.value)}
             >
               {AVAILABLE_MACHINES
@@ -331,13 +330,13 @@ export default function ProductionSummaryStep({
           </FormControl>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowAddMachineDialog(false)}>İptal</Button>
+          <Button onClick={() => setShowAddMachineDialog(false)}>{t("cancel")}</Button>
           <Button 
             onClick={handleAddMachine} 
             variant="contained"
             disabled={!selectedMachineId}
           >
-            Ekle
+            {t("add")}
           </Button>
         </DialogActions>
       </Dialog>

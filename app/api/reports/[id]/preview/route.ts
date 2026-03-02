@@ -70,6 +70,11 @@ function formDataFromDbReport(data: { report: Record<string, unknown>; machines:
     pileDetails: Array.isArray(r.pile_details) ? r.pile_details : [],
     notes: (r.notes as string) ?? "",
     expenses: Array.isArray(r.expenses) ? r.expenses : [],
+    dailyInfo: {
+      notes: (r.daily_notes as string) ?? "",
+      image1: (r.daily_image1 as string) ?? "",
+      image2: (r.daily_image2 as string) ?? "",
+    },
   }
   return formData
 }

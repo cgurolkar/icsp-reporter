@@ -39,7 +39,7 @@ import {
   Checkbox,
 } from "@mui/material"
 import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility } from "@mui/icons-material"
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts"
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, PieChart, Pie, Cell } from "recharts"
 import { ThemeProvider } from "@mui/material/styles"
 import CssBaseline from "@mui/material/CssBaseline"
 import { theme } from "@/lib/theme"
@@ -112,6 +112,7 @@ function AdminPanel() {
     weekly: { week: string; reportCount: number; piles: number }[]
     monthly: { month: string; reportCount: number; piles: number }[]
     machineComparison?: { machineName: string; totalProduction: number; totalPiles: number; reportCount: number }[]
+    expenseDistribution?: Record<string, number>
   } | null>(null)
   const [recentReports, setRecentReports] = useState<any[]>([])
   const [dashboardLoading, setDashboardLoading] = useState(true)
@@ -192,6 +193,7 @@ function AdminPanel() {
           weekly: (data.weekly || []).map((w: any) => ({ week: w.week, reportCount: w.reportCount ?? 0, piles: w.piles ?? 0, fuel: w.fuel ?? 0, production: w.production ?? 0, expenses: w.expenses ?? 0 })),
           monthly: (data.monthly || []).map((m: any) => ({ month: m.month, reportCount: m.reportCount ?? 0, piles: m.piles ?? 0, fuel: m.fuel ?? 0, production: m.production ?? 0, expenses: m.expenses ?? 0 })),
           machineComparison: data.machineComparison ?? [],
+          expenseDistribution: data.expenseDistribution ?? {},
         })
       }
       if (rawRes.ok) setRecentReports(await rawRes.json())
@@ -677,6 +679,58 @@ function AdminPanel() {
                   </ResponsiveContainer>
                 </Paper>
               )}
+              {(() => {
+                const dist = dashboardStats?.expenseDistribution ?? {}
+                const expenseLabels: Record<string, string> = { santiye: "Şantiye", makine: "Makine (Kazık makinesi)", personel: "Personel", yakit: "Yakıt", diger: "Diğer" }
+                const pieData = ["santiye", "makine", "personel", "yakit", "diger"].map((key) => ({ name: expenseLabels[key], value: dist[key] || 0 })).filter((d) => d.value > 0)
+                const totalExpense = pieData.reduce((s, d) => s + d.value, 0)
+                const colors = ["#4caf50", "#2196f3", "#ff9800", "#9c27b0", "#607d8b"]
+                return (totalExpense > 0 && (
+                  <Grid container spacing={2} sx={{ mb: 3 }}>
+                    <Grid size={{ xs: 12, md: 5 }}>
+                      <Paper sx={{ p: 2, background: "#fff", border: "1px solid var(--icsp-nav-border)", height: "100%" }}>
+                        <Typography variant="subtitle2" sx={{ color: "var(--icsp-lacivert)", mb: 2, fontWeight: 600 }}>Harcama dağılımı (grafik)</Typography>
+                        <ResponsiveContainer width="100%" height={220}>
+                          <PieChart>
+                            <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={(e) => `${e.name}: ${(e.value / totalExpense * 100).toFixed(0)}%`}>
+                              {pieData.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
+                            </Pie>
+                            <Tooltip formatter={(v: number) => [v.toLocaleString() + " IQD", "Tutar"]} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </Paper>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 7 }}>
+                      <Paper sx={{ p: 2, background: "#fff", border: "1px solid var(--icsp-nav-border)", height: "100%" }}>
+                        <Typography variant="subtitle2" sx={{ color: "var(--icsp-lacivert)", mb: 2, fontWeight: 600 }}>Harcama tutarları (türe göre)</Typography>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell sx={{ fontWeight: 600 }}>Harcama türü</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 600 }}>Tutar (IQD)</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 600 }}>Oran</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {pieData.map((row) => (
+                              <TableRow key={row.name}>
+                                <TableCell>{row.name}</TableCell>
+                                <TableCell align="right">{row.value.toLocaleString()}</TableCell>
+                                <TableCell align="right">{totalExpense > 0 ? ((row.value / totalExpense) * 100).toFixed(1) : "0"}%</TableCell>
+                              </TableRow>
+                            ))}
+                            <TableRow sx={{ backgroundColor: "#f5f5f5" }}>
+                              <TableCell sx={{ fontWeight: 600 }}>Toplam</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 600 }}>{totalExpense.toLocaleString()}</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 600 }}>100%</TableCell>
+                            </TableRow>
+                          </TableBody>
+                        </Table>
+                      </Paper>
+                    </Grid>
+                  </Grid>
+                ))
+              })()}
               <Paper sx={{ background: "#fff", border: "1px solid var(--icsp-nav-border)", overflow: "hidden" }}>
                 <Typography variant="subtitle1" sx={{ color: "var(--icsp-lacivert)", p: 2, borderBottom: "1px solid var(--icsp-nav-border)", fontWeight: 600 }}>
                   Son raporlar (bilgi girişi kayıtları)

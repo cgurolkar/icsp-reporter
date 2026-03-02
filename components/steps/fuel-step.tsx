@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect } from "react"
+import React, { useEffect, useMemo } from "react"
 
 import {
   Grid,
@@ -15,6 +15,11 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  ListSubheader,
 } from "@mui/material"
 import { Add, Delete } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
@@ -25,38 +30,36 @@ interface FuelStepProps {
   onChange: (data: Fuel) => void
   selectedMachine: Machine | null
   additionalMachines: Machine[]
+  /** Temel bilgilerdeki makineler (makine adları mazot satırında listelenir) */
+  basicInfoMachines?: { machineName?: string }[]
 }
 
 const emptyFuelMachine = { name: "", shift: "", incoming: "", remaining: "", used: "" }
 
-export default function FuelStep({ data, onChange, selectedMachine, additionalMachines }: FuelStepProps) {
+export default function FuelStep({ data, onChange, selectedMachine, additionalMachines, basicInfoMachines = [] }: FuelStepProps) {
   const { t } = useLanguage()
   const machines = Array.isArray(data.machines) && data.machines.length > 0 ? data.machines : [emptyFuelMachine]
 
-  // Tabloda en az bir satır olsun
+  const machineNames = useMemo(() => {
+    const fromBasic = (basicInfoMachines || []).map((m) => (m as { machineName?: string }).machineName).filter(Boolean) as string[]
+    const fromSelection = [selectedMachine?.name, ...(additionalMachines || []).map((m) => m.name)].filter(Boolean) as string[]
+    return [...new Set([...fromBasic, ...fromSelection])]
+  }, [basicInfoMachines, selectedMachine, additionalMachines])
+
+  const vehicleOptions = useMemo(() => [t("crane"), t("loader"), t("truck"), t("pickup"), t("car"), t("service")], [t])
+  const nameOptions = useMemo(() => [...machineNames, ...vehicleOptions], [machineNames, vehicleOptions])
+
+  // Tabloda en az bir satır olsun; temel bilgilerdeki makineleri doldur (boş veya tek boş satır varken)
   useEffect(() => {
-    if (!Array.isArray(data.machines) || data.machines.length === 0) {
+    const current = Array.isArray(data.machines) ? data.machines : []
+    const names = (basicInfoMachines || []).map((m) => (m as { machineName?: string }).machineName).filter(Boolean) as string[]
+    const allEmpty = current.length === 0 || (current.length === 1 && !(current[0].name || "").trim())
+    if (names.length > 0 && allEmpty) {
+      onChange({ ...data, machines: names.map((name) => ({ name, shift: "", incoming: "", remaining: "", used: "" })) })
+    } else if (current.length === 0) {
       onChange({ ...data, machines: [emptyFuelMachine] })
     }
-  }, [])
-
-  // Makine seçimi sonrası otomatik olarak makine adlarını doldur (sadece tek boş satır varken)
-  useEffect(() => {
-    if (selectedMachine && machines.length === 1 && machines[0].name === "") {
-      const allMachines = [selectedMachine, ...(additionalMachines || [])]
-      const updatedMachines = allMachines.map(machine => ({
-        name: machine.name,
-        shift: "",
-        incoming: "",
-        remaining: "",
-        used: "",
-      }))
-      onChange({
-        ...data,
-        machines: updatedMachines,
-      })
-    }
-  }, [selectedMachine, additionalMachines])
+  }, [basicInfoMachines])
 
   const addMachine = () => {
     onChange({
@@ -127,22 +130,22 @@ export default function FuelStep({ data, onChange, selectedMachine, additionalMa
           <TableHead>
             <TableRow sx={{ backgroundColor: "#f0f0f0" }}>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "20%" }}>
-                MAKİNE
+                {t("machine").toUpperCase()}
               </TableCell>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "15%" }}>
-                DEVİR
+                {t("shift").toUpperCase()}
               </TableCell>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "15%" }}>
-                Gelen (lt)
+                {t("incoming_lt")}
               </TableCell>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "15%" }}>
-                Kalan (lt)
+                {t("remaining_lt")}
               </TableCell>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "15%" }}>
-                Kullanılan (lt)
+                {t("used_lt")}
               </TableCell>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "10%" }}>
-                İŞLEM
+                {t("action").toUpperCase()}
               </TableCell>
             </TableRow>
           </TableHead>
@@ -150,20 +153,32 @@ export default function FuelStep({ data, onChange, selectedMachine, additionalMa
             {machines.map((machine, index) => (
               <TableRow key={index}>
                 <TableCell sx={{ border: "1px solid #000", p: 0.5 }}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    value={machine.name}
-                    onChange={(e) => updateMachine(index, "name", e.target.value)}
-                    onKeyPress={(e) => handleKeyPress(e, index, "name")}
-                    placeholder="Makine Adı"
-                    variant="standard"
-                    InputProps={{
-                      disableUnderline: true,
-                      inputProps: { "data-machine-index": `${index}-name` },
-                    }}
-                    sx={{ "& input": { fontSize: "0.9rem", fontWeight: "bold" } }}
-                  />
+                  <FormControl fullWidth size="small" variant="standard" sx={{ minWidth: 140 }}>
+                    <Select
+                      displayEmpty
+                      value={machine.name ?? ""}
+                      onChange={(e) => updateMachine(index, "name", e.target.value)}
+                      renderValue={(v) => v || t("select_machine_or_vehicle")}
+                      inputProps={{ "data-machine-index": `${index}-name` }}
+                      sx={{ fontSize: "0.9rem", fontWeight: "bold", "& .MuiSelect-select": { py: 0.5 } }}
+                    >
+                      <MenuItem value="">
+                        <em>{t("select_machine_or_vehicle")}</em>
+                      </MenuItem>
+                      {machineNames.length > 0 && (
+                        <>
+                          <ListSubheader sx={{ lineHeight: 2, fontSize: "0.75rem", opacity: 0.8 }} onMouseDown={(e) => e.preventDefault()}>— {t("machines_section")} —</ListSubheader>
+                          {machineNames.map((name) => (
+                            <MenuItem key={name} value={name}>{name}</MenuItem>
+                          ))}
+                        </>
+                      )}
+                      <ListSubheader sx={{ lineHeight: 2, fontSize: "0.75rem", opacity: 0.8 }} onMouseDown={(e) => e.preventDefault()}>— {t("vehicles_section")} —</ListSubheader>
+                      {vehicleOptions.map((v) => (
+                        <MenuItem key={v} value={v}>{v}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
                 </TableCell>
                 <TableCell sx={{ border: "1px solid #000", p: 0.5 }}>
                   <TextField
@@ -256,7 +271,7 @@ export default function FuelStep({ data, onChange, selectedMachine, additionalMa
               "&:hover": { backgroundColor: "#c2185b" },
             }}
           >
-            Makine Ekle
+            {t("add_machine_vehicle")}
           </Button>
         </Box>
 
@@ -269,7 +284,7 @@ export default function FuelStep({ data, onChange, selectedMachine, additionalMa
             rows={3}
             value={data.dailyUsage}
             onChange={e => onChange({ ...data, dailyUsage: e.target.value })}
-            placeholder="Günlük mazot kullanımı ile ilgili notlar..."
+            placeholder={t("fuel_notes_placeholder")}
             InputProps={{
               style: { color: "#e91e63" },
             }}
@@ -301,7 +316,7 @@ export default function FuelStep({ data, onChange, selectedMachine, additionalMa
         <Box sx={{ mb: 3 }}>
           <TextField
             fullWidth
-            label="Sahada Kalan Mazot (Devir)"
+            label={t("fuel_remaining_site")}
             value={data.remainingOnSite}
             onChange={e => onChange({ ...data, remainingOnSite: e.target.value })}
             placeholder="Sahada kalan mazot miktarı (kg/litre)"
@@ -336,7 +351,7 @@ export default function FuelStep({ data, onChange, selectedMachine, additionalMa
 
         <Box sx={{ mt: 2, p: 2, backgroundColor: "rgba(233, 30, 99, 0.1)", borderRadius: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            💡 <strong>İpucu:</strong> Başka şantiyede mazot kullanan makine varsa &quot;Makine Ekle&quot; ile ekleyin. Yeni satır için Enter tuşunu da kullanabilirsiniz.
+            💡 <strong>{t("tip_prefix")}:</strong> {t("tip_fuel_step")}
           </Typography>
         </Box>
       </Paper>

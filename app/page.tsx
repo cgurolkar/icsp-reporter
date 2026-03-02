@@ -37,8 +37,11 @@ function HomePage() {
       maxWidth="md"
       sx={{
         py: { xs: 2, sm: 4 },
+        px: { xs: 1.5, sm: 2 },
         minHeight: "100vh",
         background: "#fafafa",
+        maxWidth: "100%",
+        overflow: "hidden",
       }}
     >
       <Box sx={{ display: "flex", justifyContent: "flex-end", alignItems: "center", mb: 2 }}>
@@ -61,7 +64,7 @@ function HomePage() {
           <Typography variant="subtitle1" sx={{ color: "var(--icsp-lacivert)", fontWeight: 600, mb: 2 }}>
             Şantiyeler
           </Typography>
-          <Box sx={{ overflowX: "auto" }}>
+          <Box sx={{ overflowX: "auto", maxWidth: "100%", WebkitOverflowScrolling: "touch" }}>
             <Table size="small" sx={{ minWidth: 560, "& th, & td": { borderColor: "var(--icsp-nav-border)" } }}>
               <TableHead>
                 <TableRow>
