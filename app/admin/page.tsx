@@ -444,42 +444,42 @@ function AdminPanel() {
   }
 
   return (
-    <Box sx={{ minHeight: "100vh", background: "#2c2f36", py: 3 }}>
+    <Box sx={{ minHeight: "100vh", background: "#f5f5f5", py: 3 }}>
       <Container maxWidth="lg">
         <Paper
           elevation={0}
           sx={{
             p: 3,
             borderRadius: 2,
-            background: "rgba(44, 47, 54, 0.6)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            color: "#e6edf3",
-            "& .MuiListItemText-primary": { color: "#e6edf3" },
-            "& .MuiListItemText-secondary": { color: "rgba(255,255,255,0.7)" },
+            background: "#fff",
+            border: "1px solid #e0e0e0",
+            color: "#333",
+            "& .MuiListItemText-primary": { color: "#333" },
+            "& .MuiListItemText-secondary": { color: "#616161" },
             "& .MuiChip-label": { color: "#1a1a1a" },
-            "& .MuiInputLabel-root": { color: "rgba(255,255,255,0.9)" },
-            "& .MuiInputLabel-root.Mui-focused": { color: "#4caf50" },
-            "& .MuiFormLabel-root": { color: "rgba(255,255,255,0.9)" },
+            "& .MuiInputLabel-root": { color: "rgba(0,0,0,0.6)" },
+            "& .MuiInputLabel-root.Mui-focused": { color: "#1a237e" },
+            "& .MuiFormLabel-root": { color: "rgba(0,0,0,0.6)" },
           }}
         >
-          <Typography variant="h6" sx={{ color: "#fff", fontWeight: 600, mb: 2 }}>
+          <Typography variant="h6" sx={{ color: "#1a237e", fontWeight: 600, mb: 2 }}>
             {t("admin_panel")}
           </Typography>
 
         {error && (
-          <Box sx={{ mb: 2, p: 2, backgroundColor: "error.light", color: "error.contrastText", borderRadius: 1 }}>
+          <Box sx={{ mb: 2, p: 2, backgroundColor: "#ffebee", color: "#c62828", borderRadius: 1 }}>
             <Typography>{error}</Typography>
           </Box>
         )}
 
-        <Box sx={{ borderBottom: 1, borderColor: "rgba(255,255,255,0.2)" }}>
+        <Box sx={{ borderBottom: 1, borderColor: "#e0e0e0" }}>
           <Tabs
             value={tabValue}
             onChange={(_, newValue) => setTabValue(newValue)}
             sx={{
-              "& .MuiTab-root": { color: "rgba(255,255,255,0.7)" },
-              "& .Mui-selected": { color: "#fff", fontWeight: 600, backgroundColor: "transparent" },
-              "& .MuiTabs-indicator": { backgroundColor: "#4caf50" },
+              "& .MuiTab-root": { color: "#616161" },
+              "& .Mui-selected": { color: "#1a237e", fontWeight: 600 },
+              "& .MuiTabs-indicator": { backgroundColor: "#1a237e" },
             }}
           >
             <Tab label="Dashboard" icon={<Assessment />} iconPosition="start" />
@@ -492,7 +492,7 @@ function AdminPanel() {
 
         <TabPanel value={tabValue} index={0}>
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 1, mb: 2 }}>
-            <Typography variant="h6" sx={{ color: "#fff", fontWeight: 600 }}>
+            <Typography variant="h6" sx={{ color: "#1a237e", fontWeight: 600 }}>
               Dashboard
             </Typography>
             <Button
@@ -500,7 +500,7 @@ function AdminPanel() {
               startIcon={<Refresh />}
               onClick={() => loadDashboard()}
               disabled={dashboardLoading}
-              sx={{ color: "#b0bec5" }}
+              sx={{ color: "#616161" }}
             >
               Yenile
             </Button>
@@ -780,7 +780,7 @@ function AdminPanel() {
 
         <TabPanel value={tabValue} index={1}>
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-            <Typography variant="h6" sx={{ color: "#fff", fontWeight: 600 }}>{t("email_recipients")}</Typography>
+            <Typography variant="h6" sx={{ color: "#1a237e", fontWeight: 600 }}>{t("email_recipients")}</Typography>
             <Button variant="contained" startIcon={<Add />} onClick={() => handleAdd("email")}>
               {t("add_email")}
             </Button>
@@ -790,10 +790,10 @@ function AdminPanel() {
               <ListItem key={index} divider>
                 <ListItemText primary={email} />
                 <ListItemSecondaryAction>
-                  <IconButton onClick={() => handleEdit("email", index, email)} sx={{ color: "#fff" }}>
+                  <IconButton onClick={() => handleEdit("email", index, email)} sx={{ color: "#616161" }}>
                     <Edit />
                   </IconButton>
-                  <IconButton onClick={() => handleDelete("email", index)} sx={{ color: "#fff" }}>
+                  <IconButton onClick={() => handleDelete("email", index)} sx={{ color: "#616161" }}>
                     <Delete />
                   </IconButton>
                 </ListItemSecondaryAction>
@@ -804,7 +804,7 @@ function AdminPanel() {
 
         <TabPanel value={tabValue} index={2}>
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-            <Typography variant="h6" sx={{ color: "#e6edf3" }}>Kullanıcı Yönetimi</Typography>
+            <Typography variant="h6" sx={{ color: "#1a237e" }}>Kullanıcı Yönetimi</Typography>
             <Button variant="contained" startIcon={<Add />} onClick={() => { setAddDbUserForm({ username: "", password: "", role: "user", siteId: "" }); setAddDbUserDialogOpen(true) }}>
               Kullanıcı Ekle
             </Button>
@@ -868,10 +868,10 @@ function AdminPanel() {
                       ))}
                     </Select>
                   </FormControl>
-                  <IconButton onClick={() => handleEdit("user", user.id, user.username)} sx={{ color: "#fff" }}>
+                  <IconButton onClick={() => handleEdit("user", user.id, user.username)} sx={{ color: "#616161" }}>
                     <Edit />
                   </IconButton>
-                  <IconButton onClick={() => handleDelete("user", user.id)} sx={{ color: "#fff" }}>
+                  <IconButton onClick={() => handleDelete("user", user.id)} sx={{ color: "#616161" }}>
                     <Delete />
                   </IconButton>
                 </ListItemSecondaryAction>
@@ -879,7 +879,7 @@ function AdminPanel() {
             ))}
           </List>
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-            <Typography variant="h6" sx={{ color: "#e6edf3" }}>{t("authorized_users")}</Typography>
+            <Typography variant="h6" sx={{ color: "#1a237e" }}>{t("authorized_users")}</Typography>
             <Button variant="contained" startIcon={<Add />} onClick={() => handleAdd("user")}>
               {t("add_user")}
             </Button>
@@ -889,10 +889,10 @@ function AdminPanel() {
               <ListItem key={index} divider>
                 <ListItemText primary={user} />
                 <ListItemSecondaryAction>
-                  <IconButton onClick={() => handleEdit("user", index, user)} sx={{ color: "#fff" }}>
+                  <IconButton onClick={() => handleEdit("user", index, user)} sx={{ color: "#616161" }}>
                     <Edit />
                   </IconButton>
-                  <IconButton onClick={() => handleDelete("user", index)} sx={{ color: "#fff" }}>
+                  <IconButton onClick={() => handleDelete("user", index)} sx={{ color: "#616161" }}>
                     <Delete />
                   </IconButton>
                 </ListItemSecondaryAction>
@@ -902,11 +902,11 @@ function AdminPanel() {
         </TabPanel>
 
         <TabPanel value={tabValue} index={3}>
-          <Typography variant="subtitle2" sx={{ color: "rgba(255,255,255,0.8)", mb: 2 }}>
+          <Typography variant="subtitle2" sx={{ color: "#616161", mb: 2 }}>
             Farklı şantiyeler tek veritabanında toplanır. Her şantiye için rapor e-postası alacak adresleri tanımlayın.
           </Typography>
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 1 }}>
-            <Typography variant="h6" sx={{ color: "#fff", fontWeight: 600 }}>Şantiyeler</Typography>
+            <Typography variant="h6" sx={{ color: "#1a237e", fontWeight: 600 }}>Şantiyeler</Typography>
             <Button
               variant="contained"
               startIcon={<Add />}
@@ -935,7 +935,7 @@ function AdminPanel() {
                 />
                 <ListItemSecondaryAction>
                   <IconButton
-                sx={{ color: "#fff" }}
+                sx={{ color: "#1a237e" }}
                 onClick={() => {
                   setSiteDialogData({
                     id: site.id,
@@ -969,7 +969,7 @@ function AdminPanel() {
         </TabPanel>
 
         <TabPanel value={tabValue} index={4}>
-          <Typography variant="h6" sx={{ color: "#fff", fontWeight: 600, mb: 2 }}>Raporlar</Typography>
+          <Typography variant="h6" sx={{ color: "#1a237e", fontWeight: 600, mb: 2 }}>Raporlar</Typography>
           <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, alignItems: "center", mb: 2 }}>
             <TextField
               size="small"

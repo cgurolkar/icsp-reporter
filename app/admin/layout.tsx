@@ -10,14 +10,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <Box
       sx={{
         minHeight: "100vh",
-        background: "linear-gradient(180deg, #1a237e 0%, #283593 24px, #2c2f36 120px)",
+        background: "#f5f5f5",
         pb: 4,
       }}
     >
       <header
         style={{
-          background: "rgba(44, 47, 54, 0.98)",
-          borderBottom: "1px solid rgba(255,255,255,0.08)",
+          background: "#fff",
+          borderBottom: "1px solid #e0e0e0",
           padding: "12px 24px",
           display: "grid",
           gridTemplateColumns: "1fr auto 1fr",
@@ -48,13 +48,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             />
           </Box>
         </Box>
-        <Typography variant="h6" sx={{ color: "#fff", fontWeight: 700, letterSpacing: "-0.02em", textAlign: "center" }}>
+        <Typography variant="h6" sx={{ color: "#1a237e", fontWeight: 700, letterSpacing: "-0.02em", textAlign: "center" }}>
           Yönetici Paneli - ICSP Reporter
         </Typography>
         <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1 }}>
           <Button
             component={Link}
-            href="/"
+            href="/proje"
             variant="contained"
             startIcon={<Home />}
             sx={{
