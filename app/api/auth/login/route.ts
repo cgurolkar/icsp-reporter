@@ -71,8 +71,13 @@ export async function POST(request: NextRequest) {
       siteId: row.site_id ?? null,
     })
 
+    const forwardedProto = request.headers.get("x-forwarded-proto")
+    const isSecureRequest =
+      forwardedProto === "https" ||
+      (typeof request.nextUrl?.protocol === "string" && request.nextUrl.protocol === "https:") ||
+      (typeof request.url === "string" && request.url.startsWith("https://"))
     const response = NextResponse.json({ success: true, user: { id: row.id, username: row.username, role, siteId: row.site_id ?? null } })
-    response.headers.set("Set-Cookie", setSessionCookie(token))
+    response.headers.set("Set-Cookie", setSessionCookie(token, isSecureRequest))
     return response
   } catch (e) {
     console.error("Login error:", e)

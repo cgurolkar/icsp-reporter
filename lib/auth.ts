@@ -35,8 +35,10 @@ export async function getSessionFromRequest(request: NextRequest): Promise<Sessi
   return getSessionFromRequestEdge(request)
 }
 
-export function setSessionCookie(token: string): string {
-  return `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`
+/** secure: true only over HTTPS, so cookie is stored on HTTP (e.g. http://server:3001) */
+export function setSessionCookie(token: string, secure?: boolean): string {
+  const isSecure = secure ?? (process.env.NODE_ENV === "production" && process.env.VERCEL === "1")
+  return `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE}${isSecure ? "; Secure" : ""}`
 }
 
 export function clearSessionCookie(): string {
