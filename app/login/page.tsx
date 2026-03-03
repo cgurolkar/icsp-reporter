@@ -32,22 +32,27 @@ function LoginForm() {
     setError("")
     setLoading(true)
     try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 20000)
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ username, password }),
+        signal: controller.signal,
       })
+      clearTimeout(timeoutId)
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setError(data.error || "Giriş başarısız.")
         setLoading(false)
         return
       }
-      router.push(next)
-      router.refresh()
-    } catch {
-      setError("Bağlantı hatası.")
+      setLoading(false)
+      window.location.href = next
+    } catch (err) {
+      const isAbort = err instanceof Error && err.name === "AbortError"
+      setError(isAbort ? "Zaman aşımı. Sunucuya ulaşılamıyor." : "Bağlantı hatası.")
       setLoading(false)
     }
   }
