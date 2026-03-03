@@ -1,7 +1,7 @@
 "use client"
 
 import { Suspense, useState, useEffect } from "react"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import {
   Box,
   Container,
@@ -21,6 +21,7 @@ import {
   IconButton,
 } from "@mui/material"
 import { ChevronLeft, ChevronRight } from "@mui/icons-material"
+import { useAuth } from "@/contexts/auth-context"
 
 interface SiteOption {
   id: number
@@ -53,6 +54,10 @@ const MONTH_NAMES = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Te
 
 function ReportsContent() {
   const searchParams = useSearchParams()
+  const router = useRouter()
+  const { user } = useAuth()
+  const canViewReports = user?.role === "admin" || user?.role === "manager"
+
   const [siteId, setSiteId] = useState<string>(() => searchParams.get("siteId") || "")
   const [sites, setSites] = useState<SiteOption[]>([])
   const [reports, setReports] = useState<ReportRow[]>([])
@@ -65,6 +70,13 @@ function ReportsContent() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
 
   useEffect(() => {
+    if (user != null && !canViewReports) {
+      router.replace("/proje")
+    }
+  }, [canViewReports, user, router])
+
+  useEffect(() => {
+    if (!canViewReports) return
     fetch("/api/sites?withReportCount=1")
       .then((res) => (res.ok ? res.json() : []))
       .then((list: SiteOption[]) => setSites(list))
@@ -97,7 +109,7 @@ function ReportsContent() {
         setReports([])
       })
       .finally(() => setLoading(false))
-  }, [siteId, calendarMonth.year, calendarMonth.month])
+  }, [siteId, calendarMonth.year, calendarMonth.month, canViewReports])
 
   const toDateKey = (d: string | unknown): string => {
     if (typeof d === "string") return d.slice(0, 10)
@@ -139,6 +151,14 @@ function ReportsContent() {
 
   const currentSite = sites.find((s) => String(s.id) === siteId)
   const reportCount = currentSite?.report_count ?? (siteId ? reports.length : 0)
+
+  if (user != null && !canViewReports) {
+    return (
+      <Box sx={{ minHeight: "50vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <CircularProgress />
+      </Box>
+    )
+  }
 
   return (
     <Box sx={{ minHeight: "100vh", background: "#fafafa", py: 2, px: 0, overflowX: "hidden", maxWidth: "100%" }}>

@@ -816,14 +816,30 @@ function AdminPanel() {
                   primary={user.username} 
                   secondary={
                     <>
-                      Rol: {user.role} | Email: {user.email || "N/A"}
+                      Email: {user.email || "N/A"}
                       {(user as any).site_name && (
-                        <> | Sorumlu şantiye: <strong>{(user as any).site_name}</strong> ({(user as any).site_code})</>
+                        <> | Şantiye: <strong>{(user as any).site_name}</strong> ({(user as any).site_code})</>
                       )}
                     </>
                   }
                 />
-                <ListItemSecondaryAction sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <ListItemSecondaryAction sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                  <FormControl size="small" sx={{ minWidth: 160 }}>
+                    <InputLabel>Rol</InputLabel>
+                    <Select
+                      value={user.role}
+                      label="Rol"
+                      onChange={async (e) => {
+                        const newRole = e.target.value as string
+                        await handleUserRoleChange(user.id, newRole)
+                      }}
+                    >
+                      <MenuItem value="admin">Yönetici</MenuItem>
+                      <MenuItem value="manager">Manager</MenuItem>
+                      <MenuItem value="user">Kullanıcı</MenuItem>
+                      <MenuItem value="personel">Personel</MenuItem>
+                    </Select>
+                  </FormControl>
                   <FormControl size="small" sx={{ minWidth: 180 }}>
                     <InputLabel>Sorumlu şantiye</InputLabel>
                     <Select
@@ -1337,8 +1353,10 @@ function AdminPanel() {
             <FormControl fullWidth margin="dense">
               <InputLabel>Rol</InputLabel>
               <Select value={addDbUserForm.role} label="Rol" onChange={(e) => setAddDbUserForm((p) => ({ ...p, role: e.target.value }))}>
-                <MenuItem value="user">Kullanıcı</MenuItem>
-                <MenuItem value="admin">Admin</MenuItem>
+                <MenuItem value="admin">Yönetici (her şeye erişim)</MenuItem>
+                <MenuItem value="manager">Manager (bilgi görüntüleme, giriş yok)</MenuItem>
+                <MenuItem value="user">Kullanıcı (atanan şantiye girişi)</MenuItem>
+                <MenuItem value="personel">Personel (atanan şantiye girişi)</MenuItem>
               </Select>
             </FormControl>
             <FormControl fullWidth margin="dense">

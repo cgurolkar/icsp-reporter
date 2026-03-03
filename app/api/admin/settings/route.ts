@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { getSessionFromRequest, canAccessAdmin } from "@/lib/auth"
 
 /**
  * NOTE: In a real project you would read/write this data
@@ -19,7 +20,11 @@ let settings: {
 /* ------------------------------------------------------------------ */
 /*  GET  /api/admin/settings                                          */
 /* ------------------------------------------------------------------ */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const session = await getSessionFromRequest(request)
+  if (!session || !canAccessAdmin(session.role)) {
+    return NextResponse.json({ error: "Yetkisiz" }, { status: 403 })
+  }
   try {
     return NextResponse.json(settings, { status: 200 })
   } catch (err) {
@@ -32,6 +37,10 @@ export async function GET() {
 /*  POST /api/admin/settings                                          */
 /* ------------------------------------------------------------------ */
 export async function POST(req: NextRequest) {
+  const session = await getSessionFromRequest(req)
+  if (!session || !canAccessAdmin(session.role)) {
+    return NextResponse.json({ error: "Yetkisiz" }, { status: 403 })
+  }
   try {
     const body = await req.json()
 

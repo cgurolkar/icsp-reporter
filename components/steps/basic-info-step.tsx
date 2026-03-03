@@ -31,6 +31,7 @@ interface BasicInfoStepProps {
   onAddMachine?: (machine: any) => void // Ek makine ekleme fonksiyonu
   onMachineIndexChange?: (index: number) => void // Makine indeksi değişikliği
   onSiteSummaryChange?: (summary: SiteSummaryForForm) => void
+  lockedSiteId?: number // Kullanıcı/Personel: sadece atandığı şantiye (değiştirilemez)
 }
 
 export default function BasicInfoStep({ 
@@ -43,6 +44,7 @@ export default function BasicInfoStep({
   onAddMachine,
   onMachineIndexChange,
   onSiteSummaryChange,
+  lockedSiteId,
 }: BasicInfoStepProps) {
   const { t } = useLanguage()
   const [sites, setSites] = useState<SiteOption[]>([])
@@ -141,6 +143,7 @@ export default function BasicInfoStep({
                 labelId="site-label"
                 label={t("site")}
                 value={data.siteId ?? ""}
+                disabled={lockedSiteId != null}
                 onChange={(e) => {
                   const raw = e.target.value
                   const id = raw === "" ? null : Number(raw)

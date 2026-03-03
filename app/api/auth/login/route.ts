@@ -1,0 +1,81 @@
+import { NextRequest, NextResponse } from "next/server"
+import pool from "@/lib/database"
+import { verifyPassword, hashPassword, createToken, setSessionCookie, type Role } from "@/lib/auth"
+
+const ALLOWED_ROLES: Role[] = ["admin", "manager", "user", "personel"]
+
+function isBcryptHash(hash: string): boolean {
+  return typeof hash === "string" && (hash.startsWith("$2a$") || hash.startsWith("$2b$") || hash.startsWith("$2y$"))
+}
+
+function legacyPasswordMatch(password: string, storedHash: string): boolean {
+  try {
+    const encoded = Buffer.from(password).toString("base64")
+    return encoded === storedHash
+  } catch {
+    return false
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json().catch(() => ({}))
+    const username = typeof body.username === "string" ? body.username.trim() : ""
+    const password = typeof body.password === "string" ? body.password : ""
+
+    if (!username || !password) {
+      return NextResponse.json({ error: "Kullanıcı adı ve şifre gerekli." }, { status: 400 })
+    }
+
+    const client = await pool.connect()
+    let row: { id: number; username: string; password_hash: string; role: string; site_id: number | null } | null = null
+    try {
+      const result = await client.query(
+        `SELECT id, username, password_hash, role, site_id FROM users WHERE username = $1`,
+        [username]
+      )
+      row = result.rows[0] || null
+    } finally {
+      client.release()
+    }
+
+    if (!row) {
+      return NextResponse.json({ error: "Kullanıcı adı veya şifre hatalı." }, { status: 401 })
+    }
+
+    const rawRole = String(row.role || "").toLowerCase()
+    const role = ALLOWED_ROLES.includes(rawRole as Role) ? (rawRole as Role) : "user"
+    let valid = false
+    if (isBcryptHash(row.password_hash)) {
+      valid = await verifyPassword(password, row.password_hash)
+    } else {
+      valid = legacyPasswordMatch(password, row.password_hash)
+      if (valid) {
+        const newHash = await hashPassword(password)
+        const client2 = await pool.connect()
+        try {
+          await client2.query("UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", [newHash, row.id])
+        } finally {
+          client2.release()
+        }
+      }
+    }
+    if (!valid) {
+      return NextResponse.json({ error: "Kullanıcı adı veya şifre hatalı." }, { status: 401 })
+    }
+
+    const token = await createToken({
+      id: row.id,
+      username: row.username,
+      role,
+      siteId: row.site_id ?? null,
+    })
+
+    const response = NextResponse.json({ success: true, user: { id: row.id, username: row.username, role, siteId: row.site_id ?? null } })
+    response.headers.set("Set-Cookie", setSessionCookie(token))
+    return response
+  } catch (e) {
+    console.error("Login error:", e)
+    return NextResponse.json({ error: "Giriş işlemi başarısız." }, { status: 500 })
+  }
+}

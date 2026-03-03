@@ -1,18 +1,31 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getAllSites, getSitesWithReportCount, createSite, initializeDatabase } from "@/lib/database"
+import { getSessionFromRequest, canViewAllSites } from "@/lib/auth"
 
 export async function GET(request: NextRequest) {
+  const session = await getSessionFromRequest(request)
+  if (!session) {
+    return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
+  }
   try {
     await initializeDatabase()
     const { searchParams } = new URL(request.url)
     const withReportCount = searchParams.get("withReportCount") === "1"
-    const siteIdParam = searchParams.get("siteId")
+    let siteIdParam = searchParams.get("siteId")
+    // Kullanıcı/Personel sadece kendi şantiyesini görebilir
+    if (!canViewAllSites(session.role) && session.siteId != null) {
+      siteIdParam = String(session.siteId)
+    }
     const siteIdNum = siteIdParam ? parseInt(siteIdParam, 10) : NaN
     const filterSiteId = Number.isInteger(siteIdNum) ? siteIdNum : undefined
     const sites = withReportCount
       ? await getSitesWithReportCount(filterSiteId)
       : await getAllSites()
-    return NextResponse.json(sites)
+    // Kullanıcı/Personel: sadece kendi şantiyesi dönsün
+    const allowed = canViewAllSites(session.role)
+      ? sites
+      : (Array.isArray(sites) ? sites : []).filter((s: { id: number }) => s.id === session.siteId)
+    return NextResponse.json(allowed)
   } catch (error) {
     console.error("Error fetching sites:", error)
     return NextResponse.json({ error: "Failed to fetch sites" }, { status: 500 })
@@ -20,6 +33,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await getSessionFromRequest(request)
+  if (!session || session.role !== "admin") {
+    return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
+  }
   try {
     await initializeDatabase()
     const body = await request.json().catch(() => ({}))

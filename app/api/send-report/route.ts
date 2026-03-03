@@ -4,8 +4,16 @@ import path from "path"
 import { saveWorkReport, initializeDatabase, getSiteReportEmails, getSiteById, getLastReportRemainingBySite } from "@/lib/database"
 import { isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
+import { getSessionFromRequest, canDoDataEntry } from "@/lib/auth"
 
 export async function POST(request: NextRequest) {
+  const session = await getSessionFromRequest(request)
+  if (!session) {
+    return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
+  }
+  if (!canDoDataEntry(session.role)) {
+    return NextResponse.json({ error: "Bilgi girişi yetkiniz yok." }, { status: 403 })
+  }
   try {
     const raw = await request.json()
     // Normalize to avoid undefined access and "Failed to generate report"
@@ -42,6 +50,14 @@ export async function POST(request: NextRequest) {
     const rawSiteId = formData.basicInfo?.siteId
     const siteId = rawSiteId == null || rawSiteId === "" ? null : Number(rawSiteId)
     const siteIdForDb = siteId != null && !Number.isNaN(siteId) ? siteId : null
+    if (session.role === "user" || session.role === "personel") {
+      if (session.siteId == null) {
+        return NextResponse.json({ error: "Size atanmış şantiye yok. Bilgi girişi yapamazsınız." }, { status: 403 })
+      }
+      if (siteIdForDb !== session.siteId) {
+        return NextResponse.json({ error: "Sadece görevli olduğunuz şantiye için rapor gönderebilirsiniz." }, { status: 403 })
+      }
+    }
     let projectName = (formData.basicInfo?.project ?? "").trim()
     let site: Awaited<ReturnType<typeof getSiteById>> = null
     if (siteIdForDb) {

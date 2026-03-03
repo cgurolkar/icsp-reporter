@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/lib/database';
+import { getSessionFromRequest } from '@/lib/auth';
+import { hashPassword } from '@/lib/auth';
+
+const ALLOWED_ROLES = ['admin', 'manager', 'user', 'personel'];
 
 export async function GET(request: NextRequest) {
+  const session = await getSessionFromRequest(request);
+  if (!session || session.role !== 'admin') {
+    return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 });
+  }
   try {
     const client = await pool.connect();
     
@@ -29,20 +37,21 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await getSessionFromRequest(request);
+  if (!session || session.role !== 'admin') {
+    return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 });
+  }
   try {
     const { username, password, role, email, siteId } = await request.json();
-    
-    const client = await pool.connect();
-    
-    // Basit şifre hash'i (production'da bcrypt kullan)
-    const passwordHash = Buffer.from(password).toString('base64');
-    
+    const roleVal = role && ALLOWED_ROLES.includes(role) ? role : 'user';
+    const passwordHash = await hashPassword(password);
     const siteIdVal = siteId != null && siteId !== '' ? (typeof siteId === 'number' ? siteId : parseInt(String(siteId), 10)) : null;
+    const client = await pool.connect();
     const result = await client.query(`
       INSERT INTO users (username, password_hash, role, email, site_id)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING id, username, role, email, site_id
-    `, [username, passwordHash, role || 'user', email || null, Number.isInteger(siteIdVal) ? siteIdVal : null]);
+    `, [username, passwordHash, roleVal, email || null, Number.isInteger(siteIdVal) ? siteIdVal : null]);
     
     client.release();
     

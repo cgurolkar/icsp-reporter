@@ -1,6 +1,40 @@
 "use client"
 
-import Image from "next/image"
+import { useState } from "react"
+
+function LogoBox({ src, alt, fallbackText }: { src: string; alt: string; fallbackText: string }) {
+  const [failed, setFailed] = useState(false)
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "4px",
+        borderRadius: "6px",
+        backgroundColor: "#ffffff",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+        overflow: "hidden",
+        flexShrink: 0,
+        width: 48,
+        height: 48,
+      }}
+    >
+      {failed ? (
+        <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--icsp-lacivert)" }}>{fallbackText}</span>
+      ) : (
+        <img
+          src={src}
+          alt={alt}
+          width={48}
+          height={48}
+          style={{ objectFit: "contain", display: "block" }}
+          onError={() => setFailed(true)}
+        />
+      )}
+    </div>
+  )
+}
 
 export default function AppHeader() {
   return (
@@ -18,28 +52,7 @@ export default function AppHeader() {
         boxSizing: "border-box",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "4px",
-          borderRadius: "6px",
-          backgroundColor: "#ffffff",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-          overflow: "hidden",
-          flexShrink: 0,
-        }}
-      >
-        <Image
-          src="/icsp-logo-auger.png"
-          alt="ICS Piling"
-          width={48}
-          height={48}
-          style={{ objectFit: "contain", display: "block", backgroundColor: "#ffffff" }}
-          unoptimized
-        />
-      </div>
+      <LogoBox src="/icsp-logo-auger.png" alt="ICS Piling" fallbackText="ICSP" />
       <h1
         style={{
           margin: 0,
@@ -53,28 +66,7 @@ export default function AppHeader() {
       >
         ICSP Reporter
       </h1>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "4px",
-          borderRadius: "6px",
-          backgroundColor: "#ffffff",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-          overflow: "hidden",
-          flexShrink: 0,
-        }}
-      >
-        <Image
-          src="/icsp-logo-rt.png"
-          alt="Rekäiz Al-Turba"
-          width={48}
-          height={48}
-          style={{ objectFit: "contain", display: "block", backgroundColor: "#ffffff" }}
-          unoptimized
-        />
-      </div>
+      <LogoBox src="/icsp-logo-rt.png" alt="Rekäiz Al-Turba" fallbackText="RT" />
     </header>
   )
 }

@@ -1,13 +1,21 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getAggregatedStats, getWorkReportsFiltered, initializeDatabase } from "@/lib/database"
+import { getSessionFromRequest, canViewReports } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
+  const session = await getSessionFromRequest(request)
+  if (!session) {
+    return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
+  }
+  if (!canViewReports(session.role)) {
+    return NextResponse.json({ error: "Bu sayfayı görüntüleme yetkiniz yok." }, { status: 403 })
+  }
   try {
     await initializeDatabase()
     const { searchParams } = new URL(request.url)
-    const siteIdParam = searchParams.get("siteId")
+    let siteIdParam = searchParams.get("siteId")
     const startDate = searchParams.get("startDate") || undefined
     const endDate = searchParams.get("endDate") || undefined
     const raw = searchParams.get("raw") === "1"

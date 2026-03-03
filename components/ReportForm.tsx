@@ -36,9 +36,10 @@ const steps = [
 export interface ReportFormProps {
   initialSiteId?: number
   initialSiteName?: string
+  lockedSiteId?: number
 }
 
-export default function ReportForm({ initialSiteId, initialSiteName }: ReportFormProps) {
+export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteId }: ReportFormProps) {
   const [activeStep, setActiveStep] = useState(0)
   const [formData, setFormData] = useState<FormData>(initialFormData)
   const [showAddMachinePrompt, setShowAddMachinePrompt] = useState(false)
@@ -134,12 +135,12 @@ export default function ReportForm({ initialSiteId, initialSiteName }: ReportFor
             onChange={(d) => updateFormData("basicInfo", d)}
             currentMachineIndex={formData.machineSelection.currentMachineIndex}
             currentMachine={formData.basicInfo.machines[formData.machineSelection.currentMachineIndex] || null}
+            allMachines={formData.basicInfo.machines}
             onMachineChange={(machineData) => {
               const updatedMachines = [...formData.basicInfo.machines]
               updatedMachines[formData.machineSelection.currentMachineIndex] = machineData
               updateFormData("basicInfo", { ...formData.basicInfo, machines: updatedMachines })
             }}
-            allMachines={formData.basicInfo.machines}
             onAddMachine={(machine) => {
               const newProductionSummary = { machineId: machine.id, machineName: machine.name, totalProduction: "", emptyBorehole: "", preBorehole: "", concretePoured: "" }
               const newBasicInfoMachine = { machineId: machine.id, machineName: machine.name, machineHours: "", usedFuel: "", changedDiamondCount: "", note: "" }
@@ -149,6 +150,7 @@ export default function ReportForm({ initialSiteId, initialSiteName }: ReportFor
             }}
             onMachineIndexChange={(index) => updateFormData("machineSelection", { ...formData.machineSelection, currentMachineIndex: index })}
             onSiteSummaryChange={(s) => setSiteSummary(s)}
+            lockedSiteId={lockedSiteId}
           />
         )
       case 2: {

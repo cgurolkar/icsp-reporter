@@ -6,12 +6,17 @@ import { ThemeProvider } from "@mui/material/styles"
 import CssBaseline from "@mui/material/CssBaseline"
 import { theme } from "@/lib/theme"
 import { LanguageProvider } from "@/contexts/language-context"
+import { useAuth } from "@/contexts/auth-context"
 import ReportForm from "@/components/ReportForm"
 
 function FormContent() {
   const searchParams = useSearchParams()
-  const siteIdParam = searchParams.get("siteId")
-  const initialSiteId = siteIdParam ? parseInt(siteIdParam, 10) : undefined
+  const { user } = useAuth()
+  const isRestrictedUser = user?.role === "user" || user?.role === "personel"
+  const siteIdFromUrl = searchParams.get("siteId")
+  const initialSiteIdFromUrl = siteIdFromUrl ? parseInt(siteIdFromUrl, 10) : undefined
+  const initialSiteId = isRestrictedUser && user?.siteId != null ? user.siteId : initialSiteIdFromUrl
+  const lockedSiteId = isRestrictedUser ? user?.siteId ?? undefined : undefined
   const [initialSiteName, setInitialSiteName] = useState<string>("")
 
   useEffect(() => {
@@ -27,7 +32,11 @@ function FormContent() {
   }, [initialSiteId])
 
   return (
-    <ReportForm initialSiteId={initialSiteId} initialSiteName={initialSiteName || undefined} />
+    <ReportForm
+      initialSiteId={initialSiteId}
+      initialSiteName={initialSiteName || undefined}
+      lockedSiteId={lockedSiteId}
+    />
   )
 }
 
