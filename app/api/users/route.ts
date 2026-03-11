@@ -3,7 +3,7 @@ import pool from '@/lib/database';
 import { getSessionFromRequest } from '@/lib/auth';
 import { hashPassword } from '@/lib/auth';
 
-const ALLOWED_ROLES = ['admin', 'manager', 'user', 'personel'];
+const ALLOWED_ROLES = ['admin', 'manager', 'user', 'personel', 'operator'];
 
 export async function GET(request: NextRequest) {
   const session = await getSessionFromRequest(request);

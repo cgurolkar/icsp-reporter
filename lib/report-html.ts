@@ -2,8 +2,15 @@
 
 export function generatePDFMainReport(
   formData: any,
-  opts?: { computedRemainingPiles?: string; computedDailyPileCount?: string; concretePouredSum?: number }
+  opts?: {
+    computedRemainingPiles?: string
+    computedDailyPileCount?: string
+    concretePouredSum?: number
+    /** Operatör girişleri (şantiye + tarih bazlı); rapora bu bölüm eklenir */
+    operatorEntries?: Array<{ machine_name?: string; machine_hours?: string; used_fuel?: string; work_done?: string; note?: string; username?: string; daily_pile_count?: string; total_production?: string; empty_borehole?: string; pre_borehole?: string; concrete_poured?: string; image1?: string | null; image2?: string | null; notes?: string }>
+  }
 ) {
+  const operatorEntries = opts?.operatorEntries ?? []
   const machines = formData.basicInfo?.machines ?? []
   const additionalMachines = formData.machineSelection?.additionalMachines ?? []
   const fuelMachines = formData.fuel?.machines ?? []
@@ -96,6 +103,37 @@ export function generatePDFMainReport(
               `).join("")}
             </tbody>
           </table>
+          ${operatorEntries.length > 0 ? `
+          <div class="section-title">OPERATÖR MAKİNE GİRİŞLERİ</div>
+          <table>
+            <thead><tr><th>MAKİNE</th><th>MAKİNE SAAT</th><th>MAZOT (L)</th><th>KAZIK (Ad.)</th><th>İMALAT (m)</th><th>YAPILAN İMALAT</th><th>NOT</th></tr></thead>
+            <tbody>
+              ${operatorEntries.map((oe: any) => `
+                <tr>
+                  <td style="text-align: center; font-weight: bold;">${oe.machine_name ?? ""}</td>
+                  <td style="text-align: center;">${oe.machine_hours ?? ""}</td>
+                  <td style="text-align: center;">${oe.used_fuel ?? ""}</td>
+                  <td style="text-align: center;">${oe.daily_pile_count ?? oe.concrete_poured ?? ""}</td>
+                  <td style="text-align: center;">${oe.total_production ?? ""}</td>
+                  <td style="text-align: left;">${oe.work_done ?? ""}</td>
+                  <td style="text-align: left;">${oe.note ?? ""}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+          ${operatorEntries.some((oe: any) => (oe.notes && String(oe.notes).trim()) || (oe.image1 || oe.image2)) ? `
+          <div class="section-title">OPERATÖR FOTOĞRAF VE NOTLAR</div>
+          ${operatorEntries.map((oe: any) => {
+            const hasContent = (oe.notes && String(oe.notes).trim()) || oe.image1 || oe.image2
+            if (!hasContent) return ""
+            return `<div style="margin-bottom: 12px; border: 1px solid #ccc; padding: 8px;">
+              <strong>${oe.machine_name ?? ""}</strong>
+              ${oe.notes && String(oe.notes).trim() ? `<div style="white-space: pre-wrap; margin: 8px 0;">${oe.notes}</div>` : ""}
+              ${(oe.image1 || oe.image2) ? `<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">${oe.image1 ? `<img src="${oe.image1}" alt="Op 1" style="max-width: 200px; max-height: 150px; object-fit: contain; border: 1px solid #000;" />` : ""}${oe.image2 ? `<img src="${oe.image2}" alt="Op 2" style="max-width: 200px; max-height: 150px; object-fit: contain; border: 1px solid #000;" />` : ""}</div>` : ""}
+            </div>`
+          }).join("")}
+          ` : ""}
+          ` : ""}
           <div class="section-title">TEMEL BİLGİLER</div>
           <div class="info-grid">
             <div class="info-box"><div style="font-size: 10px; font-weight: bold; margin-bottom: 2px;">MAKİNE SAAT</div><div style="font-size: 14px; font-weight: bold;">${currentMachine?.machineHours ?? ""}</div></div>
@@ -173,9 +211,10 @@ export function generatePDFMainReport(
               `).join("")}
             </tbody>
           </table>
-          ${(formData.dailyInfo?.notes || formData.dailyInfo?.image1 || formData.dailyInfo?.image2) ? `
+          ${(formData.dailyInfo?.notes || formData.dailyInfo?.image1 || formData.dailyInfo?.image2 || (formData.dailyInfo?.nextDayPlannedWork && String(formData.dailyInfo.nextDayPlannedWork).trim())) ? `
           <div class="section-title">GÜNLÜK BİLGİLER</div>
           ${formData.dailyInfo?.notes ? `<div style="border: 1px solid #000; min-height: 40px; padding: 8px; background: white; white-space: pre-wrap; margin-bottom: 10px;">${formData.dailyInfo.notes}</div>` : ""}
+          ${(formData.dailyInfo?.nextDayPlannedWork && String(formData.dailyInfo.nextDayPlannedWork).trim()) ? `<div style="margin-top: 10px;"><strong>Bir sonraki gün için planlanan imalat ve yapılacak işler:</strong><ul style="margin: 8px 0 0 20px; padding: 0;">${String(formData.dailyInfo.nextDayPlannedWork).split(/\r?\n/).filter((line) => line.trim()).map((line) => `<li style="margin-bottom: 4px;">${line.trim()}</li>`).join("")}</ul></div>` : ""}
           ${(formData.dailyInfo?.image1 || formData.dailyInfo?.image2) ? `<div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
             ${formData.dailyInfo?.image1 ? `<img src="${formData.dailyInfo.image1}" alt="Günlük 1" style="max-width: 280px; max-height: 180px; object-fit: contain; border: 1px solid #000;" />` : ""}
             ${formData.dailyInfo?.image2 ? `<img src="${formData.dailyInfo.image2}" alt="Günlük 2" style="max-width: 280px; max-height: 180px; object-fit: contain; border: 1px solid #000;" />` : ""}

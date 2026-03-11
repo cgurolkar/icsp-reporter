@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import fs from "fs"
 import path from "path"
-import { getWorkReportById, initializeDatabase } from "@/lib/database"
+import { getWorkReportById, getOperatorEntriesBySiteAndDate, initializeDatabase } from "@/lib/database"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
 
 export const dynamic = "force-dynamic"
@@ -72,6 +72,7 @@ function formDataFromDbReport(data: { report: Record<string, unknown>; machines:
     expenses: Array.isArray(r.expenses) ? r.expenses : [],
     dailyInfo: {
       notes: (r.daily_notes as string) ?? "",
+      nextDayPlannedWork: (r.next_day_planned as string) ?? "",
       image1: (r.daily_image1 as string) ?? "",
       image2: (r.daily_image2 as string) ?? "",
     },
@@ -108,10 +109,14 @@ export async function GET(
       })
       const r = data.report as Record<string, unknown>
       const concretePoured = parseInt(String(r.concrete_poured ?? ""), 10) || 0
+      const siteId = r.site_id != null ? Number(r.site_id) : null
+      const reportDate = r.date instanceof Date ? r.date.toISOString().slice(0, 10) : (typeof r.date === "string" ? r.date.slice(0, 10) : "")
+      const operatorEntries = siteId && reportDate ? await getOperatorEntriesBySiteAndDate(siteId, reportDate) : []
       html = generatePDFMainReport(formData, {
         computedRemainingPiles: r.remaining_piles != null && String(r.remaining_piles).trim() !== "" ? String(r.remaining_piles) : undefined,
         computedDailyPileCount: r.daily_pile_count != null && String(r.daily_pile_count).trim() !== "" ? String(r.daily_pile_count) : (concretePoured > 0 ? String(concretePoured) : undefined),
         concretePouredSum: concretePoured || undefined,
+        operatorEntries,
       }) + generatePDFExpensesPage(formData)
     }
     return new NextResponse(html, {

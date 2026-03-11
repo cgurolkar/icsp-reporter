@@ -95,14 +95,24 @@ git pull
 docker compose up -d --build
 ```
 
-## Nginx ile 80/443’e alma (isteğe bağlı)
+## Nginx ile alan adına yönlendirme
 
-Başka siten yanında bu uygulamayı da domain ile vermek istersen Nginx’te örnek sunucu bloğu:
+### report.icspiling.com → http://46.225.110.180:3001
+
+Tarayıcıda **report.icspiling.com** yazıldığında sunucudaki 3001 portundaki uygulamanın açılması için:
+
+**1. Sunucuda Nginx site dosyası oluştur**
+
+```bash
+sudo nano /etc/nginx/sites-available/report-icspiling
+```
+
+**2. Aşağıdaki bloğu yapıştır, kaydet (nano: Ctrl+O, Enter, Ctrl+X)**
 
 ```nginx
 server {
     listen 80;
-    server_name rapor.example.com;
+    server_name report.icspiling.com;
     location / {
         proxy_pass http://127.0.0.1:3001;
         proxy_http_version 1.1;
@@ -116,4 +126,98 @@ server {
 }
 ```
 
-SSL için `certbot --nginx` kullanabilirsin.
+**3. Site’ı etkinleştir**
+
+```bash
+sudo ln -s /etc/nginx/sites-available/report-icspiling /etc/nginx/sites-enabled/
+```
+
+**4. Nginx’i test et ve yeniden yükle**
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+**5. DNS:** `report.icspiling.com` için A kaydı sunucu IP’sine işaret etmeli: **46.225.110.180**
+
+**6. HTTPS (isteğe bağlı):** `sudo certbot --nginx -d report.icspiling.com`
+
+---
+
+### İki uygulama (genel)
+
+Sunucuda iki ayrı klasörde iki uygulama varsa, her biri için ayrı bir **server** bloğu ve (isteğe bağlı) ayrı alan adı kullanılır.
+
+### 1. Bu uygulama (work-report / icsp-reporter) hangi portta?
+
+- Docker ile çalışıyorsa varsayılan **3001** (docker-compose’ta `ports: "3001:3000"` gibi).
+- İkinci uygulama farklı bir portta olmalı (örn. 3002).
+
+### 2. Nginx site dosyası oluştur
+
+Mevcut Nginx yapısına göre iki yol var:
+
+**A) `sites-available` / `sites-enabled` kullanıyorsan (Ubuntu/Debian tarzı):**
+
+```bash
+sudo nano /etc/nginx/sites-available/rapor-siteniz
+```
+
+**B) `conf.d` kullanıyorsan:**
+
+```bash
+sudo nano /etc/nginx/conf.d/rapor-siteniz.conf
+```
+
+İçeriği (alan adını ve portu kendinize göre değiştirin):
+
+```nginx
+# Bu uygulama (work-report / icsp-reporter) – örn. rapor.sirket.com
+server {
+    listen 80;
+    server_name rapor.sirket.com;   # Kendi alan adınız
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+İkinci uygulama için ayrı bir dosya açıp farklı `server_name` ve `proxy_pass` portu (örn. 3002) kullanın.
+
+### 3. Site’ı etkinleştir (sadece sites-available kullandıysan)
+
+```bash
+sudo ln -s /etc/nginx/sites-available/rapor-siteniz /etc/nginx/sites-enabled/
+```
+
+### 4. Nginx’i test et ve yeniden yükle
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 5. DNS
+
+Alan adının A kaydını sunucu IP’nize yönlendirin (örn. `rapor.sirket.com` → `46.225.110.180`).
+
+### 6. SSL (HTTPS)
+
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d rapor.sirket.com
+```
+
+Certbot, Nginx yapılandırmasına otomatik SSL ekler ve yenilemeyi ayarlar.
+
+---
+
+**Özet:** İki uygulama = iki ayrı Nginx server bloğu (iki dosya veya aynı dosyada iki `server { ... }`). Her biri kendi `server_name` ve `proxy_pass` portuna sahip olmalı.

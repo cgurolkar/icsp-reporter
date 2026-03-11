@@ -71,6 +71,9 @@ export async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'work_reports' AND column_name = 'daily_image2') THEN
           ALTER TABLE work_reports ADD COLUMN daily_image2 TEXT;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'work_reports' AND column_name = 'next_day_planned') THEN
+          ALTER TABLE work_reports ADD COLUMN next_day_planned TEXT;
+        END IF;
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'daily_* columns: %', SQLERRM;
       END $$
     `)
@@ -100,6 +103,47 @@ export async function initializeDatabase() {
         used VARCHAR(50),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
+    `)
+
+    // Operatör makine girişleri (şantiye + tarih bazlı; rapora merge edilir)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS operator_entries (
+        id SERIAL PRIMARY KEY,
+        site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+        report_date DATE NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        machine_id VARCHAR(100) NOT NULL,
+        machine_name VARCHAR(255) NOT NULL,
+        machine_hours VARCHAR(50),
+        used_fuel VARCHAR(50),
+        work_done VARCHAR(255),
+        note TEXT,
+        daily_pile_count VARCHAR(50),
+        total_production VARCHAR(50),
+        empty_borehole VARCHAR(50),
+        pre_borehole VARCHAR(50),
+        concrete_poured VARCHAR(50),
+        image1 TEXT,
+        image2 TEXT,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(site_id, report_date, user_id, machine_id)
+      )
+    `)
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'operator_entries' AND column_name = 'daily_pile_count') THEN
+          ALTER TABLE operator_entries ADD COLUMN daily_pile_count VARCHAR(50);
+          ALTER TABLE operator_entries ADD COLUMN total_production VARCHAR(50);
+          ALTER TABLE operator_entries ADD COLUMN empty_borehole VARCHAR(50);
+          ALTER TABLE operator_entries ADD COLUMN pre_borehole VARCHAR(50);
+          ALTER TABLE operator_entries ADD COLUMN concrete_poured VARCHAR(50);
+          ALTER TABLE operator_entries ADD COLUMN image1 TEXT;
+          ALTER TABLE operator_entries ADD COLUMN image2 TEXT;
+          ALTER TABLE operator_entries ADD COLUMN notes TEXT;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'operator_entries columns: %', SQLERRM;
+      END $$
     `)
 
     // Kullanıcılar tablosu
@@ -211,6 +255,12 @@ export async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'initial_piles_done') THEN
           ALTER TABLE sites ADD COLUMN initial_piles_done INTEGER DEFAULT NULL;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'assigned_machine_ids') THEN
+          ALTER TABLE sites ADD COLUMN assigned_machine_ids JSONB DEFAULT '[]';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'assigned_operator_ids') THEN
+          ALTER TABLE sites ADD COLUMN assigned_operator_ids JSONB DEFAULT '[]';
+        END IF;
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'sites project columns: %', SQLERRM;
       END $$
     `)
@@ -247,8 +297,8 @@ export async function saveWorkReport(reportData: any) {
         total_completed_piles, remaining_piles, steel_lowered_piles, concrete_poured,
         engineer_count, foreman_count, operator_count, oiler_count, welder_count, other_count, personnel_total,
         crane_count, loader_count, truck_count, pickup_count, car_count, service_count, vehicles_total,
-        daily_fuel_usage, expenses, pile_details, notes, daily_notes, daily_image1, daily_image2
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
+        daily_fuel_usage, expenses, pile_details, notes, daily_notes, daily_image1, daily_image2, next_day_planned
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)
       RETURNING id
     `, [
       reportData.date,
@@ -289,6 +339,7 @@ export async function saveWorkReport(reportData: any) {
       reportData.dailyNotes ?? null,
       reportData.dailyImage1 ?? null,
       reportData.dailyImage2 ?? null,
+      reportData.nextDayPlanned ?? null,
     ])
 
     const reportId = result.rows[0].id
@@ -395,6 +446,89 @@ export async function getWorkReportsFiltered(options: { siteId?: number | null; 
     return result.rows
   } catch (error) {
     console.error('Error fetching filtered work reports:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+// Operatör makine girişi kaydet (şantiye + tarih + kullanıcı + makine bazlı; aynı gün aynı makine varsa güncelle)
+export async function saveOperatorEntry(data: {
+  siteId: number
+  reportDate: string
+  userId: number
+  machineId: string
+  machineName: string
+  machineHours?: string
+  usedFuel?: string
+  workDone?: string
+  note?: string
+  dailyPileCount?: string
+  totalProduction?: string
+  emptyBorehole?: string
+  preBorehole?: string
+  concretePoured?: string
+  image1?: string | null
+  image2?: string | null
+  notes?: string
+}) {
+  const client = await pool.connect()
+  try {
+    const dateStr = (data.reportDate || "").slice(0, 10)
+    await client.query(`
+      INSERT INTO operator_entries (site_id, report_date, user_id, machine_id, machine_name, machine_hours, used_fuel, work_done, note, daily_pile_count, total_production, empty_borehole, pre_borehole, concrete_poured, image1, image2, notes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      ON CONFLICT (site_id, report_date, user_id, machine_id)
+      DO UPDATE SET
+        machine_name = EXCLUDED.machine_name, machine_hours = EXCLUDED.machine_hours, used_fuel = EXCLUDED.used_fuel,
+        work_done = EXCLUDED.work_done, note = EXCLUDED.note,
+        daily_pile_count = EXCLUDED.daily_pile_count, total_production = EXCLUDED.total_production,
+        empty_borehole = EXCLUDED.empty_borehole, pre_borehole = EXCLUDED.pre_borehole, concrete_poured = EXCLUDED.concrete_poured,
+        image1 = EXCLUDED.image1, image2 = EXCLUDED.image2, notes = EXCLUDED.notes
+    `, [
+      data.siteId,
+      dateStr,
+      data.userId,
+      data.machineId,
+      data.machineName,
+      data.machineHours ?? "",
+      data.usedFuel ?? "",
+      data.workDone ?? "",
+      data.note ?? "",
+      data.dailyPileCount ?? "",
+      data.totalProduction ?? "",
+      data.emptyBorehole ?? "",
+      data.preBorehole ?? "",
+      data.concretePoured ?? "",
+      data.image1 && String(data.image1).startsWith("data:") ? data.image1 : null,
+      data.image2 && String(data.image2).startsWith("data:") ? data.image2 : null,
+      data.notes ?? "",
+    ])
+    return true
+  } catch (error) {
+    console.error("Error saving operator entry:", error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+// Şantiye + tarih için operatör girişlerini getir (rapora merge için)
+export async function getOperatorEntriesBySiteAndDate(siteId: number, reportDate: string) {
+  const client = await pool.connect()
+  try {
+    const dateStr = (reportDate || "").slice(0, 10)
+    const result = await client.query(
+      `SELECT oe.*, u.username
+       FROM operator_entries oe
+       LEFT JOIN users u ON oe.user_id = u.id
+       WHERE oe.site_id = $1 AND oe.report_date = $2
+       ORDER BY oe.machine_name, oe.id`,
+      [siteId, dateStr]
+    )
+    return result.rows
+  } catch (error) {
+    console.error("Error fetching operator entries:", error)
     throw error
   } finally {
     client.release()
@@ -602,6 +736,43 @@ export async function getLastReportRemainingBySite(siteId: number | null) {
   }
 }
 
+/** Belirli bir şantiye ve tarihteki raporu getir (örn. dünkü raporun next_day_planned için) */
+export async function getReportBySiteAndDate(siteId: number, dateStr: string) {
+  const client = await pool.connect()
+  try {
+    const d = (dateStr || "").slice(0, 10)
+    const result = await client.query(
+      `SELECT id, date, next_day_planned FROM work_reports WHERE site_id = $1 AND date = $2 ORDER BY id DESC LIMIT 1`,
+      [siteId, d]
+    )
+    return result.rows[0] || null
+  } catch (error) {
+    console.error('Error fetching report by site and date:', error)
+    return null
+  } finally {
+    client.release()
+  }
+}
+
+/** Verilen user id listesi için id ve username döner (şantiye atanmış operatörler için) */
+export async function getUsersByIds(ids: number[]) {
+  if (!ids.length) return []
+  const client = await pool.connect()
+  try {
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(',')
+    const result = await client.query(
+      `SELECT id, username FROM users WHERE id IN (${placeholders})`,
+      ids
+    )
+    return result.rows
+  } catch (error) {
+    console.error('Error fetching users by ids:', error)
+    return []
+  } finally {
+    client.release()
+  }
+}
+
 export async function getSiteById(id: number) {
   const client = await pool.connect()
   try {
@@ -641,12 +812,14 @@ export async function createSite(data: {
   projectStartDate?: string | null
   isOngoing?: boolean
   initialPilesDone?: number | null
+  assignedMachineIds?: string[]
+  assignedOperatorIds?: number[]
 }) {
   const client = await pool.connect()
   try {
     const result = await client.query(
-      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, assigned_machine_ids, assigned_operator_ids)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
       [
         data.name,
         data.code,
@@ -660,6 +833,8 @@ export async function createSite(data: {
         data.projectStartDate?.trim() || null,
         data.isOngoing ?? false,
         data.initialPilesDone ?? null,
+        JSON.stringify(data.assignedMachineIds || []),
+        JSON.stringify(data.assignedOperatorIds || []),
       ]
     )
     return result.rows[0]
@@ -685,6 +860,8 @@ export async function updateSite(id: number, data: {
   projectStartDate?: string | null
   isOngoing?: boolean
   initialPilesDone?: number | null
+  assignedMachineIds?: string[]
+  assignedOperatorIds?: number[]
 }) {
   const client = await pool.connect()
   try {
@@ -704,6 +881,8 @@ export async function updateSite(id: number, data: {
     if (data.projectStartDate !== undefined) { updates.push(`project_start_date = $${i++}`); values.push(data.projectStartDate?.trim() || null) }
     if (data.isOngoing !== undefined) { updates.push(`is_ongoing = $${i++}`); values.push(data.isOngoing) }
     if (data.initialPilesDone !== undefined) { updates.push(`initial_piles_done = $${i++}`); values.push(data.initialPilesDone) }
+    if (data.assignedMachineIds !== undefined) { updates.push(`assigned_machine_ids = $${i++}`); values.push(JSON.stringify(data.assignedMachineIds)) }
+    if (data.assignedOperatorIds !== undefined) { updates.push(`assigned_operator_ids = $${i++}`); values.push(JSON.stringify(data.assignedOperatorIds)) }
     if (updates.length === 0) return await getSiteById(id)
     updates.push(`updated_at = CURRENT_TIMESTAMP`)
     values.push(id)

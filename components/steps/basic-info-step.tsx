@@ -92,19 +92,9 @@ export default function BasicInfoStep({
     })
   }
 
-  const handleMachineChange = (field: keyof MachineBasicInfo) => (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (currentMachine) {
-      onMachineChange({
-        ...currentMachine,
-        [field]: event.target.value,
-      })
-    }
+  const handleMachineChange = (_field: keyof MachineBasicInfo) => (_event: React.ChangeEvent<HTMLInputElement>) => {
+    // Makine saati, mazot, imalat, not artık sadece operatör girişinde; proje bilgi girişinde kaldırıldı
   }
-
-  // Tüm makinelerin toplam değerlerini hesapla
-  const totalMachineHours = allMachines.reduce((sum, m) => sum + (parseFloat(m.machineHours) || 0), 0)
-  const totalUsedFuel = allMachines.reduce((sum, m) => sum + (parseFloat(m.usedFuel) || 0), 0)
-  const totalChangedDiamondCount = allMachines.reduce((sum, m) => sum + (parseInt(m.changedDiamondCount) || 0), 0)
 
   return (
     <Box>
@@ -248,150 +238,7 @@ export default function BasicInfoStep({
         )}
       </Paper>
 
-      {/* Toplam Değerler */}
-      {allMachines.length > 1 && (
-        <Paper
-          sx={{ p: 3, background: "linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%)", border: "1px solid #4caf50", mb: 3 }}
-        >
-          <Typography variant="subtitle1" gutterBottom sx={{ color: "#2e7d32", fontWeight: 600, mb: 2 }}>
-            📊 {t("all_machines_totals")}
-          </Typography>
-          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 3 }}>
-            <TextField
-              fullWidth
-              label={t("total_machine_hours")}
-              value={totalMachineHours.toFixed(2)}
-              InputProps={{ readOnly: true }}
-              sx={{
-                backgroundColor: "#f1f8e9",
-                "& .MuiOutlinedInput-root": {
-                  backgroundColor: "#f1f8e9",
-                },
-              }}
-            />
-            <TextField
-              fullWidth
-              label={t("total_fuel_used")}
-              value={totalUsedFuel.toFixed(2)}
-              InputProps={{ readOnly: true }}
-              sx={{
-                backgroundColor: "#f1f8e9",
-                "& .MuiOutlinedInput-root": {
-                  backgroundColor: "#f1f8e9",
-                },
-              }}
-            />
-            <TextField
-              fullWidth
-              label={t("total_diamond_changed")}
-              value={totalChangedDiamondCount}
-              InputProps={{ readOnly: true }}
-              sx={{
-                backgroundColor: "#f1f8e9",
-                "& .MuiOutlinedInput-root": {
-                  backgroundColor: "#f1f8e9",
-                },
-              }}
-            />
-          </Box>
-        </Paper>
-      )}
-
-      {/* Makine Bilgileri */}
-      <Paper
-        sx={{ p: 3, background: "linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)", border: "1px solid #2196f3" }}
-      >
-        <Typography variant="subtitle1" gutterBottom sx={{ color: "#1565c0", fontWeight: 600, mb: 2 }}>
-          🔧 {t("machine_info_title")}
-        </Typography>
-        
-        {/* Makine Seçimi */}
-        {allMachines.length > 0 && (
-          <Box sx={{ mb: 3 }}>
-            <FormControl fullWidth>
-              <InputLabel>{t("select_machine")}</InputLabel>
-              <Select
-                value={currentMachineIndex}
-                onChange={(e) => {
-                  const newIndex = e.target.value as number
-                  if (onMachineIndexChange) {
-                    onMachineIndexChange(newIndex)
-                  }
-                }}
-                label={t("select_machine")}
-                sx={{
-                  backgroundColor: "white",
-                  "& .MuiOutlinedInput-root": {
-                    backgroundColor: "white",
-                  },
-                }}
-              >
-                {allMachines.map((machine, index) => (
-                  <MenuItem key={index} value={index}>
-                    {machine.machineName || `${t("machine_n")} ${index + 1}`}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-        )}
-        
-        <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 3 }}>
-          <TextField
-            fullWidth
-            label={t("machine_hours")}
-            type="number"
-            value={currentMachine?.machineHours || ""}
-            onChange={handleMachineChange("machineHours")}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                backgroundColor: "white",
-                "&:hover fieldset": { borderColor: "primary.main" },
-              },
-            }}
-          />
-          <TextField
-            fullWidth
-            label={t("fuel_used_litre")}
-            type="number"
-            value={currentMachine?.usedFuel || ""}
-            onChange={handleMachineChange("usedFuel")}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                backgroundColor: "white",
-                "&:hover fieldset": { borderColor: "primary.main" },
-              },
-            }}
-          />
-          <TextField
-            fullWidth
-            label="Değişen Elmas Sayısı"
-            type="number"
-            value={currentMachine?.changedDiamondCount || ""}
-            onChange={handleMachineChange("changedDiamondCount")}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                backgroundColor: "white",
-                "&:hover fieldset": { borderColor: "primary.main" },
-              },
-            }}
-          />
-          <TextField
-            fullWidth
-            label={t("machine_note")}
-            multiline
-            minRows={2}
-            value={currentMachine?.note || ""}
-            onChange={handleMachineChange("note")}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                backgroundColor: "white",
-                "&:hover fieldset": { borderColor: "primary.main" },
-              },
-            }}
-          />
-        </Box>
-      </Paper>
+      {/* Makine saati, mazot, yaptığı imalat ve makine notu artık sadece operatör girişinde (Makine girişi) yapılır; rapora operatör verileri eklenir. */}
     </Box>
   )
 }

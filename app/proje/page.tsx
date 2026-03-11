@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Container, Paper, Typography, Box, Button, Table, TableHead, TableBody, TableRow, TableCell } from "@mui/material"
 import Link from "next/link"
 import { ThemeProvider } from "@mui/material/styles"
@@ -8,6 +9,7 @@ import CssBaseline from "@mui/material/CssBaseline"
 import { theme } from "@/lib/theme"
 import { LanguageProvider, useLanguage } from "@/contexts/language-context"
 import LanguageSelector from "@/components/language-selector"
+import { useAuth } from "@/contexts/auth-context"
 
 interface SiteItem {
   id: number
@@ -22,15 +24,21 @@ interface SiteItem {
 }
 
 function ProjeHomePage() {
+  const router = useRouter()
+  const { user } = useAuth()
   const [sites, setSites] = useState<SiteItem[]>([])
   const { t } = useLanguage()
 
   useEffect(() => {
+    if ((user?.role ?? "").toLowerCase() === "operator") {
+      router.replace("/operator-form")
+      return
+    }
     fetch("/api/sites?withReportCount=1")
       .then((res) => (res.ok ? res.json() : []))
       .then((list: SiteItem[]) => setSites(list))
       .catch(() => setSites([]))
-  }, [])
+  }, [user?.role, router])
 
   return (
     <Container

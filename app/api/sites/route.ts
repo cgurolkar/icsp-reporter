@@ -52,10 +52,12 @@ export async function POST(request: NextRequest) {
     const projectStartDate = body.projectStartDate != null ? String(body.projectStartDate).trim() || null : null
     const isOngoing = body.isOngoing === true
     const initialPilesDone = body.initialPilesDone != null ? (typeof body.initialPilesDone === "number" ? body.initialPilesDone : parseInt(String(body.initialPilesDone), 10) || null) : null
+    const assignedMachineIds = Array.isArray(body.assignedMachineIds) ? body.assignedMachineIds.filter((x: unknown) => typeof x === "string") : []
+    const assignedOperatorIds = Array.isArray(body.assignedOperatorIds) ? body.assignedOperatorIds.filter((x: unknown) => typeof x === "number" || (typeof x === "string" && /^\d+$/.test(x))).map(Number) : []
     if (!name || !code) {
       return NextResponse.json({ error: "Şantiye adı ve kod zorunludur." }, { status: 400 })
     }
-    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone })
+    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds })
     return NextResponse.json(site)
   } catch (error: unknown) {
     console.error("Error creating site:", error)

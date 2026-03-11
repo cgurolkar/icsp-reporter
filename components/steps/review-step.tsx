@@ -200,7 +200,7 @@ export default function ReviewStep({ data, onSubmit, siteSummary }: ReviewStepPr
           </div>
           <div class="info-box">
             <div class="info-label">KAZIK DELİNEN</div>
-            <div class="info-value">${Array.isArray(data.basicInfo.machines) ? data.basicInfo.machines.reduce((sum: number, m: any) => sum + (parseFloat(m.note) || 0), 0) : "-"}</div>
+            <div class="info-value">${Array.isArray(data.basicInfo.machines) && data.basicInfo.machines.length > 0 ? (data.basicInfo.machines[0].drilledPile ?? data.productionSummary?.[0]?.totalPileCount ?? "-") : "-"}</div>
           </div>
         </div>
 

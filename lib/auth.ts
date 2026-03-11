@@ -58,6 +58,11 @@ export function canDoDataEntry(role: Role): boolean {
   return role === "admin" || role === "user" || role === "personel"
 }
 
+/** Sadece makine bilgisi girişi (operatör) */
+export function canDoMachineEntry(role: Role): boolean {
+  return role === "operator"
+}
+
 export function canViewAllSites(role: Role): boolean {
   return role === "admin" || role === "manager"
 }

@@ -68,6 +68,21 @@ export default function DailyInfoStep({ data, onChange }: DailyInfoStepProps) {
           value={data.notes}
           onChange={(e) => onChange({ ...data, notes: e.target.value })}
           sx={{
+            mb: 2,
+            "& .MuiOutlinedInput-root": { backgroundColor: "white", "&:hover fieldset": { borderColor: "#1976d2" } },
+          }}
+        />
+        <Typography variant="subtitle2" sx={{ color: "#1565c0", mb: 1.5, fontWeight: 600 }}>
+          {t("next_day_planned_work")}
+        </Typography>
+        <TextField
+          fullWidth
+          multiline
+          minRows={3}
+          placeholder={t("next_day_planned_work_placeholder")}
+          value={data.nextDayPlannedWork ?? ""}
+          onChange={(e) => onChange({ ...data, nextDayPlannedWork: e.target.value })}
+          sx={{
             mb: 3,
             "& .MuiOutlinedInput-root": { backgroundColor: "white", "&:hover fieldset": { borderColor: "#1976d2" } },
           }}

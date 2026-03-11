@@ -85,6 +85,8 @@ export interface Expense {
 
 export interface DailyInfo {
   notes: string
+  /** Bir sonraki gün için planlanan imalat ve yapılacak işler */
+  nextDayPlannedWork?: string
   /** Base64 data URL veya boş */
   image1?: string
   image2?: string
@@ -174,7 +176,7 @@ export const initialFormData: FormData = {
     remainingOnSite: "",
   },
   expenses: [{ description: "", amount: 0, category: "diger" }],
-  dailyInfo: { notes: "", image1: "", image2: "" },
+  dailyInfo: { notes: "", nextDayPlannedWork: "", image1: "", image2: "" },
   productionSummary: [{
     machineId: "",
     machineName: "",

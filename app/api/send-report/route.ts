@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import fs from "fs"
 import path from "path"
-import { saveWorkReport, initializeDatabase, getSiteReportEmails, getSiteById, getLastReportRemainingBySite } from "@/lib/database"
+import { saveWorkReport, initializeDatabase, getSiteReportEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate } from "@/lib/database"
 import { isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
 import { getSessionFromRequest, canDoDataEntry } from "@/lib/auth"
@@ -64,6 +64,12 @@ export async function POST(request: NextRequest) {
       site = await getSiteById(siteIdForDb)
       if (site?.name) projectName = site.name
     }
+    const operatorEntries = siteIdForDb && formData.basicInfo?.date
+      ? await getOperatorEntriesBySiteAndDate(siteIdForDb, formData.basicInfo.date)
+      : []
+    const firstOperatorHours = operatorEntries.length > 0 && operatorEntries[0]?.machine_hours
+      ? String(operatorEntries[0].machine_hours).trim()
+      : ""
     // Kalan kazık: Yeni proje = 0 başlangıç; Devam eden = rapor başlangıcında girilen yapılan düşülür. Kümülatif = önceki yapılan + bugün
     let remainingPilesForDb = currentProductionSummary?.remainingPiles ?? ""
     if (siteIdForDb && site) {
@@ -86,7 +92,7 @@ export async function POST(request: NextRequest) {
       siteId: siteIdForDb,
       selectedMachineId: formData.machineSelection.selectedMachine?.id,
       selectedMachineName: formData.machineSelection.selectedMachine?.name,
-      machineHours: currentMachine?.machineHours || "",
+      machineHours: firstOperatorHours || currentMachine?.machineHours || "",
       totalProduction: currentMachine?.totalProduction || "",
       pileCount: currentMachine?.pileCount || "",
       drilledPile: currentMachine?.drilledPile || "",
@@ -125,6 +131,7 @@ export async function POST(request: NextRequest) {
       dailyNotes: formData.dailyInfo?.notes ?? null,
       dailyImage1: (formData.dailyInfo?.image1 && String(formData.dailyInfo.image1).startsWith("data:")) ? formData.dailyInfo.image1 : null,
       dailyImage2: (formData.dailyInfo?.image2 && String(formData.dailyInfo.image2).startsWith("data:")) ? formData.dailyInfo.image2 : null,
+      nextDayPlanned: (formData.dailyInfo?.nextDayPlannedWork && String(formData.dailyInfo.nextDayPlannedWork).trim()) ? String(formData.dailyInfo.nextDayPlannedWork).trim() : null,
       selectedMachine: formData.machineSelection.selectedMachine,
       additionalMachines: formData.machineSelection.additionalMachines,
       fuelMachines: formData.fuel.machines,
@@ -141,6 +148,7 @@ export async function POST(request: NextRequest) {
       computedRemainingPiles: remainingPilesForDb,
       computedDailyPileCount: dailyPileForDb,
       concretePouredSum,
+      operatorEntries,
     })
     const expensesPageContent = generatePDFExpensesPage(formData)
     const fullHtml = mainReportContent + expensesPageContent

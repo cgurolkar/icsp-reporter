@@ -45,6 +45,7 @@ import CssBaseline from "@mui/material/CssBaseline"
 import { theme } from "@/lib/theme"
 import { LanguageProvider, useLanguage } from "@/contexts/language-context"
 import LanguageSelector from "@/components/language-selector"
+import { AVAILABLE_MACHINES } from "@/types/form-data"
 
 interface TabPanelProps {
   children?: React.ReactNode
@@ -90,7 +91,7 @@ function AdminPanel() {
   // Şantiye yönetimi
   const [dbSites, setDbSites] = useState<{ id: number; name: string; code: string; email_list: string[]; report_count?: number; total_piles?: number | null; region?: string | null; city?: string | null; country?: string | null; authorized_person?: string | null; employer?: string | null }[]>([])
   const [siteDialogOpen, setSiteDialogOpen] = useState(false)
-  const [siteDialogData, setSiteDialogData] = useState<{ id?: number; name: string; code: string; emailList: string[]; totalPiles: string; region: string; city: string; country: string; authorizedPerson: string; employer: string; projectStartDate: string; isOngoing: boolean; initialPilesDone: string }>({
+  const [siteDialogData, setSiteDialogData] = useState<{ id?: number; name: string; code: string; emailList: string[]; totalPiles: string; region: string; city: string; country: string; authorizedPerson: string; employer: string; projectStartDate: string; isOngoing: boolean; initialPilesDone: string; assignedMachineIds: string[]; assignedOperatorIds: number[] }>({
     name: "",
     code: "",
     emailList: [],
@@ -103,6 +104,8 @@ function AdminPanel() {
     projectStartDate: "",
     isOngoing: false,
     initialPilesDone: "",
+    assignedMachineIds: [],
+    assignedOperatorIds: [],
   })
 
   // Dashboard
@@ -838,6 +841,7 @@ function AdminPanel() {
                       <MenuItem value="manager">Manager</MenuItem>
                       <MenuItem value="user">Kullanıcı</MenuItem>
                       <MenuItem value="personel">Personel</MenuItem>
+                      <MenuItem value="operator">Operatör</MenuItem>
                     </Select>
                   </FormControl>
                   <FormControl size="small" sx={{ minWidth: 180 }}>
@@ -911,7 +915,7 @@ function AdminPanel() {
               variant="contained"
               startIcon={<Add />}
               onClick={() => {
-                setSiteDialogData({ name: "", code: "", emailList: [], totalPiles: "", region: "", city: "", country: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "" })
+                setSiteDialogData({ name: "", code: "", emailList: [], totalPiles: "", region: "", city: "", country: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", assignedMachineIds: [], assignedOperatorIds: [] })
                 setSiteDialogOpen(true)
               }}
             >
@@ -951,6 +955,8 @@ function AdminPanel() {
                     projectStartDate: (site as any).project_start_date ? String((site as any).project_start_date).slice(0, 10) : "",
                     isOngoing: (site as any).is_ongoing === true,
                     initialPilesDone: (site as any).initial_piles_done != null ? String((site as any).initial_piles_done) : "",
+                    assignedMachineIds: Array.isArray((site as any).assigned_machine_ids) ? (site as any).assigned_machine_ids : [],
+                    assignedOperatorIds: Array.isArray((site as any).assigned_operator_ids) ? (site as any).assigned_operator_ids.map((x: unknown) => Number(x)).filter((n: number) => !Number.isNaN(n)) : [],
                   })
                   setSiteDialogOpen(true)
                 }}
@@ -1121,8 +1127,38 @@ function AdminPanel() {
               disabled={!!siteDialogData.id}
               helperText={siteDialogData.id ? "Kod düzenlenemez" : "Raporlarda görünecek kısa kod"}
             />
-            <TextField margin="dense" fullWidth label="Yetkili kişi" value={siteDialogData.authorizedPerson} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, authorizedPerson: e.target.value }))} placeholder="Şantiye yetkilisi adı" />
+            <TextField margin="dense" fullWidth label="Yetkili kişi (sorumlu)" value={siteDialogData.authorizedPerson} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, authorizedPerson: e.target.value }))} placeholder="Şantiye yetkilisi adı" />
             <TextField margin="dense" fullWidth label="İşveren" value={siteDialogData.employer} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, employer: e.target.value }))} placeholder="İşveren / firma adı" />
+            <Typography variant="subtitle2" sx={{ mt: 1.5, mb: 0.5 }} color="text.secondary">Bu şantiyede bulunan makineler</Typography>
+            <FormControl fullWidth margin="dense" size="small">
+              <InputLabel>Makineler</InputLabel>
+              <Select
+                multiple
+                value={siteDialogData.assignedMachineIds}
+                label="Makineler"
+                onChange={(e) => setSiteDialogData((prev) => ({ ...prev, assignedMachineIds: e.target.value as string[] }))}
+                renderValue={(sel) => (sel as string[]).map((id) => AVAILABLE_MACHINES.find((m) => m.id === id)?.name ?? id).join(", ")}
+              >
+                {AVAILABLE_MACHINES.map((m) => (
+                  <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Typography variant="subtitle2" sx={{ mt: 1, mb: 0.5 }} color="text.secondary">Bu şantiye atanmış operatörler</Typography>
+            <FormControl fullWidth margin="dense" size="small">
+              <InputLabel>Operatörler</InputLabel>
+              <Select
+                multiple
+                value={siteDialogData.assignedOperatorIds}
+                label="Operatörler"
+                onChange={(e) => setSiteDialogData((prev) => ({ ...prev, assignedOperatorIds: e.target.value as number[] }))}
+                renderValue={(sel) => (sel as number[]).map((id) => dbUsers.find((u) => u.id === id)?.username ?? id).join(", ")}
+              >
+                {dbUsers.filter((u) => String(u.role).toLowerCase() === "operator").map((u) => (
+                  <MenuItem key={u.id} value={u.id}>{u.username}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <Typography variant="subtitle2" sx={{ mt: 1.5, mb: 0.5 }} color="text.secondary">Proje yeri</Typography>
             <Grid container spacing={1}>
               <Grid size={{ xs: 12 }}>
@@ -1218,6 +1254,8 @@ function AdminPanel() {
                   projectStartDate: siteDialogData.projectStartDate.trim() || null,
                   isOngoing: siteDialogData.isOngoing,
                   initialPilesDone: siteDialogData.isOngoing && siteDialogData.initialPilesDone.trim() ? parseInt(siteDialogData.initialPilesDone, 10) || null : null,
+                  assignedMachineIds: siteDialogData.assignedMachineIds || [],
+                  assignedOperatorIds: siteDialogData.assignedOperatorIds || [],
                 }
                 try {
                     if (siteDialogData.id) {
@@ -1357,6 +1395,7 @@ function AdminPanel() {
                 <MenuItem value="manager">Manager (bilgi görüntüleme, giriş yok)</MenuItem>
                 <MenuItem value="user">Kullanıcı (atanan şantiye girişi)</MenuItem>
                 <MenuItem value="personel">Personel (atanan şantiye girişi)</MenuItem>
+                <MenuItem value="operator">Operatör (sadece makine bilgisi girişi)</MenuItem>
               </Select>
             </FormControl>
             <FormControl fullWidth margin="dense">

@@ -12,6 +12,7 @@ export default function TopNav() {
   const role = (user?.role != null ? String(user.role).toLowerCase() : null) || "user"
   const canViewReports = role === "admin" || role === "manager"
   const canDoDataEntry = role === "admin" || role === "user" || role === "personel"
+  const canDoMachineEntry = role === "operator"
   const canAccessAdmin = role === "admin"
 
   return (
@@ -31,18 +32,34 @@ export default function TopNav() {
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "2px", flexWrap: "wrap", minWidth: 0 }}>
-        <Link
-          href="/proje"
-          style={{
-            padding: "10px 12px",
-            color: pathname === "/proje" ? "var(--icsp-lacivert)" : "#424242",
-            fontWeight: pathname === "/proje" ? 600 : 500,
-            textDecoration: "none",
-            fontSize: "clamp(0.8rem, 2.5vw, 0.95rem)",
-          }}
-        >
-          {t("home")}
-        </Link>
+        {!canDoMachineEntry && (
+          <Link
+            href="/proje"
+            style={{
+              padding: "10px 12px",
+              color: pathname === "/proje" ? "var(--icsp-lacivert)" : "#424242",
+              fontWeight: pathname === "/proje" ? 600 : 500,
+              textDecoration: "none",
+              fontSize: "clamp(0.8rem, 2.5vw, 0.95rem)",
+            }}
+          >
+            {t("home")}
+          </Link>
+        )}
+        {canDoMachineEntry && (
+          <Link
+            href="/operator-form"
+            style={{
+              padding: "10px 12px",
+              color: pathname === "/operator-form" ? "var(--icsp-lacivert)" : "#424242",
+              fontWeight: pathname === "/operator-form" ? 600 : 500,
+              textDecoration: "none",
+              fontSize: "clamp(0.8rem, 2.5vw, 0.95rem)",
+            }}
+          >
+            {t("operator_entry")}
+          </Link>
+        )}
         {canViewReports && (
           <Link
             href="/reports"

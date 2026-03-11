@@ -13,7 +13,7 @@ export async function PUT(
   try {
     const userId = parseInt(params.id);
     const { role, siteId } = await request.json();
-    const ALLOWED_ROLES = ['admin', 'manager', 'user', 'personel'];
+    const ALLOWED_ROLES = ['admin', 'manager', 'user', 'personel', 'operator'];
     const roleVal = role !== undefined && ALLOWED_ROLES.includes(role) ? role : undefined;
 
     const client = await pool.connect();
