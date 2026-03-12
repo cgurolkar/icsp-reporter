@@ -66,3 +66,13 @@ export function canDoMachineEntry(role: Role): boolean {
 export function canViewAllSites(role: Role): boolean {
   return role === "admin" || role === "manager"
 }
+
+/** İdari modüle erişim (operator hariç) */
+export function canAccessIdari(role: Role): boolean {
+  return role === "admin" || role === "manager" || role === "user" || role === "personel"
+}
+
+/** Personel/özlük/finans girişi (merkez İK/idari) */
+export function canManageIdariCentral(role: Role): boolean {
+  return role === "admin" || role === "manager"
+}

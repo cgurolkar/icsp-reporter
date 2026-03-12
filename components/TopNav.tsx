@@ -14,6 +14,7 @@ export default function TopNav() {
   const canDoDataEntry = role === "admin" || role === "user" || role === "personel"
   const canDoMachineEntry = role === "operator"
   const canAccessAdmin = role === "admin"
+  const canAccessIdari = role === "admin" || role === "manager" || role === "user" || role === "personel"
 
   return (
     <nav
@@ -86,6 +87,20 @@ export default function TopNav() {
             }}
           >
             {t("data_entry")}
+          </Link>
+        )}
+        {canAccessIdari && (
+          <Link
+            href="/idari"
+            style={{
+              padding: "10px 12px",
+              color: pathname.startsWith("/idari") ? "var(--icsp-lacivert)" : "#424242",
+              fontWeight: pathname.startsWith("/idari") ? 600 : 500,
+              textDecoration: "none",
+              fontSize: "clamp(0.8rem, 2.5vw, 0.95rem)",
+            }}
+          >
+            İdari
           </Link>
         )}
       </div>

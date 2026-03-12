@@ -145,6 +145,81 @@ sudo systemctl reload nginx
 
 ---
 
+### Sorun: report.icspiling.com yerine varsayılan (başka) site açılıyor
+
+Sunucuda iki klasör/uygulama varken Nginx, **varsayılan (default) site** ile gelen isteği karşılıyorsa, report.icspiling.com doğru uygulamaya gitmez. Aşağıdakileri yapın:
+
+**1. Hangi sitenin default olduğunu kontrol et**
+
+```bash
+sudo grep -r "default_server" /etc/nginx/
+```
+
+Çıkan dosyada `listen 80 default_server;` varsa, o blok IP veya bilinmeyen Host ile gelen tüm istekleri alır.
+
+**2. Diğer siteden default_server'ı kaldır**
+
+- Varsayılan olarak açılan site (öbür uygulama) hangi dosyadaysa (örn. `default`, `icspiling`, `main`), o dosyayı düzenleyin:
+
+```bash
+sudo nano /etc/nginx/sites-available/default   # veya sizin diğer sitenin dosyası
+```
+
+- `listen 80 default_server;` ise **sadece** `listen 80;` yapın (default_server kelimesini kaldırın). Böylece o site sadece kendi `server_name` ile gelince açılır; report.icspiling.com isteği artık doğru bloğa gider.
+
+**3. report.icspiling.com için ayrı dosya**
+
+`/etc/nginx/sites-available/report-icspiling` dosyasında sadece `server_name report.icspiling.com;` olsun; `listen 80;` yeterli (default_server eklemeyin). Symlink'in sites-enabled'da olduğundan emin olun:
+
+```bash
+ls -la /etc/nginx/sites-enabled/ | grep report
+```
+
+**4. Test ve yeniden yükle**
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+**Özet:** Başka sitede `default_server` varsa kaldırın; report.icspiling.com config'i ayrı dosyada ve etkin olsun; böylece report.icspiling.com yalnızca 3001 portundaki (rapor) uygulamaya gider.
+
+---
+
+### Hata: "open() ... report-icspiling failed (2: No such file or directory)"
+
+Bu hata, **symlink oluşturuldu ama hedef dosya hiç oluşturulmadı** anlamına gelir.
+
+**Yapılacaklar:**
+
+1. **Kırık symlink'i kaldırın**
+   ```bash
+   sudo rm -f /etc/nginx/sites-enabled/report-icspiling
+   ```
+
+2. **Config dosyasını oluşturun** (adı report-icspiling veya icsp-reporter olabilir)
+   ```bash
+   sudo nano /etc/nginx/sites-available/report-icspiling
+   ```
+   Yukarıdaki **report.icspiling.com** server bloğunu (listen 80; server_name report.icspiling.com; proxy_pass http://127.0.0.1:3001; ...) yapıştırıp kaydedin (Ctrl+O, Enter, Ctrl+X).
+
+3. **Symlink'i tekrar oluşturun**
+   ```bash
+   sudo ln -s /etc/nginx/sites-available/report-icspiling /etc/nginx/sites-enabled/
+   ```
+
+4. **Veya** zaten `icsp-reporter` dosyası varsa, sadece kırık symlink'i silin; `icsp-reporter` içeriğinde `server_name report.icspiling.com;` ve `proxy_pass http://127.0.0.1:3001;` olduğunu kontrol edin. O zaman ekstra report-icspiling dosyasına gerek yok; `sites-enabled`'daki `icsp-reporter` symlink'i yeterli.
+
+5. **default_server:** `karahisar` ve `default` dosyalarında `listen 80 default_server;` varsa, report.icspiling.com isteğinin doğru siteye gitmesi için bu iki dosyadan birinde default_server'ı kaldırın (sadece `listen 80;` yapın).
+
+6. Test ve reload:
+   ```bash
+   sudo nginx -t
+   sudo systemctl reload nginx
+   ```
+
+---
+
 ### İki uygulama (genel)
 
 Sunucuda iki ayrı klasörde iki uygulama varsa, her biri için ayrı bir **server** bloğu ve (isteğe bağlı) ayrı alan adı kullanılır.

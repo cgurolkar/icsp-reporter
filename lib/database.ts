@@ -275,12 +275,135 @@ export async function initializeDatabase() {
       END $$
     `)
 
+    // ---------- İdari modül tabloları (Faz 1) ----------
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS personeller (
+        id SERIAL PRIMARY KEY,
+        ad VARCHAR(100) NOT NULL,
+        soyad VARCHAR(100) NOT NULL,
+        tc_kimlik VARCHAR(20),
+        dogum_tarihi DATE,
+        kan_grubu VARCHAR(10),
+        acil_iletisim VARCHAR(255),
+        acil_telefon VARCHAR(50),
+        gorev VARCHAR(100) NOT NULL DEFAULT 'İşçi',
+        ise_giris_tarihi DATE,
+        sigorta_durumu VARCHAR(50),
+        iban VARCHAR(34),
+        banka_adi VARCHAR(255),
+        gunluk_yevmiye DECIMAL(12,2),
+        aylik_maas DECIMAL(12,2),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS personel_atama (
+        id SERIAL PRIMARY KEY,
+        personel_id INTEGER NOT NULL REFERENCES personeller(id) ON DELETE CASCADE,
+        site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+        baslangic_tarihi DATE NOT NULL,
+        bitis_tarihi DATE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(personel_id, site_id, baslangic_tarihi)
+      )
+    `)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS harcama_kategorileri (
+        id SERIAL PRIMARY KEY,
+        kod VARCHAR(50) UNIQUE NOT NULL,
+        ad VARCHAR(255) NOT NULL,
+        aciklama TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS islemler (
+        id SERIAL PRIMARY KEY,
+        site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+        kategori_id INTEGER NOT NULL REFERENCES harcama_kategorileri(id),
+        tutar DECIMAL(12,2) NOT NULL,
+        islem_tarihi DATE NOT NULL,
+        odeme_kaynagi VARCHAR(30) NOT NULL,
+        aciklama TEXT,
+        evrak_yolu VARCHAR(500),
+        olusturan_id INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS puantaj (
+        id SERIAL PRIMARY KEY,
+        personel_id INTEGER NOT NULL REFERENCES personeller(id) ON DELETE CASCADE,
+        site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+        tarih DATE NOT NULL,
+        carpan DECIMAL(3,2) DEFAULT 1.0,
+        durum_kod VARCHAR(5) DEFAULT 'G',
+        mesai_saat DECIMAL(4,2) DEFAULT 0,
+        notlar TEXT,
+        durum VARCHAR(20) DEFAULT 'taslak',
+        olusturan_id INTEGER REFERENCES users(id),
+        onaylayan_id INTEGER REFERENCES users(id),
+        onay_tarihi TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(personel_id, site_id, tarih)
+      )
+    `)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS personel_belge_tipleri (
+        id SERIAL PRIMARY KEY,
+        kod VARCHAR(50) UNIQUE NOT NULL,
+        ad VARCHAR(255) NOT NULL
+      )
+    `)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS personel_belgeleri (
+        id SERIAL PRIMARY KEY,
+        personel_id INTEGER NOT NULL REFERENCES personeller(id) ON DELETE CASCADE,
+        belge_tipi VARCHAR(50) NOT NULL,
+        dosya_yolu VARCHAR(500) NOT NULL,
+        gecerlilik_tarihi DATE,
+        yukleme_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    await seedIdariInitialData(client)
+
     console.log('Database tables created successfully')
   } catch (error) {
     console.error('Error initializing database:', error)
     throw error
   } finally {
     client.release()
+  }
+}
+
+async function seedIdariInitialData(client: { query: (arg0: string, arg1?: any[]) => Promise<any> }) {
+  const cat = await client.query(`SELECT COUNT(*) FROM harcama_kategorileri`)
+  if (parseInt(cat.rows[0]?.count || '0', 10) === 0) {
+    await client.query(`
+      INSERT INTO harcama_kategorileri (kod, ad) VALUES
+        ('sarf', 'Sarf Malzeme'),
+        ('akaryakit', 'Akaryakıt'),
+        ('yemek', 'Yemek'),
+        ('tason', 'Taşeron Ödemesi'),
+        ('maas', 'Maaş Ödemesi'),
+        ('diger', 'Diğer')
+    `)
+  }
+  const tip = await client.query(`SELECT COUNT(*) FROM personel_belge_tipleri`)
+  if (parseInt(tip.rows[0]?.count || '0', 10) === 0) {
+    await client.query(`
+      INSERT INTO personel_belge_tipleri (kod, ad) VALUES
+        ('kimlik', 'Kimlik Fotokopisi'),
+        ('isg', 'İSG Eğitim Sertifikası'),
+        ('mesleki', 'Mesleki Yeterlilik Belgesi'),
+        ('saglik', 'Sağlık Raporu'),
+        ('adli_sicil', 'Adli Sicil Kaydı')
+    `)
   }
 }
 
@@ -989,6 +1112,175 @@ export async function deleteWorkReport(id: number) {
   } catch (error) {
     console.error('Error deleting work report:', error)
     throw error
+  } finally {
+    client.release()
+  }
+}
+
+// ---------- İdari modül: Personel ----------
+export async function getPersoneller(options: { siteId?: number | null; gorev?: string | null } = {}) {
+  const client = await pool.connect()
+  try {
+    const { siteId, gorev } = options
+    let query = `
+      SELECT p.*, 
+        (SELECT json_agg(json_build_object('id', pa.id, 'site_id', pa.site_id, 'site_name', s.name, 'baslangic_tarihi', pa.baslangic_tarihi, 'bitis_tarihi', pa.bitis_tarihi))
+         FROM personel_atama pa LEFT JOIN sites s ON pa.site_id = s.id WHERE pa.personel_id = p.id
+        ) AS atamalar
+      FROM personeller p
+      WHERE 1=1
+    `
+    const params: (number | string)[] = []
+    let i = 1
+    if (siteId != null && siteId > 0) {
+      query = `
+        SELECT p.*,
+          (SELECT json_agg(json_build_object('id', pa.id, 'site_id', pa.site_id, 'site_name', s.name, 'baslangic_tarihi', pa.baslangic_tarihi, 'bitis_tarihi', pa.bitis_tarihi))
+           FROM personel_atama pa LEFT JOIN sites s ON pa.site_id = s.id WHERE pa.personel_id = p.id
+          ) AS atamalar
+        FROM personeller p
+        WHERE EXISTS (
+          SELECT 1 FROM personel_atama pa WHERE pa.personel_id = p.id AND pa.site_id = $1
+          AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= CURRENT_DATE)
+        )
+        ORDER BY p.soyad, p.ad
+      `
+      const result = await client.query(query, [siteId])
+      return result.rows
+    }
+    if (gorev && String(gorev).trim()) {
+      query += ` AND p.gorev = $${i++}`
+      params.push(String(gorev).trim())
+    }
+    query += ` ORDER BY p.soyad, p.ad`
+    const result = params.length ? await client.query(query, params) : await client.query(query)
+    return result.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function getPersonelById(id: number) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `SELECT * FROM personeller WHERE id = $1`,
+      [id]
+    )
+    if (!r.rows[0]) return null
+    const atamalar = await client.query(
+      `SELECT pa.*, s.name AS site_name FROM personel_atama pa LEFT JOIN sites s ON pa.site_id = s.id WHERE pa.personel_id = $1 ORDER BY pa.baslangic_tarihi DESC`,
+      [id]
+    )
+    return { ...r.rows[0], atamalar: atamalar.rows }
+  } finally {
+    client.release()
+  }
+}
+
+export async function createPersonel(data: {
+  ad: string
+  soyad: string
+  tc_kimlik?: string | null
+  dogum_tarihi?: string | null
+  kan_grubu?: string | null
+  acil_iletisim?: string | null
+  acil_telefon?: string | null
+  gorev: string
+  ise_giris_tarihi?: string | null
+  sigorta_durumu?: string | null
+  iban?: string | null
+  banka_adi?: string | null
+  gunluk_yevmiye?: number | null
+  aylik_maas?: number | null
+}) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(`
+      INSERT INTO personeller (ad, soyad, tc_kimlik, dogum_tarihi, kan_grubu, acil_iletisim, acil_telefon, gorev, ise_giris_tarihi, sigorta_durumu, iban, banka_adi, gunluk_yevmiye, aylik_maas)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      RETURNING id
+    `, [
+      data.ad, data.soyad, data.tc_kimlik ?? null, data.dogum_tarihi ?? null, data.kan_grubu ?? null,
+      data.acil_iletisim ?? null, data.acil_telefon ?? null, data.gorev || 'İşçi', data.ise_giris_tarihi ?? null,
+      data.sigorta_durumu ?? null, data.iban ?? null, data.banka_adi ?? null, data.gunluk_yevmiye ?? null, data.aylik_maas ?? null
+    ])
+    return r.rows[0].id
+  } finally {
+    client.release()
+  }
+}
+
+export async function updatePersonel(id: number, data: Partial<{
+  ad: string
+  soyad: string
+  tc_kimlik: string | null
+  dogum_tarihi: string | null
+  kan_grubu: string | null
+  acil_iletisim: string | null
+  acil_telefon: string | null
+  gorev: string
+  ise_giris_tarihi: string | null
+  sigorta_durumu: string | null
+  iban: string | null
+  banka_adi: string | null
+  gunluk_yevmiye: number | null
+  aylik_maas: number | null
+}>) {
+  const client = await pool.connect()
+  try {
+    const fields = ['ad', 'soyad', 'tc_kimlik', 'dogum_tarihi', 'kan_grubu', 'acil_iletisim', 'acil_telefon', 'gorev', 'ise_giris_tarihi', 'sigorta_durumu', 'iban', 'banka_adi', 'gunluk_yevmiye', 'aylik_maas']
+    const updates: string[] = []
+    const values: unknown[] = []
+    let i = 1
+    for (const f of fields) {
+      if (data[f as keyof typeof data] !== undefined) {
+        updates.push(`${f} = $${i++}`)
+        values.push(data[f as keyof typeof data])
+      }
+    }
+    if (updates.length === 0) return
+    updates.push(`updated_at = CURRENT_TIMESTAMP`)
+    values.push(id)
+    await client.query(`UPDATE personeller SET ${updates.join(', ')} WHERE id = $${i}`, values)
+  } finally {
+    client.release()
+  }
+}
+
+export async function deletePersonel(id: number) {
+  const client = await pool.connect()
+  try {
+    const result = await client.query(`DELETE FROM personeller WHERE id = $1 RETURNING id`, [id])
+    return (result.rowCount ?? 0) > 0
+  } finally {
+    client.release()
+  }
+}
+
+export async function getPersonelAtamalar(personelId: number) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `SELECT pa.*, s.name AS site_name FROM personel_atama pa LEFT JOIN sites s ON pa.site_id = s.id WHERE pa.personel_id = $1 ORDER BY pa.baslangic_tarihi DESC`,
+      [personelId]
+    )
+    return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function addPersonelAtama(data: { personel_id: number; site_id: number; baslangic_tarihi: string; bitis_tarihi?: string | null }) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(`
+      INSERT INTO personel_atama (personel_id, site_id, baslangic_tarihi, bitis_tarihi)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (personel_id, site_id, baslangic_tarihi) DO NOTHING
+      RETURNING id
+    `, [data.personel_id, data.site_id, (data.baslangic_tarihi || '').slice(0, 10), data.bitis_tarihi ? (data.bitis_tarihi as string).slice(0, 10) : null])
+    return r.rows[0]?.id
   } finally {
     client.release()
   }
