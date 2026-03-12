@@ -14,6 +14,7 @@ const navItems = [
   { href: "/idari", label: "Dashboard", icon: BarChart },
   { href: "/idari/personel", label: "Personel", icon: People },
   { href: "/idari/puantaj", label: "Puantaj", icon: Assignment },
+  { href: "/idari/puantaj-onay", label: "Puantaj onay", icon: Assignment },
   { href: "/idari/harcamalar", label: "Harcamalar", icon: AttachMoney },
   { href: "/idari/belgeler", label: "Belgeler", icon: Description },
 ]
@@ -62,7 +63,7 @@ export default function IdariLayout({ children }: { children: React.ReactNode })
             İdari Yönetim
           </Typography>
           <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
-            {navItems.map(({ href, label, icon: Icon }) => (
+            {navItems.filter((item) => item.href !== "/idari/puantaj-onay" || role === "admin" || role === "manager").map(({ href, label, icon: Icon }) => (
               <Button
                 key={href}
                 component={Link}

@@ -1286,4 +1286,124 @@ export async function addPersonelAtama(data: { personel_id: number; site_id: num
   }
 }
 
+// ---------- İdari modül: Puantaj ----------
+/** O şantiyede o tarihte atanmış personel + o günkü puantaj kayıtları */
+export async function getPuantajForSiteAndDate(siteId: number, tarih: string) {
+  const client = await pool.connect()
+  const dateStr = (tarih || '').slice(0, 10)
+  try {
+    const r = await client.query(`
+      SELECT p.id AS personel_id, p.ad, p.soyad, p.gorev,
+        pu.id AS puantaj_id, pu.carpan, pu.durum_kod, pu.mesai_saat, pu.notlar, pu.durum AS puantaj_durum
+      FROM personeller p
+      INNER JOIN personel_atama pa ON pa.personel_id = p.id AND pa.site_id = $1
+        AND pa.baslangic_tarihi <= $2 AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= $2)
+      LEFT JOIN puantaj pu ON pu.personel_id = p.id AND pu.site_id = $1 AND pu.tarih = $2
+      ORDER BY p.soyad, p.ad
+    `, [siteId, dateStr])
+    return r.rows.map((row: Record<string, unknown>) => ({
+      personel_id: row.personel_id,
+      ad: row.ad,
+      soyad: row.soyad,
+      gorev: row.gorev,
+      puantaj_id: row.puantaj_id,
+      carpan: row.carpan != null ? Number(row.carpan) : 1,
+      durum_kod: row.durum_kod || 'G',
+      mesai_saat: row.mesai_saat != null ? Number(row.mesai_saat) : 0,
+      notlar: row.notlar ?? '',
+      puantaj_durum: row.puantaj_durum ?? 'taslak',
+    }))
+  } finally {
+    client.release()
+  }
+}
+
+/** Toplu puantaj kaydet (taslak). Onaylı kayıtlar güncellenmez. */
+export async function savePuantajBulk(data: {
+  siteId: number
+  tarih: string
+  userId: number
+  rows: { personel_id: number; carpan?: number; durum_kod?: string; mesai_saat?: number; notlar?: string }[]
+}) {
+  const client = await pool.connect()
+  const dateStr = (data.tarih || '').slice(0, 10)
+  try {
+    for (const row of data.rows) {
+      await client.query(`
+        INSERT INTO puantaj (personel_id, site_id, tarih, carpan, durum_kod, mesai_saat, notlar, durum, olusturan_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'taslak', $8)
+        ON CONFLICT (personel_id, site_id, tarih) DO UPDATE SET
+          carpan = EXCLUDED.carpan,
+          durum_kod = EXCLUDED.durum_kod,
+          mesai_saat = EXCLUDED.mesai_saat,
+          notlar = EXCLUDED.notlar,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE puantaj.durum <> 'onaylandi'
+      `, [
+        row.personel_id,
+        data.siteId,
+        dateStr,
+        row.carpan ?? 1,
+        (row.durum_kod || 'G').slice(0, 5),
+        row.mesai_saat ?? 0,
+        row.notlar ?? null,
+        data.userId,
+      ])
+    }
+    return true
+  } catch (e) {
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
+/** Onay bekleyen (taslak) puantaj grupları: site + tarih bazlı */
+export async function getTaslakPuantajGroups(options: { siteId?: number | null; baslangic?: string; bitis?: string } = {}) {
+  const client = await pool.connect()
+  try {
+    let query = `
+      SELECT p.site_id, s.name AS site_name, p.tarih, COUNT(*) AS adet
+      FROM puantaj p
+      LEFT JOIN sites s ON s.id = p.site_id
+      WHERE p.durum = 'taslak'
+    `
+    const params: (number | string)[] = []
+    let i = 1
+    if (options.siteId != null && options.siteId > 0) {
+      query += ` AND p.site_id = $${i++}`
+      params.push(options.siteId)
+    }
+    if (options.baslangic) {
+      query += ` AND p.tarih >= $${i++}`
+      params.push((options.baslangic as string).slice(0, 10))
+    }
+    if (options.bitis) {
+      query += ` AND p.tarih <= $${i++}`
+      params.push((options.bitis as string).slice(0, 10))
+    }
+    query += ` GROUP BY p.site_id, s.name, p.tarih ORDER BY p.tarih DESC, s.name`
+    const r = params.length ? await client.query(query, params) : await client.query(query)
+    return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+/** Puantaj onayla: belirtilen şantiye ve tarih aralığındaki taslak kayıtları kilitle */
+export async function approvePuantaj(siteId: number, baslangicTarih: string, bitisTarih: string, userId: number) {
+  const client = await pool.connect()
+  const bas = (baslangicTarih || '').slice(0, 10)
+  const bit = (bitisTarih || '').slice(0, 10)
+  try {
+    const r = await client.query(`
+      UPDATE puantaj SET durum = 'onaylandi', onaylayan_id = $1, onay_tarihi = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE site_id = $2 AND tarih >= $3 AND tarih <= $4 AND durum = 'taslak'
+    `, [userId, siteId, bas, bit])
+    return r.rowCount ?? 0
+  } finally {
+    client.release()
+  }
+}
+
 export default pool 

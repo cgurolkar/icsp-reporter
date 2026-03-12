@@ -76,3 +76,14 @@ export function canAccessIdari(role: Role): boolean {
 export function canManageIdariCentral(role: Role): boolean {
   return role === "admin" || role === "manager"
 }
+
+/** Puantaj girişi: sadece o şantiyenin sorumlusu veya admin */
+export function canEnterTimesheet(role: Role, sessionSiteId: number | null | undefined, targetSiteId: number): boolean {
+  if (role === "admin") return true
+  return sessionSiteId != null && sessionSiteId === targetSiteId
+}
+
+/** Puantaj onaylama: merkez (admin/manager) */
+export function canApproveTimesheet(role: Role): boolean {
+  return role === "admin" || role === "manager"
+}
