@@ -49,6 +49,7 @@ export default function OperatorFormPage() {
   const [reportDate, setReportDate] = useState(() => new Date().toISOString().split("T")[0])
   const [machineId, setMachineId] = useState("")
   const [startTime, setStartTime] = useState("")
+  const [machineHours, setMachineHours] = useState("")
   const [endTime, setEndTime] = useState("")
   const [pileDepths, setPileDepths] = useState<{ depth: string; onForaj: boolean; bosForaj: boolean }[]>([{ depth: "", onForaj: false, bosForaj: false }])
   const [usedFuel, setUsedFuel] = useState("")
@@ -117,6 +118,31 @@ export default function OperatorFormPage() {
   const updatePileRow = (index: number, field: "depth" | "onForaj" | "bosForaj", value: string | boolean) =>
     setPileDepths((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)))
 
+  /** Biniş saatine makine çalışma saatini ekleyip İniş saatini hesaplar (HH:mm). */
+  function addHoursToTime(timeStr: string, hoursToAdd: number): string {
+    const [h, m] = (timeStr || "00:00").split(":").map((x) => parseInt(x, 10) || 0)
+    const totalMinutes = h * 60 + m + Math.round(hoursToAdd * 60)
+    const h2 = Math.floor(totalMinutes / 60) % 24
+    const m2 = totalMinutes % 60
+    return `${String(h2).padStart(2, "0")}:${String(m2).padStart(2, "0")}`
+  }
+
+  const handleStartTimeChange = (value: string) => {
+    setStartTime(value)
+    if (value && machineHours.trim()) {
+      const h = parseFloat(machineHours.replace(",", "."))
+      if (!Number.isNaN(h) && h > 0) setEndTime(addHoursToTime(value.slice(0, 5), h))
+    }
+  }
+
+  const handleMachineHoursChange = (value: string) => {
+    setMachineHours(value)
+    if (startTime && value.trim()) {
+      const h = parseFloat(value.replace(",", "."))
+      if (!Number.isNaN(h) && h > 0) setEndTime(addHoursToTime(startTime.slice(0, 5), h))
+    }
+  }
+
   const handleSubmit = async () => {
     if (!siteId || !reportDate || !machineId || !machineName) {
       setMessage({ type: "error", text: "Tarih, şantiye ve makine seçimi zorunludur." })
@@ -148,6 +174,7 @@ export default function OperatorFormPage() {
           machineName,
           startTime: startTime.trim().slice(0, 5),
           endTime: endTime.trim().slice(0, 5),
+          machineHours: machineHours.trim(),
           pileDepths: payloadPileDepths,
           usedFuel: usedFuel.trim(),
           elmasMiktar: elmasTrim || (finalElmasDegisimYok ? "yok" : ""),
@@ -170,6 +197,7 @@ export default function OperatorFormPage() {
         setMessage({ type: "success", text: "Kayıt başarılı. Veriler ana rapora birleştirilecektir." })
         setStartTime("")
         setEndTime("")
+        setMachineHours("")
         setPileDepths([{ depth: "", onForaj: false, bosForaj: false }])
         setUsedFuel("")
         setElmasMiktar("")
@@ -261,9 +289,13 @@ export default function OperatorFormPage() {
               ))}
             </Select>
           </FormControl>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+            Biniş saati = makineye biniş (mesai başlangıcı). İniş saati = iniş (mesai bitişi); makine çalışma saati girildiğinde otomatik hesaplanır.
+          </Typography>
           <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-            <TextField fullWidth label="Biniş saati" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: 140 }} />
-            <TextField fullWidth label="İniş saati" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: 140 }} />
+            <TextField fullWidth label="Biniş saati (mesai başlangıcı)" type="time" value={startTime} onChange={(e) => handleStartTimeChange(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: 140 }} />
+            <TextField fullWidth label="Makine çalışma saati" type="number" value={machineHours} onChange={(e) => handleMachineHoursChange(e.target.value)} placeholder="Saat (örn: 8 veya 8,5)" inputProps={{ min: 0, step: 0.5 }} sx={{ minWidth: 140 }} />
+            <TextField fullWidth label="İniş saati (mesai bitişi)" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} InputLabelProps={{ shrink: true }} helperText="Biniş + makine saati ile otomatik dolar, düzenleyebilirsiniz" sx={{ minWidth: 140 }} />
           </Box>
           <TextField fullWidth label="Mazot Miktarı (Litre)" type="number" value={usedFuel} onChange={(e) => setUsedFuel(e.target.value)} placeholder="Örn: 120" />
           <Typography variant="subtitle2" sx={{ mt: 1, fontWeight: 600 }}>Kazık derinlikleri</Typography>
