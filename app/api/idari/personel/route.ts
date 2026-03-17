@@ -41,17 +41,21 @@ export async function POST(request: NextRequest) {
       ad,
       soyad,
       tc_kimlik: body.tc_kimlik ?? null,
+      pasaport_no: body.pasaport_no ?? null,
       dogum_tarihi: body.dogum_tarihi ?? null,
       kan_grubu: body.kan_grubu ?? null,
       acil_iletisim: body.acil_iletisim ?? null,
       acil_telefon: body.acil_telefon ?? null,
       gorev: String(body.gorev ?? "İşçi").trim(),
       ise_giris_tarihi: body.ise_giris_tarihi ?? null,
+      isten_cikis_tarihi: body.isten_cikis_tarihi ?? null,
+      calistigi_bolum: body.calistigi_bolum ?? null,
       sigorta_durumu: body.sigorta_durumu ?? null,
       iban: body.iban ?? null,
       banka_adi: body.banka_adi ?? null,
       gunluk_yevmiye: body.gunluk_yevmiye != null ? Number(body.gunluk_yevmiye) : null,
       aylik_maas: body.aylik_maas != null ? Number(body.aylik_maas) : null,
+      foto_yolu: body.foto_yolu ?? null,
     })
     return NextResponse.json({ id })
   } catch (error) {

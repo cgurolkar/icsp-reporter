@@ -8,15 +8,17 @@ import { ThemeProvider } from "@mui/material/styles"
 import CssBaseline from "@mui/material/CssBaseline"
 import { theme } from "@/lib/theme"
 import { useAuth } from "@/contexts/auth-context"
-import { Home, People, Assignment, AttachMoney, Description, BarChart } from "@mui/icons-material"
+import { Home, People, Assignment, AttachMoney, Description, BarChart, Inventory2 } from "@mui/icons-material"
 
 const navItems = [
   { href: "/idari", label: "Dashboard", icon: BarChart },
   { href: "/idari/personel", label: "Personel", icon: People },
+  { href: "/idari/envanter", label: "Envanter", icon: Inventory2 },
   { href: "/idari/puantaj", label: "Puantaj", icon: Assignment },
   { href: "/idari/puantaj-onay", label: "Puantaj onay", icon: Assignment },
   { href: "/idari/harcamalar", label: "Harcamalar", icon: AttachMoney },
   { href: "/idari/belgeler", label: "Belgeler", icon: Description },
+  { href: "/idari/raporlar", label: "Raporlar", icon: BarChart },
 ]
 
 export default function IdariLayout({ children }: { children: React.ReactNode }) {

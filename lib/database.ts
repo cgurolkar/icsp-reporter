@@ -145,6 +145,19 @@ export async function initializeDatabase() {
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'operator_entries columns: %', SQLERRM;
       END $$
     `)
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'operator_entries' AND column_name = 'start_time') THEN
+          ALTER TABLE operator_entries ADD COLUMN start_time VARCHAR(5);
+          ALTER TABLE operator_entries ADD COLUMN end_time VARCHAR(5);
+          ALTER TABLE operator_entries ADD COLUMN pile_depths JSONB DEFAULT '[]';
+          ALTER TABLE operator_entries ADD COLUMN elmas_miktar VARCHAR(50);
+          ALTER TABLE operator_entries ADD COLUMN elmas_degisim_yok BOOLEAN DEFAULT false;
+          ALTER TABLE operator_entries ADD COLUMN bentonit_miktar VARCHAR(50);
+        END IF;
+      EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'operator_entries start_time/pile_depths/elmas/bentonit: %', SQLERRM;
+      END $$
+    `)
 
     // Kullanıcılar tablosu
     await client.query(`
@@ -261,6 +274,12 @@ export async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'assigned_operator_ids') THEN
           ALTER TABLE sites ADD COLUMN assigned_operator_ids JSONB DEFAULT '[]';
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'budget') THEN
+          ALTER TABLE sites ADD COLUMN budget DECIMAL(14,2) DEFAULT NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'assigned_machine_operators') THEN
+          ALTER TABLE sites ADD COLUMN assigned_machine_operators JSONB DEFAULT '[]';
+        END IF;
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'sites project columns: %', SQLERRM;
       END $$
     `)
@@ -370,6 +389,36 @@ export async function initializeDatabase() {
       )
     `)
 
+    // Personel tablosuna yeni alanlar (migration)
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='pasaport_no')
+        THEN ALTER TABLE personeller ADD COLUMN pasaport_no VARCHAR(50); END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='isten_cikis_tarihi')
+        THEN ALTER TABLE personeller ADD COLUMN isten_cikis_tarihi DATE; END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='calistigi_bolum')
+        THEN ALTER TABLE personeller ADD COLUMN calistigi_bolum VARCHAR(100); END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='foto_yolu')
+        THEN ALTER TABLE personeller ADD COLUMN foto_yolu VARCHAR(500); END IF;
+      END $$
+    `)
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS envanter (
+        id SERIAL PRIMARY KEY,
+        kod VARCHAR(50) UNIQUE NOT NULL,
+        malzeme_adi VARCHAR(255) NOT NULL,
+        aciklama TEXT,
+        adet INTEGER NOT NULL DEFAULT 1,
+        fotograf_yolu VARCHAR(500),
+        fiyat DECIMAL(12,2),
+        yer VARCHAR(255),
+        site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
     await seedIdariInitialData(client)
 
     console.log('Database tables created successfully')
@@ -399,11 +448,22 @@ async function seedIdariInitialData(client: { query: (arg0: string, arg1?: any[]
     await client.query(`
       INSERT INTO personel_belge_tipleri (kod, ad) VALUES
         ('kimlik', 'Kimlik Fotokopisi'),
+        ('pasaport_kimlik', 'Pasaport / Kimlik'),
+        ('personel_foto', 'Personel Fotoğrafı'),
         ('isg', 'İSG Eğitim Sertifikası'),
         ('mesleki', 'Mesleki Yeterlilik Belgesi'),
         ('saglik', 'Sağlık Raporu'),
         ('adli_sicil', 'Adli Sicil Kaydı')
     `)
+  }
+  const tipCount = parseInt(tip.rows[0]?.count || '0', 10)
+  if (tipCount > 0) {
+    const hasPasaport = await client.query(`SELECT 1 FROM personel_belge_tipleri WHERE kod IN ('pasaport_kimlik','personel_foto') LIMIT 1`)
+    if (hasPasaport.rows.length === 0) {
+      await client.query(`
+        INSERT INTO personel_belge_tipleri (kod, ad) VALUES ('pasaport_kimlik', 'Pasaport / Kimlik'), ('personel_foto', 'Personel Fotoğrafı')
+      `)
+    }
   }
 }
 
@@ -583,6 +643,9 @@ export async function saveOperatorEntry(data: {
   machineId: string
   machineName: string
   machineHours?: string
+  startTime?: string
+  endTime?: string
+  pileDepths?: { depth: string | number; onForaj: boolean; bosForaj: boolean }[]
   usedFuel?: string
   workDone?: string
   note?: string
@@ -591,6 +654,9 @@ export async function saveOperatorEntry(data: {
   emptyBorehole?: string
   preBorehole?: string
   concretePoured?: string
+  elmasMiktar?: string
+  elmasDegisimYok?: boolean
+  bentonitMiktar?: string
   image1?: string | null
   image2?: string | null
   notes?: string
@@ -598,15 +664,18 @@ export async function saveOperatorEntry(data: {
   const client = await pool.connect()
   try {
     const dateStr = (data.reportDate || "").slice(0, 10)
+    const pileDepthsJson = JSON.stringify(data.pileDepths ?? [])
     await client.query(`
-      INSERT INTO operator_entries (site_id, report_date, user_id, machine_id, machine_name, machine_hours, used_fuel, work_done, note, daily_pile_count, total_production, empty_borehole, pre_borehole, concrete_poured, image1, image2, notes)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      INSERT INTO operator_entries (site_id, report_date, user_id, machine_id, machine_name, machine_hours, start_time, end_time, pile_depths, used_fuel, work_done, note, daily_pile_count, total_production, empty_borehole, pre_borehole, concrete_poured, elmas_miktar, elmas_degisim_yok, bentonit_miktar, image1, image2, notes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
       ON CONFLICT (site_id, report_date, user_id, machine_id)
       DO UPDATE SET
-        machine_name = EXCLUDED.machine_name, machine_hours = EXCLUDED.machine_hours, used_fuel = EXCLUDED.used_fuel,
-        work_done = EXCLUDED.work_done, note = EXCLUDED.note,
+        machine_name = EXCLUDED.machine_name, machine_hours = EXCLUDED.machine_hours,
+        start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time, pile_depths = EXCLUDED.pile_depths,
+        used_fuel = EXCLUDED.used_fuel, work_done = EXCLUDED.work_done, note = EXCLUDED.note,
         daily_pile_count = EXCLUDED.daily_pile_count, total_production = EXCLUDED.total_production,
         empty_borehole = EXCLUDED.empty_borehole, pre_borehole = EXCLUDED.pre_borehole, concrete_poured = EXCLUDED.concrete_poured,
+        elmas_miktar = EXCLUDED.elmas_miktar, elmas_degisim_yok = EXCLUDED.elmas_degisim_yok, bentonit_miktar = EXCLUDED.bentonit_miktar,
         image1 = EXCLUDED.image1, image2 = EXCLUDED.image2, notes = EXCLUDED.notes
     `, [
       data.siteId,
@@ -615,6 +684,9 @@ export async function saveOperatorEntry(data: {
       data.machineId,
       data.machineName,
       data.machineHours ?? "",
+      (data.startTime || "").slice(0, 5) || null,
+      (data.endTime || "").slice(0, 5) || null,
+      pileDepthsJson,
       data.usedFuel ?? "",
       data.workDone ?? "",
       data.note ?? "",
@@ -623,6 +695,9 @@ export async function saveOperatorEntry(data: {
       data.emptyBorehole ?? "",
       data.preBorehole ?? "",
       data.concretePoured ?? "",
+      data.elmasMiktar ?? null,
+      data.elmasDegisimYok === true,
+      data.bentonitMiktar ?? null,
       data.image1 && String(data.image1).startsWith("data:") ? data.image1 : null,
       data.image2 && String(data.image2).startsWith("data:") ? data.image2 : null,
       data.notes ?? "",
@@ -792,6 +867,14 @@ function getWeekStart(year: number, week: number): Date {
   return firstMonday
 }
 
+// Makine id -> ad (operatör atamasında personel.calistigi_bolum için)
+const MACHINE_ID_TO_NAME: Record<string, string> = {
+  'xcmg-sr220': 'XCMG SR220',
+  'sany-sr235': 'SANY SR235',
+  'sany-sr285': 'SANY SR285',
+  'soiltec-sr60': 'SOILMEC SR60',
+}
+
 // ----- Şantiyeler (sites) -----
 export async function getAllSites() {
   const client = await pool.connect()
@@ -937,12 +1020,14 @@ export async function createSite(data: {
   initialPilesDone?: number | null
   assignedMachineIds?: string[]
   assignedOperatorIds?: number[]
+  assignedMachineOperators?: { machineId: string; personelId: number }[]
 }) {
   const client = await pool.connect()
   try {
+    const ops = data.assignedMachineOperators || []
     const result = await client.query(
-      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, assigned_machine_ids, assigned_operator_ids)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
+      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
       [
         data.name,
         data.code,
@@ -958,8 +1043,13 @@ export async function createSite(data: {
         data.initialPilesDone ?? null,
         JSON.stringify(data.assignedMachineIds || []),
         JSON.stringify(data.assignedOperatorIds || []),
+        JSON.stringify(ops),
       ]
     )
+    for (const { machineId, personelId } of ops) {
+      const machineName = MACHINE_ID_TO_NAME[machineId] || machineId
+      await client.query(`UPDATE personeller SET calistigi_bolum = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [machineName, personelId])
+    }
     return result.rows[0]
   } catch (error) {
     console.error('Error creating site:', error)
@@ -985,6 +1075,8 @@ export async function updateSite(id: number, data: {
   initialPilesDone?: number | null
   assignedMachineIds?: string[]
   assignedOperatorIds?: number[]
+  assignedMachineOperators?: { machineId: string; personelId: number }[]
+  budget?: number | null
 }) {
   const client = await pool.connect()
   try {
@@ -992,6 +1084,7 @@ export async function updateSite(id: number, data: {
     const values: (string | number | boolean | null)[] = []
     let i = 1
     if (data.name !== undefined) { updates.push(`name = $${i++}`); values.push(data.name) }
+    if (data.budget !== undefined) { updates.push(`budget = $${i++}`); values.push(data.budget) }
     if (data.code !== undefined) { updates.push(`code = $${i++}`); values.push(data.code) }
     if (data.emailList !== undefined) { updates.push(`email_list = $${i++}`); values.push(JSON.stringify(data.emailList)) }
     if (data.isActive !== undefined) { updates.push(`is_active = $${i++}`); values.push(data.isActive) }
@@ -1006,6 +1099,7 @@ export async function updateSite(id: number, data: {
     if (data.initialPilesDone !== undefined) { updates.push(`initial_piles_done = $${i++}`); values.push(data.initialPilesDone) }
     if (data.assignedMachineIds !== undefined) { updates.push(`assigned_machine_ids = $${i++}`); values.push(JSON.stringify(data.assignedMachineIds)) }
     if (data.assignedOperatorIds !== undefined) { updates.push(`assigned_operator_ids = $${i++}`); values.push(JSON.stringify(data.assignedOperatorIds)) }
+    if (data.assignedMachineOperators !== undefined) { updates.push(`assigned_machine_operators = $${i++}`); values.push(JSON.stringify(data.assignedMachineOperators)) }
     if (updates.length === 0) return await getSiteById(id)
     updates.push(`updated_at = CURRENT_TIMESTAMP`)
     values.push(id)
@@ -1013,6 +1107,11 @@ export async function updateSite(id: number, data: {
       `UPDATE sites SET ${updates.join(', ')} WHERE id = $${i} RETURNING *`,
       values
     )
+    const ops = data.assignedMachineOperators || []
+    for (const { machineId, personelId } of ops) {
+      const machineName = MACHINE_ID_TO_NAME[machineId] || machineId
+      await client.query(`UPDATE personeller SET calistigi_bolum = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [machineName, personelId])
+    }
     return result.rows[0] || null
   } catch (error) {
     console.error('Error updating site:', error)
@@ -1182,28 +1281,33 @@ export async function createPersonel(data: {
   ad: string
   soyad: string
   tc_kimlik?: string | null
+  pasaport_no?: string | null
   dogum_tarihi?: string | null
   kan_grubu?: string | null
   acil_iletisim?: string | null
   acil_telefon?: string | null
   gorev: string
   ise_giris_tarihi?: string | null
+  isten_cikis_tarihi?: string | null
+  calistigi_bolum?: string | null
   sigorta_durumu?: string | null
   iban?: string | null
   banka_adi?: string | null
   gunluk_yevmiye?: number | null
   aylik_maas?: number | null
+  foto_yolu?: string | null
 }) {
   const client = await pool.connect()
   try {
     const r = await client.query(`
-      INSERT INTO personeller (ad, soyad, tc_kimlik, dogum_tarihi, kan_grubu, acil_iletisim, acil_telefon, gorev, ise_giris_tarihi, sigorta_durumu, iban, banka_adi, gunluk_yevmiye, aylik_maas)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      INSERT INTO personeller (ad, soyad, tc_kimlik, pasaport_no, dogum_tarihi, kan_grubu, acil_iletisim, acil_telefon, gorev, ise_giris_tarihi, isten_cikis_tarihi, calistigi_bolum, sigorta_durumu, iban, banka_adi, gunluk_yevmiye, aylik_maas, foto_yolu)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING id
     `, [
-      data.ad, data.soyad, data.tc_kimlik ?? null, data.dogum_tarihi ?? null, data.kan_grubu ?? null,
+      data.ad, data.soyad, data.tc_kimlik ?? null, data.pasaport_no ?? null, data.dogum_tarihi ?? null, data.kan_grubu ?? null,
       data.acil_iletisim ?? null, data.acil_telefon ?? null, data.gorev || 'İşçi', data.ise_giris_tarihi ?? null,
-      data.sigorta_durumu ?? null, data.iban ?? null, data.banka_adi ?? null, data.gunluk_yevmiye ?? null, data.aylik_maas ?? null
+      data.isten_cikis_tarihi ?? null, data.calistigi_bolum ?? null, data.sigorta_durumu ?? null, data.iban ?? null, data.banka_adi ?? null,
+      data.gunluk_yevmiye ?? null, data.aylik_maas ?? null, data.foto_yolu ?? null
     ])
     return r.rows[0].id
   } finally {
@@ -1215,21 +1319,25 @@ export async function updatePersonel(id: number, data: Partial<{
   ad: string
   soyad: string
   tc_kimlik: string | null
+  pasaport_no: string | null
   dogum_tarihi: string | null
   kan_grubu: string | null
   acil_iletisim: string | null
   acil_telefon: string | null
   gorev: string
   ise_giris_tarihi: string | null
+  isten_cikis_tarihi: string | null
+  calistigi_bolum: string | null
   sigorta_durumu: string | null
   iban: string | null
   banka_adi: string | null
   gunluk_yevmiye: number | null
   aylik_maas: number | null
+  foto_yolu: string | null
 }>) {
   const client = await pool.connect()
   try {
-    const fields = ['ad', 'soyad', 'tc_kimlik', 'dogum_tarihi', 'kan_grubu', 'acil_iletisim', 'acil_telefon', 'gorev', 'ise_giris_tarihi', 'sigorta_durumu', 'iban', 'banka_adi', 'gunluk_yevmiye', 'aylik_maas']
+    const fields = ['ad', 'soyad', 'tc_kimlik', 'pasaport_no', 'dogum_tarihi', 'kan_grubu', 'acil_iletisim', 'acil_telefon', 'gorev', 'ise_giris_tarihi', 'isten_cikis_tarihi', 'calistigi_bolum', 'sigorta_durumu', 'iban', 'banka_adi', 'gunluk_yevmiye', 'aylik_maas', 'foto_yolu']
     const updates: string[] = []
     const values: unknown[] = []
     let i = 1
@@ -1401,6 +1509,305 @@ export async function approvePuantaj(siteId: number, baslangicTarih: string, bit
       WHERE site_id = $2 AND tarih >= $3 AND tarih <= $4 AND durum = 'taslak'
     `, [userId, siteId, bas, bit])
     return r.rowCount ?? 0
+  } finally {
+    client.release()
+  }
+}
+
+// ---------- İdari modül: Harcama / İşlemler ----------
+export async function getHarcamaKategorileri() {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(`SELECT id, kod, ad, aciklama FROM harcama_kategorileri ORDER BY kod`)
+    return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function getIslemler(options: { siteId?: number | null; baslangic?: string; bitis?: string } = {}) {
+  const client = await pool.connect()
+  try {
+    let query = `
+      SELECT i.*, k.ad AS kategori_adi, k.kod AS kategori_kod
+      FROM islemler i
+      LEFT JOIN harcama_kategorileri k ON k.id = i.kategori_id
+      WHERE 1=1
+    `
+    const params: (number | string)[] = []
+    let i = 1
+    if (options.siteId != null && options.siteId > 0) {
+      query += ` AND i.site_id = $${i++}`
+      params.push(options.siteId)
+    }
+    if (options.baslangic) {
+      query += ` AND i.islem_tarihi >= $${i++}`
+      params.push(String(options.baslangic).slice(0, 10))
+    }
+    if (options.bitis) {
+      query += ` AND i.islem_tarihi <= $${i++}`
+      params.push(String(options.bitis).slice(0, 10))
+    }
+    query += ` ORDER BY i.islem_tarihi DESC, i.id DESC`
+    const r = params.length ? await client.query(query, params) : await client.query(query)
+    return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function createIslem(data: {
+  site_id: number
+  kategori_id: number
+  tutar: number
+  islem_tarihi: string
+  odeme_kaynagi: string
+  aciklama?: string | null
+  evrak_yolu?: string | null
+  olusturan_id?: number | null
+}) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(`
+      INSERT INTO islemler (site_id, kategori_id, tutar, islem_tarihi, odeme_kaynagi, aciklama, evrak_yolu, olusturan_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING id
+    `, [
+      data.site_id,
+      data.kategori_id,
+      data.tutar,
+      (data.islem_tarihi || '').slice(0, 10),
+      data.odeme_kaynagi,
+      data.aciklama ?? null,
+      data.evrak_yolu ?? null,
+      data.olusturan_id ?? null,
+    ])
+    return r.rows[0]?.id
+  } finally {
+    client.release()
+  }
+}
+
+// ---------- İdari modül: Personel belgeleri ----------
+export async function getPersonelBelgeleri(personelId: number) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `SELECT * FROM personel_belgeleri WHERE personel_id = $1 ORDER BY yukleme_tarihi DESC`,
+      [personelId]
+    )
+    return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function addPersonelBelge(data: {
+  personel_id: number
+  belge_tipi: string
+  dosya_yolu: string
+  gecerlilik_tarihi?: string | null
+}) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(`
+      INSERT INTO personel_belgeleri (personel_id, belge_tipi, dosya_yolu, gecerlilik_tarihi)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id
+    `, [
+      data.personel_id,
+      data.belge_tipi,
+      data.dosya_yolu,
+      data.gecerlilik_tarihi ? (data.gecerlilik_tarihi as string).slice(0, 10) : null,
+    ])
+    return r.rows[0]?.id
+  } finally {
+    client.release()
+  }
+}
+
+/** Süresi dolan veya 15 gün içinde dolacak belgeler (dashboard uyarı) */
+export async function getBelgeUyarilari(options: { siteId?: number | null } = {}) {
+  const client = await pool.connect()
+  try {
+    const limitDate = new Date()
+    limitDate.setDate(limitDate.getDate() + 15)
+    const limitStr = limitDate.toISOString().slice(0, 10)
+    let query = `
+      SELECT b.*, p.ad, p.soyad, p.gorev
+      FROM personel_belgeleri b
+      INNER JOIN personeller p ON p.id = b.personel_id
+      WHERE b.gecerlilik_tarihi IS NOT NULL AND b.gecerlilik_tarihi <= $1
+    `
+    const params: string[] = [limitStr]
+    if (options.siteId != null && options.siteId > 0) {
+      query += ` AND EXISTS (SELECT 1 FROM personel_atama pa WHERE pa.personel_id = p.id AND pa.site_id = $2 AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= CURRENT_DATE))`
+      params.push(String(options.siteId))
+    }
+    query += ` ORDER BY b.gecerlilik_tarihi ASC`
+    const r = await client.query(query, params)
+    return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function getPersonelBelgeTipleri() {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(`SELECT id, kod, ad FROM personel_belge_tipleri ORDER BY kod`)
+    return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+// ---------- İdari modül: Envanter ----------
+export async function getEnvanter(options: { siteId?: number | null; yer?: string | null } = {}) {
+  const client = await pool.connect()
+  try {
+    let query = `SELECT e.*, s.name AS site_name FROM envanter e LEFT JOIN sites s ON e.site_id = s.id WHERE 1=1`
+    const params: (number | string)[] = []
+    let i = 1
+    if (options.siteId != null && options.siteId > 0) {
+      query += ` AND (e.site_id = $${i++} OR e.site_id IS NULL)`
+      params.push(options.siteId)
+    }
+    if (options.yer != null && String(options.yer).trim()) {
+      query += ` AND e.yer = $${i++}`
+      params.push(String(options.yer).trim())
+    }
+    query += ` ORDER BY e.kod`
+    const r = params.length ? await client.query(query, params) : await client.query(query)
+    return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function getEnvanterById(id: number) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(`SELECT e.*, s.name AS site_name FROM envanter e LEFT JOIN sites s ON e.site_id = s.id WHERE e.id = $1`, [id])
+    return r.rows[0] ?? null
+  } finally {
+    client.release()
+  }
+}
+
+export async function createEnvanter(data: {
+  kod: string
+  malzeme_adi: string
+  aciklama?: string | null
+  adet?: number
+  fotograf_yolu?: string | null
+  fiyat?: number | null
+  yer?: string | null
+  site_id?: number | null
+}) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(`
+      INSERT INTO envanter (kod, malzeme_adi, aciklama, adet, fotograf_yolu, fiyat, yer, site_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING id
+    `, [
+      data.kod.trim(),
+      data.malzeme_adi.trim(),
+      data.aciklama ?? null,
+      data.adet ?? 1,
+      data.fotograf_yolu ?? null,
+      data.fiyat ?? null,
+      data.yer ?? null,
+      data.site_id ?? null,
+    ])
+    return r.rows[0].id
+  } finally {
+    client.release()
+  }
+}
+
+export async function updateEnvanter(id: number, data: Partial<{
+  kod: string
+  malzeme_adi: string
+  aciklama: string | null
+  adet: number
+  fotograf_yolu: string | null
+  fiyat: number | null
+  yer: string | null
+  site_id: number | null
+}>) {
+  const client = await pool.connect()
+  try {
+    const fields = ['kod', 'malzeme_adi', 'aciklama', 'adet', 'fotograf_yolu', 'fiyat', 'yer', 'site_id']
+    const updates: string[] = []
+    const values: unknown[] = []
+    let i = 1
+    for (const f of fields) {
+      if (data[f as keyof typeof data] !== undefined) {
+        updates.push(`${f} = $${i++}`)
+        values.push(data[f as keyof typeof data])
+      }
+    }
+    if (updates.length === 0) return
+    updates.push(`updated_at = CURRENT_TIMESTAMP`)
+    values.push(id)
+    await client.query(`UPDATE envanter SET ${updates.join(', ')} WHERE id = $${i}`, values)
+  } finally {
+    client.release()
+  }
+}
+
+export async function deleteEnvanter(id: number) {
+  const client = await pool.connect()
+  try {
+    const result = await client.query(`DELETE FROM envanter WHERE id = $1 RETURNING id`, [id])
+    return (result.rowCount ?? 0) > 0
+  } finally {
+    client.release()
+  }
+}
+
+// ---------- İdari modül: Raporlar ----------
+/** Şantiye bütçe vs gerçekleşen (islemler toplamı) */
+export async function getButceRaporu(siteId: number, baslangic?: string, bitis?: string) {
+  const client = await pool.connect()
+  try {
+    const site = await client.query(`SELECT id, name, budget FROM sites WHERE id = $1`, [siteId])
+    if (!site.rows[0]) return null
+    let query = `SELECT COALESCE(SUM(tutar), 0) AS toplam FROM islemler WHERE site_id = $1`
+    const params: (number | string)[] = [siteId]
+    let i = 2
+    if (baslangic) { query += ` AND islem_tarihi >= $${i++}`; params.push((baslangic as string).slice(0, 10)) }
+    if (bitis) { query += ` AND islem_tarihi <= $${i++}`; params.push((bitis as string).slice(0, 10)) }
+    const sum = await client.query(query, params)
+    const toplam = parseFloat(sum.rows[0]?.toplam ?? '0')
+    return {
+      site_id: siteId,
+      site_name: site.rows[0].name,
+      budget: site.rows[0].budget != null ? parseFloat(site.rows[0].budget) : null,
+      toplam,
+      fark: site.rows[0].budget != null ? parseFloat(site.rows[0].budget) - toplam : null,
+    }
+  } finally {
+    client.release()
+  }
+}
+
+/** İş gücü: şantiye + tarih aralığı puantaj özeti (adam/gün) */
+export async function getIsGucuRaporu(siteId: number, baslangic: string, bitis: string) {
+  const client = await pool.connect()
+  try {
+    const bas = (baslangic || '').slice(0, 10)
+    const bit = (bitis || '').slice(0, 10)
+    const r = await client.query(`
+      SELECT tarih, COUNT(*) AS kisi_sayi, SUM(carpan) AS adam_gun, SUM(mesai_saat) AS toplam_mesai
+      FROM puantaj
+      WHERE site_id = $1 AND tarih >= $2 AND tarih <= $3 AND durum = 'onaylandi'
+      GROUP BY tarih
+      ORDER BY tarih
+    `, [siteId, bas, bit])
+    return r.rows
   } finally {
     client.release()
   }

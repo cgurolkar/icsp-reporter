@@ -23,7 +23,7 @@ import {
   TextField,
   IconButton,
 } from "@mui/material"
-import { Add, Edit, Visibility } from "@mui/icons-material"
+import { Add, Edit, Visibility, Download, Upload } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
 
 const GOREVLER = ["İşçi", "Kalfa", "Usta", "Mühendis", "Operatör", "Proje Müdürü", "Şantiye Şefi"]
@@ -34,13 +34,18 @@ interface SiteItem {
   code: string
 }
 
+const CALISTIGI_BOLUM_OPTIONS = ["Şantiye", "Merkez Ofis", "Depo", "Diğer"]
+
 interface PersonelRow {
   id: number
   ad: string
   soyad: string
   gorev: string
   tc_kimlik?: string | null
+  pasaport_no?: string | null
   ise_giris_tarihi?: string | null
+  isten_cikis_tarihi?: string | null
+  calistigi_bolum?: string | null
   gunluk_yevmiye?: number | null
   aylik_maas?: number | null
 }
@@ -54,16 +59,20 @@ export default function IdariPersonelPage() {
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [importing, setImporting] = useState(false)
   const [form, setForm] = useState({
     ad: "",
     soyad: "",
     gorev: "İşçi",
     tc_kimlik: "",
+    pasaport_no: "",
+    calistigi_bolum: "",
     dogum_tarihi: "",
     kan_grubu: "",
     acil_iletisim: "",
     acil_telefon: "",
     ise_giris_tarihi: "",
+    isten_cikis_tarihi: "",
     sigorta_durumu: "",
     iban: "",
     banka_adi: "",
@@ -107,11 +116,14 @@ export default function IdariPersonelPage() {
       soyad: "",
       gorev: "İşçi",
       tc_kimlik: "",
+      pasaport_no: "",
+      calistigi_bolum: "",
       dogum_tarihi: "",
       kan_grubu: "",
       acil_iletisim: "",
       acil_telefon: "",
       ise_giris_tarihi: "",
+      isten_cikis_tarihi: "",
       sigorta_durumu: "",
       iban: "",
       banka_adi: "",
@@ -128,11 +140,14 @@ export default function IdariPersonelPage() {
       soyad: row.soyad,
       gorev: row.gorev || "İşçi",
       tc_kimlik: row.tc_kimlik ?? "",
+      pasaport_no: row.pasaport_no ?? "",
+      calistigi_bolum: row.calistigi_bolum ?? "",
       dogum_tarihi: "",
       kan_grubu: "",
       acil_iletisim: "",
       acil_telefon: "",
       ise_giris_tarihi: row.ise_giris_tarihi ? String(row.ise_giris_tarihi).slice(0, 10) : "",
+      isten_cikis_tarihi: row.isten_cikis_tarihi ? String(row.isten_cikis_tarihi).slice(0, 10) : "",
       sigorta_durumu: "",
       iban: "",
       banka_adi: "",
@@ -153,11 +168,14 @@ export default function IdariPersonelPage() {
           soyad: form.soyad.trim(),
           gorev: form.gorev,
           tc_kimlik: form.tc_kimlik || null,
+          pasaport_no: form.pasaport_no || null,
+          calistigi_bolum: form.calistigi_bolum || null,
           dogum_tarihi: form.dogum_tarihi || null,
           kan_grubu: form.kan_grubu || null,
           acil_iletisim: form.acil_iletisim || null,
           acil_telefon: form.acil_telefon || null,
           ise_giris_tarihi: form.ise_giris_tarihi || null,
+          isten_cikis_tarihi: form.isten_cikis_tarihi || null,
           sigorta_durumu: form.sigorta_durumu || null,
           iban: form.iban || null,
           banka_adi: form.banka_adi || null,
@@ -181,11 +199,14 @@ export default function IdariPersonelPage() {
           soyad: form.soyad.trim(),
           gorev: form.gorev,
           tc_kimlik: form.tc_kimlik || null,
+          pasaport_no: form.pasaport_no || null,
+          calistigi_bolum: form.calistigi_bolum || null,
           dogum_tarihi: form.dogum_tarihi || null,
           kan_grubu: form.kan_grubu || null,
           acil_iletisim: form.acil_iletisim || null,
           acil_telefon: form.acil_telefon || null,
           ise_giris_tarihi: form.ise_giris_tarihi || null,
+          isten_cikis_tarihi: form.isten_cikis_tarihi || null,
           sigorta_durumu: form.sigorta_durumu || null,
           iban: form.iban || null,
           banka_adi: form.banka_adi || null,
@@ -230,9 +251,35 @@ export default function IdariPersonelPage() {
             </Select>
           </FormControl>
           {canManage && (
-            <Button variant="contained" startIcon={<Add />} onClick={openAdd} sx={{ background: "var(--icsp-lacivert)" }}>
-              Yeni personel
-            </Button>
+            <>
+              <Button variant="contained" startIcon={<Add />} onClick={openAdd} sx={{ background: "var(--icsp-lacivert)" }}>
+                Yeni personel
+              </Button>
+              <Button variant="outlined" startIcon={<Download />} href="/api/idari/personel/template" download="personel_sablonu.xlsx" sx={{ borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}>
+                Şablon indir
+              </Button>
+              <Button variant="outlined" component="label" startIcon={<Upload />} disabled={importing} sx={{ borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}>
+                {importing ? "Yükleniyor…" : "Excel'den içe aktar"}
+                <input type="file" accept=".xlsx,.xls" hidden onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file || !canManage) return
+                  setImporting(true)
+                  try {
+                    const fd = new FormData()
+                    fd.set("file", file)
+                    const res = await fetch("/api/idari/personel/import", { method: "POST", body: fd })
+                    const data = await res.json().catch(() => ({}))
+                    if (res.ok) {
+                      loadList()
+                      alert(`${data.inserted ?? 0} personel eklendi.${(data.failed ?? 0) > 0 ? ` ${data.failed} satır atlandı.` : ""}`)
+                    } else alert(data.error || "İçe aktarma başarısız.")
+                  } finally {
+                    setImporting(false)
+                    e.target.value = ""
+                  }
+                }} />
+              </Button>
+            </>
           )}
         </Box>
 
@@ -244,8 +291,9 @@ export default function IdariPersonelPage() {
               <TableRow>
                 <TableCell><strong>Ad Soyad</strong></TableCell>
                 <TableCell><strong>Görev</strong></TableCell>
-                <TableCell><strong>TC</strong></TableCell>
-                <TableCell><strong>İşe giriş</strong></TableCell>
+                <TableCell><strong>TC / Pasaport</strong></TableCell>
+            <TableCell><strong>Çalıştığı bölüm</strong></TableCell>
+                <TableCell><strong>İşe giriş / çıkış</strong></TableCell>
                 <TableCell align="right"><strong>Günlük / Aylık</strong></TableCell>
                 <TableCell align="right">İşlem</TableCell>
               </TableRow>
@@ -253,15 +301,16 @@ export default function IdariPersonelPage() {
             <TableBody>
               {list.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 3 }}>Kayıt yok</TableCell>
+                  <TableCell colSpan={8} align="center" sx={{ py: 3 }}>Kayıt yok</TableCell>
                 </TableRow>
               ) : (
                 list.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell>{row.ad} {row.soyad}</TableCell>
                     <TableCell>{row.gorev}</TableCell>
-                    <TableCell>{row.tc_kimlik ?? "—"}</TableCell>
-                    <TableCell>{row.ise_giris_tarihi ? String(row.ise_giris_tarihi).slice(0, 10) : "—"}</TableCell>
+                    <TableCell>{row.tc_kimlik ? `TC: ${row.tc_kimlik}` : row.pasaport_no ? `Pasaport: ${row.pasaport_no}` : "—"}</TableCell>
+                    <TableCell>{row.calistigi_bolum ?? "—"}</TableCell>
+                    <TableCell>{row.ise_giris_tarihi ? String(row.ise_giris_tarihi).slice(0, 10) : "—"}{row.isten_cikis_tarihi ? ` → ${String(row.isten_cikis_tarihi).slice(0, 10)}` : ""}</TableCell>
                     <TableCell align="right">
                       {row.gunluk_yevmiye != null ? row.gunluk_yevmiye : row.aylik_maas != null ? row.aylik_maas : "—"}
                     </TableCell>
@@ -297,8 +346,19 @@ export default function IdariPersonelPage() {
                 ))}
               </Select>
             </FormControl>
-            <TextField label="TC Kimlik" value={form.tc_kimlik} onChange={(e) => setForm((f) => ({ ...f, tc_kimlik: e.target.value }))} fullWidth />
+            <TextField label="TC Kimlik (T.C. vatandaşı)" value={form.tc_kimlik} onChange={(e) => setForm((f) => ({ ...f, tc_kimlik: e.target.value }))} fullWidth />
+            <TextField label="Pasaport No (yabancı uyruklu)" value={form.pasaport_no} onChange={(e) => setForm((f) => ({ ...f, pasaport_no: e.target.value }))} fullWidth />
+            <FormControl fullWidth>
+              <InputLabel>Çalıştığı bölüm</InputLabel>
+              <Select value={form.calistigi_bolum} label="Çalıştığı bölüm" onChange={(e) => setForm((f) => ({ ...f, calistigi_bolum: e.target.value }))}>
+                <MenuItem value="">Seçin</MenuItem>
+                {CALISTIGI_BOLUM_OPTIONS.map((b) => (
+                  <MenuItem key={b} value={b}>{b}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <TextField label="İşe giriş tarihi" type="date" value={form.ise_giris_tarihi} onChange={(e) => setForm((f) => ({ ...f, ise_giris_tarihi: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
+            <TextField label="İşten çıkış tarihi" type="date" value={form.isten_cikis_tarihi} onChange={(e) => setForm((f) => ({ ...f, isten_cikis_tarihi: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
             <TextField label="Günlük yevmiye" type="number" value={form.gunluk_yevmiye} onChange={(e) => setForm((f) => ({ ...f, gunluk_yevmiye: e.target.value }))} fullWidth />
             <TextField label="Aylık maaş" type="number" value={form.aylik_maas} onChange={(e) => setForm((f) => ({ ...f, aylik_maas: e.target.value }))} fullWidth />
             <TextField label="Acil iletişim" value={form.acil_iletisim} onChange={(e) => setForm((f) => ({ ...f, acil_iletisim: e.target.value }))} fullWidth />

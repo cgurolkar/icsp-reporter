@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams } from "next/navigation"
 import Link from "next/link"
 import {
   Box,
@@ -23,8 +23,9 @@ import {
   MenuItem,
   TextField,
 } from "@mui/material"
-import { ArrowBack, Add } from "@mui/icons-material"
+import { ArrowBack, Add, Person } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
+import { useTheme, useMediaQuery } from "@mui/material"
 
 interface PersonelDetail {
   id: number
@@ -32,17 +33,29 @@ interface PersonelDetail {
   soyad: string
   gorev: string
   tc_kimlik?: string | null
+  pasaport_no?: string | null
+  foto_yolu?: string | null
+  calistigi_bolum?: string | null
   dogum_tarihi?: string | null
   kan_grubu?: string | null
   acil_iletisim?: string | null
   acil_telefon?: string | null
   ise_giris_tarihi?: string | null
+  isten_cikis_tarihi?: string | null
   sigorta_durumu?: string | null
   iban?: string | null
   banka_adi?: string | null
   gunluk_yevmiye?: number | null
   aylik_maas?: number | null
   atamalar: { id: number; site_id: number; site_name: string; baslangic_tarihi: string; bitis_tarihi?: string | null }[]
+}
+
+interface BelgeRow {
+  id: number
+  belge_tipi: string
+  dosya_yolu: string
+  gecerlilik_tarihi?: string | null
+  yukleme_tarihi?: string
 }
 
 interface SiteItem {
@@ -52,13 +65,19 @@ interface SiteItem {
 
 export default function IdariPersonelDetailPage() {
   const params = useParams()
-  const router = useRouter()
+  const theme = useTheme()
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"))
   const { user } = useAuth()
-  const id = typeof params.id === "string" ? parseInt(params.id, 10) : NaN
+  const id = typeof params?.id === "string" ? parseInt(params.id, 10) : NaN
   const [personel, setPersonel] = useState<PersonelDetail | null>(null)
   const [sites, setSites] = useState<SiteItem[]>([])
+  const [belgeler, setBelgeler] = useState<BelgeRow[]>([])
+  const [belgeTipleri, setBelgeTipleri] = useState<{ id: number; kod: string; ad: string }[]>([])
   const [atamaDialogOpen, setAtamaDialogOpen] = useState(false)
   const [atamaForm, setAtamaForm] = useState({ site_id: "", baslangic_tarihi: "", bitis_tarihi: "" })
+  const [belgeDialogOpen, setBelgeDialogOpen] = useState(false)
+  const [belgeForm, setBelgeForm] = useState({ belge_tipi: "", gecerlilik_tarihi: "" })
+  const [belgeSaving, setBelgeSaving] = useState(false)
 
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
   const canManage = role === "admin" || role === "manager"
@@ -78,12 +97,64 @@ export default function IdariPersonelDetailPage() {
       .catch(() => setSites([]))
   }, [])
 
+  useEffect(() => {
+    if (Number.isNaN(id)) return
+    fetch(`/api/idari/personel/${id}/belgeler`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: BelgeRow[]) => setBelgeler(data))
+      .catch(() => setBelgeler([]))
+  }, [id])
+
+  useEffect(() => {
+    fetch("/api/idari/belge-tipleri")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: { id: number; kod: string; ad: string }[]) => setBelgeTipleri(data))
+      .catch(() => setBelgeTipleri([]))
+  }, [])
+
   const loadPersonel = () => {
     if (Number.isNaN(id)) return
     fetch(`/api/idari/personel/${id}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data: PersonelDetail | null) => setPersonel(data))
       .catch(() => setPersonel(null))
+    fetch(`/api/idari/personel/${id}/belgeler`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: BelgeRow[]) => setBelgeler(data))
+      .catch(() => setBelgeler([]))
+  }
+
+  const handleBelgeFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !id || !belgeForm.belge_tipi) return
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Dosya 5MB'dan küçük olmalı.")
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = async () => {
+      setBelgeSaving(true)
+      const res = await fetch(`/api/idari/personel/${id}/belgeler`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          belge_tipi: belgeForm.belge_tipi,
+          gecerlilik_tarihi: belgeForm.gecerlilik_tarihi || null,
+          evrak_base64: reader.result,
+        }),
+      })
+      setBelgeSaving(false)
+      if (res.ok) {
+        setBelgeDialogOpen(false)
+        setBelgeForm({ belge_tipi: "", gecerlilik_tarihi: "" })
+        e.target.value = ""
+        loadPersonel()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || "Yüklenemedi.")
+      }
+    }
+    reader.readAsDataURL(file)
   }
 
   const handleAddAtama = async () => {
@@ -135,23 +206,80 @@ export default function IdariPersonelDetailPage() {
         Listeye dön
       </Button>
 
-      <Paper sx={{ p: 3, mb: 2 }}>
-        <Typography variant="h6" sx={{ color: "var(--icsp-lacivert)", fontWeight: 600, mb: 2 }}>
-          {personel.ad} {personel.soyad}
-        </Typography>
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2 }}>
-          <Typography><strong>Görev:</strong> {personel.gorev}</Typography>
-          <Typography><strong>TC:</strong> {personel.tc_kimlik ?? "—"}</Typography>
-          <Typography><strong>İşe giriş:</strong> {personel.ise_giris_tarihi ? String(personel.ise_giris_tarihi).slice(0, 10) : "—"}</Typography>
-          <Typography><strong>Kan grubu:</strong> {personel.kan_grubu ?? "—"}</Typography>
-          <Typography><strong>Acil iletişim:</strong> {personel.acil_iletisim ?? "—"}</Typography>
-          <Typography><strong>Acil telefon:</strong> {personel.acil_telefon ?? "—"}</Typography>
-          <Typography><strong>Günlük yevmiye:</strong> {personel.gunluk_yevmiye != null ? personel.gunluk_yevmiye : "—"}</Typography>
-          <Typography><strong>Aylık maaş:</strong> {personel.aylik_maas != null ? personel.aylik_maas : "—"}</Typography>
-          <Typography><strong>IBAN:</strong> {personel.iban ?? "—"}</Typography>
-          <Typography><strong>Banka:</strong> {personel.banka_adi ?? "—"}</Typography>
+      <Paper sx={{ p: 0, mb: 2, borderRadius: 2, overflow: "hidden" }}>
+        <Box sx={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: "stretch" }}>
+          <Box
+            sx={{
+              width: isMobile ? "100%" : 160,
+              minHeight: isMobile ? 180 : 200,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              bgcolor: "grey.100",
+              p: 2,
+            }}
+          >
+            {personel.foto_yolu ? (
+              <Box component="img" src={personel.foto_yolu} alt="" sx={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 1 }} />
+            ) : (
+              <Person sx={{ fontSize: 80, color: "grey.400" }} />
+            )}
+          </Box>
+          <Box sx={{ flex: 1, p: 3 }}>
+            <Typography variant="h6" sx={{ color: "var(--icsp-lacivert)", fontWeight: 600 }}>
+              {personel.ad} {personel.soyad}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {personel.gorev}
+              {personel.calistigi_bolum && ` · ${personel.calistigi_bolum}`}
+            </Typography>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.5, mt: 2 }}>
+              <Typography variant="body2"><strong>Kimlik:</strong> {personel.tc_kimlik ? `TC ${personel.tc_kimlik}` : personel.pasaport_no ? `Pasaport ${personel.pasaport_no}` : "—"}</Typography>
+              <Typography variant="body2"><strong>İşe giriş:</strong> {personel.ise_giris_tarihi ? String(personel.ise_giris_tarihi).slice(0, 10) : "—"}</Typography>
+              <Typography variant="body2"><strong>İşten çıkış:</strong> {personel.isten_cikis_tarihi ? String(personel.isten_cikis_tarihi).slice(0, 10) : "—"}</Typography>
+              <Typography variant="body2"><strong>Çalıştığı bölüm:</strong> {personel.calistigi_bolum ?? "—"}</Typography>
+              <Typography variant="body2"><strong>Kan grubu:</strong> {personel.kan_grubu ?? "—"}</Typography>
+              <Typography variant="body2"><strong>Acil iletişim:</strong> {personel.acil_iletisim ?? "—"}</Typography>
+              <Typography variant="body2"><strong>Acil telefon:</strong> {personel.acil_telefon ?? "—"}</Typography>
+              <Typography variant="body2"><strong>Günlük yevmiye:</strong> {personel.gunluk_yevmiye != null ? personel.gunluk_yevmiye : "—"}</Typography>
+              <Typography variant="body2"><strong>Aylık maaş:</strong> {personel.aylik_maas != null ? personel.aylik_maas : "—"}</Typography>
+              <Typography variant="body2"><strong>IBAN:</strong> {personel.iban ?? "—"}</Typography>
+              <Typography variant="body2"><strong>Banka:</strong> {personel.banka_adi ?? "—"}</Typography>
+            </Box>
+          </Box>
         </Box>
       </Paper>
+
+      {canManage && (
+        <Paper sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+          <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>Belgeler (Pasaport/Kimlik, Personel fotoğrafı)</Typography>
+          <Button size="small" variant="outlined" startIcon={<Add />} onClick={() => setBelgeDialogOpen(true)} sx={{ mb: 2 }}>
+            Belge / fotoğraf yükle
+          </Button>
+          {belgeler.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">Henüz belge yok.</Typography>
+          ) : (
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><strong>Belge</strong></TableCell>
+                  <TableCell><strong>Geçerlilik</strong></TableCell>
+                  <TableCell>İndir</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {belgeler.map((b) => (
+                  <TableRow key={b.id}>
+                    <TableCell>{belgeTipleri.find((t) => t.kod === b.belge_tipi)?.ad ?? b.belge_tipi}</TableCell>
+                    <TableCell>{b.gecerlilik_tarihi ? String(b.gecerlilik_tarihi).slice(0, 10) : "—"}</TableCell>
+                    <TableCell><Button size="small" href={b.dosya_yolu} target="_blank" rel="noopener">Görüntüle</Button></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Paper>
+      )}
 
       <Paper sx={{ p: 2 }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
@@ -185,6 +313,31 @@ export default function IdariPersonelDetailPage() {
           </Table>
         )}
       </Paper>
+
+      <Dialog open={belgeDialogOpen} onClose={() => setBelgeDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Belge / fotoğraf yükle</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+            <FormControl fullWidth>
+              <InputLabel>Belge tipi</InputLabel>
+              <Select value={belgeForm.belge_tipi} label="Belge tipi" onChange={(e) => setBelgeForm((f) => ({ ...f, belge_tipi: e.target.value }))}>
+                <MenuItem value="">Seçin</MenuItem>
+                {belgeTipleri.map((t) => (
+                  <MenuItem key={t.id} value={t.kod}>{t.ad}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField label="Geçerlilik tarihi (opsiyonel)" type="date" value={belgeForm.gecerlilik_tarihi} onChange={(e) => setBelgeForm((f) => ({ ...f, gecerlilik_tarihi: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
+            <Button variant="outlined" component="label" disabled={!belgeForm.belge_tipi || belgeSaving}>
+              {belgeSaving ? "Yükleniyor…" : "Dosya seç"}
+              <input type="file" accept="image/*,.pdf" hidden onChange={handleBelgeFileChange} />
+            </Button>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBelgeDialogOpen(false)}>Kapat</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={atamaDialogOpen} onClose={() => setAtamaDialogOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Şantiye ataması ekle</DialogTitle>

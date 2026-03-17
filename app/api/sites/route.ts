@@ -54,10 +54,13 @@ export async function POST(request: NextRequest) {
     const initialPilesDone = body.initialPilesDone != null ? (typeof body.initialPilesDone === "number" ? body.initialPilesDone : parseInt(String(body.initialPilesDone), 10) || null) : null
     const assignedMachineIds = Array.isArray(body.assignedMachineIds) ? body.assignedMachineIds.filter((x: unknown) => typeof x === "string") : []
     const assignedOperatorIds = Array.isArray(body.assignedOperatorIds) ? body.assignedOperatorIds.filter((x: unknown) => typeof x === "number" || (typeof x === "string" && /^\d+$/.test(x))).map(Number) : []
+    const assignedMachineOperators = Array.isArray(body.assignedMachineOperators)
+      ? body.assignedMachineOperators.filter((x: unknown) => x != null && typeof (x as any).machineId === "string" && typeof (x as any).personelId === "number")
+      : []
     if (!name || !code) {
       return NextResponse.json({ error: "Şantiye adı ve kod zorunludur." }, { status: 400 })
     }
-    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds })
+    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators })
     return NextResponse.json(site)
   } catch (error: unknown) {
     console.error("Error creating site:", error)

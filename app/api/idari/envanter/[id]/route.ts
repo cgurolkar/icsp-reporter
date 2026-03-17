@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSessionFromRequest } from "@/lib/auth"
 import { canAccessIdari, canManageIdariCentral } from "@/lib/auth"
-import { initializeDatabase, getPersonelById, updatePersonel, deletePersonel } from "@/lib/database"
+import { initializeDatabase, getEnvanterById, updateEnvanter, deleteEnvanter } from "@/lib/database"
 
 export async function GET(
   _request: NextRequest,
@@ -10,17 +10,15 @@ export async function GET(
   const session = await getSessionFromRequest(_request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
   if (!canAccessIdari(session.role)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
-
   const id = parseInt((await params).id, 10)
   if (Number.isNaN(id)) return NextResponse.json({ error: "Geçersiz ID." }, { status: 400 })
-
   try {
     await initializeDatabase()
-    const row = await getPersonelById(id)
-    if (!row) return NextResponse.json({ error: "Personel bulunamadı." }, { status: 404 })
+    const row = await getEnvanterById(id)
+    if (!row) return NextResponse.json({ error: "Envanter bulunamadı." }, { status: 404 })
     return NextResponse.json(row)
   } catch (error) {
-    console.error("Idari personel GET by id error:", error)
+    console.error("Envanter GET by id error:", error)
     return NextResponse.json({ error: "Kayıt alınamadı." }, { status: 500 })
   }
 }
@@ -32,36 +30,24 @@ export async function PUT(
   const session = await getSessionFromRequest(request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
   if (!canManageIdariCentral(session.role)) return NextResponse.json({ error: "Düzenleme yetkiniz yok." }, { status: 403 })
-
   const id = parseInt((await params).id, 10)
   if (Number.isNaN(id)) return NextResponse.json({ error: "Geçersiz ID." }, { status: 400 })
-
   try {
     const body = await request.json()
     await initializeDatabase()
-    await updatePersonel(id, {
-      ad: body.ad,
-      soyad: body.soyad,
-      tc_kimlik: body.tc_kimlik,
-      pasaport_no: body.pasaport_no,
-      dogum_tarihi: body.dogum_tarihi,
-      kan_grubu: body.kan_grubu,
-      acil_iletisim: body.acil_iletisim,
-      acil_telefon: body.acil_telefon,
-      gorev: body.gorev,
-      ise_giris_tarihi: body.ise_giris_tarihi,
-      isten_cikis_tarihi: body.isten_cikis_tarihi,
-      calistigi_bolum: body.calistigi_bolum,
-      sigorta_durumu: body.sigorta_durumu,
-      iban: body.iban,
-      banka_adi: body.banka_adi,
-      gunluk_yevmiye: body.gunluk_yevmiye != null ? Number(body.gunluk_yevmiye) : undefined,
-      aylik_maas: body.aylik_maas != null ? Number(body.aylik_maas) : undefined,
-      foto_yolu: body.foto_yolu,
+    await updateEnvanter(id, {
+      kod: body.kod,
+      malzeme_adi: body.malzeme_adi,
+      aciklama: body.aciklama,
+      adet: body.adet != null ? Number(body.adet) : undefined,
+      fotograf_yolu: body.fotograf_yolu,
+      fiyat: body.fiyat != null ? Number(body.fiyat) : undefined,
+      yer: body.yer,
+      site_id: body.site_id,
     })
     return NextResponse.json({ ok: true })
   } catch (error) {
-    console.error("Idari personel PUT error:", error)
+    console.error("Envanter PUT error:", error)
     return NextResponse.json({ error: "Güncellenemedi." }, { status: 500 })
   }
 }
@@ -73,17 +59,15 @@ export async function DELETE(
   const session = await getSessionFromRequest(_request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
   if (!canManageIdariCentral(session.role)) return NextResponse.json({ error: "Silme yetkiniz yok." }, { status: 403 })
-
   const id = parseInt((await params).id, 10)
   if (Number.isNaN(id)) return NextResponse.json({ error: "Geçersiz ID." }, { status: 400 })
-
   try {
     await initializeDatabase()
-    const deleted = await deletePersonel(id)
+    const deleted = await deleteEnvanter(id)
     if (!deleted) return NextResponse.json({ error: "Kayıt bulunamadı." }, { status: 404 })
     return NextResponse.json({ ok: true })
   } catch (error) {
-    console.error("Idari personel DELETE error:", error)
+    console.error("Envanter DELETE error:", error)
     return NextResponse.json({ error: "Silinemedi." }, { status: 500 })
   }
 }

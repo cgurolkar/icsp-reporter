@@ -7,7 +7,13 @@ export function generatePDFMainReport(
     computedDailyPileCount?: string
     concretePouredSum?: number
     /** Operatör girişleri (şantiye + tarih bazlı); rapora bu bölüm eklenir */
-    operatorEntries?: Array<{ machine_name?: string; machine_hours?: string; used_fuel?: string; work_done?: string; note?: string; username?: string; daily_pile_count?: string; total_production?: string; empty_borehole?: string; pre_borehole?: string; concrete_poured?: string; image1?: string | null; image2?: string | null; notes?: string }>
+    operatorEntries?: Array<{
+      machine_name?: string; machine_hours?: string; used_fuel?: string; work_done?: string; note?: string; username?: string;
+      daily_pile_count?: string; total_production?: string; empty_borehole?: string; pre_borehole?: string; concrete_poured?: string;
+      start_time?: string; end_time?: string; pile_depths?: Array<{ depth?: string | number; onForaj?: boolean; bosForaj?: boolean }>;
+      elmas_miktar?: string; elmas_degisim_yok?: boolean; bentonit_miktar?: string;
+      image1?: string | null; image2?: string | null; notes?: string;
+    }>
   }
 ) {
   const operatorEntries = opts?.operatorEntries ?? []
@@ -106,19 +112,36 @@ export function generatePDFMainReport(
           ${operatorEntries.length > 0 ? `
           <div class="section-title">OPERATÖR MAKİNE GİRİŞLERİ</div>
           <table>
-            <thead><tr><th>MAKİNE</th><th>MAKİNE SAAT</th><th>MAZOT (L)</th><th>KAZIK (Ad.)</th><th>İMALAT (m)</th><th>YAPILAN İMALAT</th><th>NOT</th></tr></thead>
+            <thead><tr><th>MAKİNE</th><th>BİNİŞ</th><th>İNİŞ</th><th>MAZOT (L)</th><th>KAZIK (Ad.)</th><th>İMALAT (m)</th><th>ELMAS</th><th>BENTONİT</th><th>YAPILAN İMALAT</th><th>NOT</th></tr></thead>
             <tbody>
-              ${operatorEntries.map((oe: any) => `
+              ${operatorEntries.map((oe: any) => {
+                const pd = oe.pile_depths
+                const pileDepths = Array.isArray(pd) ? pd : (typeof pd === "string" ? (() => { try { return JSON.parse(pd); } catch { return []; } })() : [])
+                const elmasText = oe.elmas_degisim_yok ? "yok" : (oe.elmas_miktar ?? "")
+                return `
                 <tr>
                   <td style="text-align: center; font-weight: bold;">${oe.machine_name ?? ""}</td>
-                  <td style="text-align: center;">${oe.machine_hours ?? ""}</td>
+                  <td style="text-align: center;">${oe.start_time ?? ""}</td>
+                  <td style="text-align: center;">${oe.end_time ?? ""}</td>
                   <td style="text-align: center;">${oe.used_fuel ?? ""}</td>
                   <td style="text-align: center;">${oe.daily_pile_count ?? oe.concrete_poured ?? ""}</td>
                   <td style="text-align: center;">${oe.total_production ?? ""}</td>
+                  <td style="text-align: center;">${elmasText}</td>
+                  <td style="text-align: center;">${oe.bentonit_miktar ?? ""}</td>
                   <td style="text-align: left;">${oe.work_done ?? ""}</td>
                   <td style="text-align: left;">${oe.note ?? ""}</td>
                 </tr>
-              `).join("")}
+                ${pileDepths.length > 0 ? `
+                <tr><td colspan="10" style="padding: 0; border: none; vertical-align: top;">
+                  <table style="margin: 0 0 4px 8px; width: auto; min-width: 280px;">
+                    <thead><tr><th>No</th><th>Derinlik (m)</th><th>Ön foraj</th><th>Boş foraj</th></tr></thead>
+                    <tbody>
+                      ${pileDepths.map((r: any, i: number) => `<tr><td>${i + 1}</td><td>${r.depth ?? ""}</td><td>${r.onForaj ? "Evet" : "Hayır"}</td><td>${r.bosForaj ? "Evet" : "Hayır"}</td></tr>`).join("")}
+                    </tbody>
+                  </table>
+                </td></tr>
+                ` : ""}
+              `}).join("")}
             </tbody>
           </table>
           ${operatorEntries.some((oe: any) => (oe.notes && String(oe.notes).trim()) || (oe.image1 || oe.image2)) ? `

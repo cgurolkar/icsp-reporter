@@ -49,6 +49,13 @@ export async function POST(request: NextRequest) {
     if (session.role === "operator" && session.siteId != null && session.siteId !== siteId) {
       return NextResponse.json({ error: "Sadece atandığınız şantiye için giriş yapabilirsiniz." }, { status: 403 })
     }
+    const pileDepths = Array.isArray(body.pileDepths)
+      ? body.pileDepths.map((r: { depth?: string | number; onForaj?: boolean; bosForaj?: boolean }) => ({
+          depth: r.depth != null ? String(r.depth) : "",
+          onForaj: !!r.onForaj,
+          bosForaj: !!r.bosForaj,
+        }))
+      : []
     await saveOperatorEntry({
       siteId,
       reportDate,
@@ -56,6 +63,9 @@ export async function POST(request: NextRequest) {
       machineId,
       machineName,
       machineHours: typeof body.machineHours === "string" ? body.machineHours.trim() : "",
+      startTime: typeof body.startTime === "string" ? body.startTime.trim().slice(0, 5) : "",
+      endTime: typeof body.endTime === "string" ? body.endTime.trim().slice(0, 5) : "",
+      pileDepths,
       usedFuel: typeof body.usedFuel === "string" ? body.usedFuel.trim() : "",
       workDone: typeof body.workDone === "string" ? body.workDone.trim() : "",
       note: typeof body.note === "string" ? body.note.trim() : "",
@@ -64,6 +74,9 @@ export async function POST(request: NextRequest) {
       emptyBorehole: typeof body.emptyBorehole === "string" ? body.emptyBorehole.trim() : "",
       preBorehole: typeof body.preBorehole === "string" ? body.preBorehole.trim() : "",
       concretePoured: typeof body.concretePoured === "string" ? body.concretePoured.trim() : "",
+      elmasMiktar: typeof body.elmasMiktar === "string" ? body.elmasMiktar.trim() : "",
+      elmasDegisimYok: body.elmasDegisimYok === true,
+      bentonitMiktar: typeof body.bentonitMiktar === "string" ? body.bentonitMiktar.trim() : "",
       image1: typeof body.image1 === "string" ? body.image1 : null,
       image2: typeof body.image2 === "string" ? body.image2 : null,
       notes: typeof body.notes === "string" ? body.notes.trim() : "",

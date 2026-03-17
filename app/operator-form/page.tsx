@@ -12,8 +12,10 @@ import {
   FormControl,
   InputLabel,
   Select,
+  FormControlLabel,
+  Checkbox,
 } from "@mui/material"
-import { Save, PhotoCamera } from "@mui/icons-material"
+import { Save, PhotoCamera, Add, Delete } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
 import { useRouter } from "next/navigation"
 import { AVAILABLE_MACHINES } from "@/types/form-data"
@@ -46,8 +48,13 @@ export default function OperatorFormPage() {
   const [siteId, setSiteId] = useState<number | "">(user?.siteId ?? "")
   const [reportDate, setReportDate] = useState(() => new Date().toISOString().split("T")[0])
   const [machineId, setMachineId] = useState("")
-  const [machineHours, setMachineHours] = useState("")
+  const [startTime, setStartTime] = useState("")
+  const [endTime, setEndTime] = useState("")
+  const [pileDepths, setPileDepths] = useState<{ depth: string; onForaj: boolean; bosForaj: boolean }[]>([{ depth: "", onForaj: false, bosForaj: false }])
   const [usedFuel, setUsedFuel] = useState("")
+  const [elmasMiktar, setElmasMiktar] = useState("")
+  const [elmasDegisimYok, setElmasDegisimYok] = useState(false)
+  const [bentonitMiktar, setBentonitMiktar] = useState("")
   const [workDone, setWorkDone] = useState("")
   const [note, setNote] = useState("")
   const [dailyPileCount, setDailyPileCount] = useState("")
@@ -104,14 +111,33 @@ export default function OperatorFormPage() {
     e.target.value = ""
   }
 
+  const addPileRow = () => setPileDepths((prev) => [...prev, { depth: "", onForaj: false, bosForaj: false }])
+  const removePileRow = (index: number) =>
+    setPileDepths((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)))
+  const updatePileRow = (index: number, field: "depth" | "onForaj" | "bosForaj", value: string | boolean) =>
+    setPileDepths((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)))
+
   const handleSubmit = async () => {
     if (!siteId || !reportDate || !machineId || !machineName) {
       setMessage({ type: "error", text: "Tarih, şantiye ve makine seçimi zorunludur." })
       return
     }
+    const elmasTrim = elmasMiktar.trim()
+    let finalElmasDegisimYok = false
+    if (!elmasTrim) {
+      const degisimYok = window.confirm("Değişen elmas yok mu?")
+      if (degisimYok) finalElmasDegisimYok = true
+      else {
+        setMessage({ type: "error", text: "Lütfen elmas miktarını girin." })
+        return
+      }
+    }
     setSaving(true)
     setMessage(null)
     try {
+      const payloadPileDepths = pileDepths
+        .filter((r) => r.depth.trim() !== "")
+        .map((r) => ({ depth: r.depth.trim(), onForaj: r.onForaj, bosForaj: r.bosForaj }))
       const res = await fetch("/api/operator-entry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -120,8 +146,13 @@ export default function OperatorFormPage() {
           reportDate,
           machineId,
           machineName,
-          machineHours: machineHours.trim(),
+          startTime: startTime.trim().slice(0, 5),
+          endTime: endTime.trim().slice(0, 5),
+          pileDepths: payloadPileDepths,
           usedFuel: usedFuel.trim(),
+          elmasMiktar: elmasTrim || (finalElmasDegisimYok ? "yok" : ""),
+          elmasDegisimYok: finalElmasDegisimYok,
+          bentonitMiktar: bentonitMiktar.trim(),
           workDone: workDone.trim(),
           note: note.trim(),
           dailyPileCount: dailyPileCount.trim(),
@@ -137,8 +168,13 @@ export default function OperatorFormPage() {
       const data = await res.json().catch(() => ({}))
       if (res.ok && data.success) {
         setMessage({ type: "success", text: "Kayıt başarılı. Veriler ana rapora birleştirilecektir." })
-        setMachineHours("")
+        setStartTime("")
+        setEndTime("")
+        setPileDepths([{ depth: "", onForaj: false, bosForaj: false }])
         setUsedFuel("")
+        setElmasMiktar("")
+        setElmasDegisimYok(false)
+        setBentonitMiktar("")
         setWorkDone("")
         setNote("")
         setDailyPileCount("")
@@ -225,8 +261,25 @@ export default function OperatorFormPage() {
               ))}
             </Select>
           </FormControl>
-          <TextField fullWidth label="Makine Saati" type="number" value={machineHours} onChange={(e) => setMachineHours(e.target.value)} placeholder="Örn: 8.5" />
+          <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+            <TextField fullWidth label="Biniş saati" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: 140 }} />
+            <TextField fullWidth label="İniş saati" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: 140 }} />
+          </Box>
           <TextField fullWidth label="Mazot Miktarı (Litre)" type="number" value={usedFuel} onChange={(e) => setUsedFuel(e.target.value)} placeholder="Örn: 120" />
+          <Typography variant="subtitle2" sx={{ mt: 1, fontWeight: 600 }}>Kazık derinlikleri</Typography>
+          {pileDepths.map((row, index) => (
+            <Box key={index} sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+              <Typography variant="body2" sx={{ minWidth: 24 }}>{index + 1}.</Typography>
+              <TextField size="small" label="Derinlik (m)" value={row.depth} onChange={(e) => updatePileRow(index, "depth", e.target.value)} placeholder="m" type="number" sx={{ width: 100 }} />
+              <FormControlLabel control={<Checkbox checked={row.onForaj} onChange={(e) => updatePileRow(index, "onForaj", e.target.checked)} />} label="Ön foraj" />
+              <FormControlLabel control={<Checkbox checked={row.bosForaj} onChange={(e) => updatePileRow(index, "bosForaj", e.target.checked)} />} label="Boş foraj" />
+              <Button size="small" onClick={() => removePileRow(index)} disabled={pileDepths.length <= 1} startIcon={<Delete />} color="error" />
+            </Box>
+          ))}
+          <Button size="small" startIcon={<Add />} onClick={addPileRow} variant="outlined">Satır ekle</Button>
+          <Typography variant="subtitle2" sx={{ mt: 1, fontWeight: 600 }}>Diğer malzemeler</Typography>
+          <TextField fullWidth size="small" label="Elmas (miktar)" value={elmasMiktar} onChange={(e) => setElmasMiktar(e.target.value)} placeholder="Elmas miktarı; boş bırakırsanız kayıtta sorulacak" />
+          <TextField fullWidth size="small" label="Bentonit (miktar)" value={bentonitMiktar} onChange={(e) => setBentonitMiktar(e.target.value)} placeholder="Bentonit miktarı" />
           <TextField fullWidth label="O gün yapılan kazık sayısı (Ad.)" type="number" value={dailyPileCount} onChange={(e) => setDailyPileCount(e.target.value)} placeholder="Beton dökülen kazık adedi" />
           <TextField fullWidth label="Kazık İmalatı (m)" type="number" value={totalProduction} onChange={(e) => setTotalProduction(e.target.value)} placeholder="Metre" />
           <TextField fullWidth label="Boş Foraj (Adet)" type="number" value={emptyBorehole} onChange={(e) => setEmptyBorehole(e.target.value)} />

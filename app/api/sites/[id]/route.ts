@@ -32,7 +32,7 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid site id" }, { status: 400 })
     }
     const body = await request.json()
-    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds } = body
+    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, budget } = body
     const site = await updateSite(siteId, {
       ...(name !== undefined && { name }),
       ...(code !== undefined && { code }),
@@ -49,6 +49,8 @@ export async function PUT(
       ...(initialPilesDone !== undefined && { initialPilesDone: initialPilesDone != null ? (typeof initialPilesDone === "number" ? initialPilesDone : parseInt(String(initialPilesDone), 10) || null) : null }),
       ...(assignedMachineIds !== undefined && { assignedMachineIds: Array.isArray(assignedMachineIds) ? assignedMachineIds.filter((x: unknown) => typeof x === "string") : [] }),
       ...(assignedOperatorIds !== undefined && { assignedOperatorIds: Array.isArray(assignedOperatorIds) ? assignedOperatorIds.map((x: unknown) => typeof x === "number" ? x : parseInt(String(x), 10)).filter((n: number) => !Number.isNaN(n)) : [] }),
+      ...(assignedMachineOperators !== undefined && { assignedMachineOperators: Array.isArray(assignedMachineOperators) ? assignedMachineOperators.filter((x: unknown) => x != null && typeof (x as any).machineId === "string" && typeof (x as any).personelId === "number") : [] }),
+      ...(budget !== undefined && { budget: budget != null && !Number.isNaN(Number(budget)) ? Number(budget) : null }),
     })
     if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
     return NextResponse.json(site)
