@@ -32,7 +32,7 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid site id" }, { status: 400 })
     }
     const body = await request.json()
-    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, budget } = body
+    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, budget, timezone } = body
     const site = await updateSite(siteId, {
       ...(name !== undefined && { name }),
       ...(code !== undefined && { code }),
@@ -51,6 +51,7 @@ export async function PUT(
       ...(assignedOperatorIds !== undefined && { assignedOperatorIds: Array.isArray(assignedOperatorIds) ? assignedOperatorIds.map((x: unknown) => typeof x === "number" ? x : parseInt(String(x), 10)).filter((n: number) => !Number.isNaN(n)) : [] }),
       ...(assignedMachineOperators !== undefined && { assignedMachineOperators: Array.isArray(assignedMachineOperators) ? assignedMachineOperators.filter((x: unknown) => x != null && typeof (x as any).machineId === "string" && typeof (x as any).personelId === "number") : [] }),
       ...(budget !== undefined && { budget: budget != null && !Number.isNaN(Number(budget)) ? Number(budget) : null }),
+      ...(timezone !== undefined && { timezone: timezone != null ? String(timezone).trim() || null : undefined }),
     })
     if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
     return NextResponse.json(site)

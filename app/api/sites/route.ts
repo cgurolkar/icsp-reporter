@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
     const region = body.region != null ? String(body.region).trim() || null : null
     const city = body.city != null ? String(body.city).trim() || null : null
     const country = body.country != null ? String(body.country).trim() || null : null
+    const timezone = body.timezone != null ? String(body.timezone).trim() || null : null
     const authorizedPerson = body.authorizedPerson != null ? String(body.authorizedPerson).trim() || null : null
     const employer = body.employer != null ? String(body.employer).trim() || null : null
     const projectStartDate = body.projectStartDate != null ? String(body.projectStartDate).trim() || null : null
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
     if (!name || !code) {
       return NextResponse.json({ error: "Şantiye adı ve kod zorunludur." }, { status: 400 })
     }
-    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators })
+    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, timezone, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators })
     return NextResponse.json(site)
   } catch (error: unknown) {
     console.error("Error creating site:", error)

@@ -65,6 +65,8 @@ export async function POST(request: NextRequest) {
       machineHours: typeof body.machineHours === "string" ? body.machineHours.trim() : "",
       startTime: typeof body.startTime === "string" ? body.startTime.trim().slice(0, 5) : "",
       endTime: typeof body.endTime === "string" ? body.endTime.trim().slice(0, 5) : "",
+      motorSaatBinis: typeof body.motorSaatBinis === "string" ? body.motorSaatBinis.trim() : "",
+      motorSaatInis: typeof body.motorSaatInis === "string" ? body.motorSaatInis.trim() : "",
       pileDepths,
       usedFuel: typeof body.usedFuel === "string" ? body.usedFuel.trim() : "",
       workDone: typeof body.workDone === "string" ? body.workDone.trim() : "",

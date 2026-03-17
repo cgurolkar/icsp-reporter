@@ -107,6 +107,8 @@ export interface PileDetail {
   pileNumber: number
   drilled: string
   notes: string
+  /** Manager işareti: beton döküldü mü */
+  concretePoured?: boolean
 }
 
 export interface IronStep {

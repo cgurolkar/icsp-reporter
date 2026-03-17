@@ -72,6 +72,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     empty_borehole?: string
     pre_borehole?: string
     concrete_poured?: string
+    pile_depths?: Array<{ depth?: string | number; onForaj?: boolean; bosForaj?: boolean }>
   }
   const [operatorEntriesForDate, setOperatorEntriesForDate] = useState<OperatorEntryRow[]>([])
   const { t } = useLanguage()
@@ -161,7 +162,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     return () => { cancelled = true }
   }, [isRestricted, formData.basicInfo?.siteId, formData.basicInfo?.date])
 
-  // Operatör girişleri varsa productionSummary'i senkronize et (kayıt ve PileDetailsStep toplamları için)
+  // Operatör girişleri varsa productionSummary ve pileDetails (kazık detayları) senkronize et
   useEffect(() => {
     if (!isRestricted || operatorEntriesForDate.length === 0) return
     const next = operatorEntriesForDate.map((e) => ({
@@ -173,9 +174,42 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
       concretePoured: e.concrete_poured ?? "",
       dailyPileCount: e.daily_pile_count ?? "",
     }))
+    const allPileDepths: Array<{ depth: string; onForaj: boolean; bosForaj: boolean }> = []
+    for (const entry of operatorEntriesForDate) {
+      const pd = entry.pile_depths
+      const rows = Array.isArray(pd) ? pd : (typeof pd === "string" ? (() => { try { return JSON.parse(pd) } catch { return [] } })() : [])
+      rows.forEach((r: any, i: number) => {
+        const depth = r.depth != null ? String(r.depth) : ""
+        if (!depth.trim()) return
+        const parts: string[] = []
+        if (r.onForaj) parts.push("Ön foraj")
+        if (r.bosForaj) parts.push("Boş foraj")
+        allPileDepths.push({
+          depth,
+          onForaj: !!r.onForaj,
+          bosForaj: !!r.bosForaj,
+        })
+      })
+    }
     setFormData((prev) => {
-      if (prev.productionSummary.length === next.length && next.every((n, i) => prev.productionSummary[i]?.machineName === n.machineName && prev.productionSummary[i]?.concretePoured === n.concretePoured)) return prev
-      return { ...prev, productionSummary: next }
+      let nextForm = prev
+      if (prev.productionSummary.length !== next.length || !next.every((n, i) => prev.productionSummary[i]?.machineName === n.machineName && prev.productionSummary[i]?.concretePoured === n.concretePoured)) {
+        nextForm = { ...nextForm, productionSummary: next }
+      }
+      if (allPileDepths.length > 0) {
+        const fromOperator = allPileDepths.map((r, i) => ({
+          pileNumber: i + 1,
+          drilled: r.depth,
+          notes: [r.onForaj && "Ön foraj", r.bosForaj && "Boş foraj"].filter(Boolean).join(", "),
+          concretePoured: false,
+        }))
+        const current = prev.pileDetails || []
+        const currentFilled = current.filter((p) => String(p.drilled ?? "").trim() || String(p.notes ?? "").trim()).length
+        if (currentFilled === 0 && fromOperator.length > 0) {
+          nextForm = { ...nextForm, pileDetails: fromOperator }
+        }
+      }
+      return nextForm
     })
   }, [isRestricted, operatorEntriesForDate])
 

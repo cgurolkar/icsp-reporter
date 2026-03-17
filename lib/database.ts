@@ -158,6 +158,15 @@ export async function initializeDatabase() {
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'operator_entries start_time/pile_depths/elmas/bentonit: %', SQLERRM;
       END $$
     `)
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'operator_entries' AND column_name = 'motor_saat_binis') THEN
+          ALTER TABLE operator_entries ADD COLUMN motor_saat_binis VARCHAR(50);
+          ALTER TABLE operator_entries ADD COLUMN motor_saat_inis VARCHAR(50);
+        END IF;
+      EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'operator_entries motor_saat: %', SQLERRM;
+      END $$
+    `)
 
     // Kullanıcılar tablosu
     await client.query(`
@@ -279,6 +288,9 @@ export async function initializeDatabase() {
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'assigned_machine_operators') THEN
           ALTER TABLE sites ADD COLUMN assigned_machine_operators JSONB DEFAULT '[]';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'timezone') THEN
+          ALTER TABLE sites ADD COLUMN timezone VARCHAR(64) DEFAULT NULL;
         END IF;
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'sites project columns: %', SQLERRM;
       END $$
@@ -645,6 +657,8 @@ export async function saveOperatorEntry(data: {
   machineHours?: string
   startTime?: string
   endTime?: string
+  motorSaatBinis?: string
+  motorSaatInis?: string
   pileDepths?: { depth: string | number; onForaj: boolean; bosForaj: boolean }[]
   usedFuel?: string
   workDone?: string
@@ -666,13 +680,13 @@ export async function saveOperatorEntry(data: {
     const dateStr = (data.reportDate || "").slice(0, 10)
     const pileDepthsJson = JSON.stringify(data.pileDepths ?? [])
     await client.query(`
-      INSERT INTO operator_entries (site_id, report_date, user_id, machine_id, machine_name, machine_hours, start_time, end_time, pile_depths, used_fuel, work_done, note, daily_pile_count, total_production, empty_borehole, pre_borehole, concrete_poured, elmas_miktar, elmas_degisim_yok, bentonit_miktar, image1, image2, notes)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+      INSERT INTO operator_entries (site_id, report_date, user_id, machine_id, machine_name, machine_hours, start_time, end_time, motor_saat_binis, motor_saat_inis, pile_depths, used_fuel, work_done, note, daily_pile_count, total_production, empty_borehole, pre_borehole, concrete_poured, elmas_miktar, elmas_degisim_yok, bentonit_miktar, image1, image2, notes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
       ON CONFLICT (site_id, report_date, user_id, machine_id)
       DO UPDATE SET
         machine_name = EXCLUDED.machine_name, machine_hours = EXCLUDED.machine_hours,
-        start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time, pile_depths = EXCLUDED.pile_depths,
-        used_fuel = EXCLUDED.used_fuel, work_done = EXCLUDED.work_done, note = EXCLUDED.note,
+        start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time, motor_saat_binis = EXCLUDED.motor_saat_binis, motor_saat_inis = EXCLUDED.motor_saat_inis,
+        pile_depths = EXCLUDED.pile_depths, used_fuel = EXCLUDED.used_fuel, work_done = EXCLUDED.work_done, note = EXCLUDED.note,
         daily_pile_count = EXCLUDED.daily_pile_count, total_production = EXCLUDED.total_production,
         empty_borehole = EXCLUDED.empty_borehole, pre_borehole = EXCLUDED.pre_borehole, concrete_poured = EXCLUDED.concrete_poured,
         elmas_miktar = EXCLUDED.elmas_miktar, elmas_degisim_yok = EXCLUDED.elmas_degisim_yok, bentonit_miktar = EXCLUDED.bentonit_miktar,
@@ -686,6 +700,8 @@ export async function saveOperatorEntry(data: {
       data.machineHours ?? "",
       (data.startTime || "").slice(0, 5) || null,
       (data.endTime || "").slice(0, 5) || null,
+      data.motorSaatBinis ?? null,
+      data.motorSaatInis ?? null,
       pileDepthsJson,
       data.usedFuel ?? "",
       data.workDone ?? "",
@@ -705,6 +721,74 @@ export async function saveOperatorEntry(data: {
     return true
   } catch (error) {
     console.error("Error saving operator entry:", error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+/** Ülke kodu veya ismine göre IANA timezone döndürür (basit eşleme). */
+export function getTimezoneForCountry(country: string | null | undefined): string {
+  if (!country || !String(country).trim()) return "Europe/Istanbul"
+  const c = String(country).trim().toUpperCase().slice(0, 2)
+  const map: Record<string, string> = {
+    TR: "Europe/Istanbul",
+    IQ: "Asia/Baghdad",
+    DE: "Europe/Berlin",
+    FR: "Europe/Paris",
+    GB: "Europe/London",
+    US: "America/New_York",
+    SA: "Asia/Riyadh",
+    AE: "Asia/Dubai",
+  }
+  return map[c] || "Europe/Istanbul"
+}
+
+/** Operatör biniş/iniş ok butonu: bölgesel saati ve motor saatini kaydet. Satır yoksa minimal satır oluşturur. */
+export async function updateOperatorEntryTime(data: {
+  siteId: number
+  reportDate: string
+  userId: number
+  machineId: string
+  machineName: string
+  type: "start" | "end"
+  motorSaati: string
+  timezone: string
+}): Promise<{ startTime?: string; endTime?: string }> {
+  const client = await pool.connect()
+  try {
+    const dateStr = (data.reportDate || "").slice(0, 10)
+    const now = new Date()
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: data.timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+    const regionalTime = formatter.format(now).replace("24", "00")
+    const hhmm = regionalTime.slice(0, 5)
+    const motorVal = (data.motorSaati || "").trim() || null
+    if (data.type === "start") {
+      await client.query(
+        `INSERT INTO operator_entries (site_id, report_date, user_id, machine_id, machine_name, start_time, motor_saat_binis)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (site_id, report_date, user_id, machine_id)
+         DO UPDATE SET start_time = EXCLUDED.start_time, motor_saat_binis = EXCLUDED.motor_saat_binis`,
+        [data.siteId, dateStr, data.userId, data.machineId, data.machineName, hhmm, motorVal]
+      )
+      return { startTime: hhmm }
+    } else {
+      await client.query(
+        `INSERT INTO operator_entries (site_id, report_date, user_id, machine_id, machine_name, end_time, motor_saat_inis)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (site_id, report_date, user_id, machine_id)
+         DO UPDATE SET end_time = EXCLUDED.end_time, motor_saat_inis = EXCLUDED.motor_saat_inis`,
+        [data.siteId, dateStr, data.userId, data.machineId, data.machineName, hhmm, motorVal]
+      )
+      return { endTime: hhmm }
+    }
+  } catch (error) {
+    console.error("Error updating operator entry time:", error)
     throw error
   } finally {
     client.release()
@@ -1021,13 +1105,14 @@ export async function createSite(data: {
   assignedMachineIds?: string[]
   assignedOperatorIds?: number[]
   assignedMachineOperators?: { machineId: string; personelId: number }[]
+  timezone?: string | null
 }) {
   const client = await pool.connect()
   try {
     const ops = data.assignedMachineOperators || []
     const result = await client.query(
-      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
+      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators, timezone)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING *`,
       [
         data.name,
         data.code,
@@ -1044,6 +1129,7 @@ export async function createSite(data: {
         JSON.stringify(data.assignedMachineIds || []),
         JSON.stringify(data.assignedOperatorIds || []),
         JSON.stringify(ops),
+        data.timezone ?? null,
       ]
     )
     for (const { machineId, personelId } of ops) {
@@ -1077,6 +1163,7 @@ export async function updateSite(id: number, data: {
   assignedOperatorIds?: number[]
   assignedMachineOperators?: { machineId: string; personelId: number }[]
   budget?: number | null
+  timezone?: string | null
 }) {
   const client = await pool.connect()
   try {
@@ -1085,6 +1172,7 @@ export async function updateSite(id: number, data: {
     let i = 1
     if (data.name !== undefined) { updates.push(`name = $${i++}`); values.push(data.name) }
     if (data.budget !== undefined) { updates.push(`budget = $${i++}`); values.push(data.budget) }
+    if (data.timezone !== undefined) { updates.push(`timezone = $${i++}`); values.push(data.timezone) }
     if (data.code !== undefined) { updates.push(`code = $${i++}`); values.push(data.code) }
     if (data.emailList !== undefined) { updates.push(`email_list = $${i++}`); values.push(JSON.stringify(data.emailList)) }
     if (data.isActive !== undefined) { updates.push(`is_active = $${i++}`); values.push(data.isActive) }

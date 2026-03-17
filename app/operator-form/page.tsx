@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import {
   Container,
   Paper,
@@ -15,7 +15,7 @@ import {
   FormControlLabel,
   Checkbox,
 } from "@mui/material"
-import { Save, PhotoCamera, Add, Delete } from "@mui/icons-material"
+import { Save, PhotoCamera, Add, Delete, ArrowForward } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
 import { useRouter } from "next/navigation"
 import { AVAILABLE_MACHINES } from "@/types/form-data"
@@ -48,20 +48,17 @@ export default function OperatorFormPage() {
   const [siteId, setSiteId] = useState<number | "">(user?.siteId ?? "")
   const [reportDate, setReportDate] = useState(() => new Date().toISOString().split("T")[0])
   const [machineId, setMachineId] = useState("")
+  const [motorSaatBinis, setMotorSaatBinis] = useState("")
+  const [motorSaatInis, setMotorSaatInis] = useState("")
   const [startTime, setStartTime] = useState("")
-  const [machineHours, setMachineHours] = useState("")
   const [endTime, setEndTime] = useState("")
+  const [machineHours, setMachineHours] = useState("")
   const [pileDepths, setPileDepths] = useState<{ depth: string; onForaj: boolean; bosForaj: boolean }[]>([{ depth: "", onForaj: false, bosForaj: false }])
   const [usedFuel, setUsedFuel] = useState("")
   const [elmasMiktar, setElmasMiktar] = useState("")
   const [elmasDegisimYok, setElmasDegisimYok] = useState(false)
   const [bentonitMiktar, setBentonitMiktar] = useState("")
-  const [workDone, setWorkDone] = useState("")
   const [note, setNote] = useState("")
-  const [dailyPileCount, setDailyPileCount] = useState("")
-  const [totalProduction, setTotalProduction] = useState("")
-  const [emptyBorehole, setEmptyBorehole] = useState("")
-  const [preBorehole, setPreBorehole] = useState("")
   const [concretePoured, setConcretePoured] = useState("")
   const [image1, setImage1] = useState("")
   const [image2, setImage2] = useState("")
@@ -118,28 +115,50 @@ export default function OperatorFormPage() {
   const updatePileRow = (index: number, field: "depth" | "onForaj" | "bosForaj", value: string | boolean) =>
     setPileDepths((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)))
 
-  /** Biniş saatine makine çalışma saatini ekleyip İniş saatini hesaplar (HH:mm). */
-  function addHoursToTime(timeStr: string, hoursToAdd: number): string {
-    const [h, m] = (timeStr || "00:00").split(":").map((x) => parseInt(x, 10) || 0)
-    const totalMinutes = h * 60 + m + Math.round(hoursToAdd * 60)
-    const h2 = Math.floor(totalMinutes / 60) % 24
-    const m2 = totalMinutes % 60
-    return `${String(h2).padStart(2, "0")}:${String(m2).padStart(2, "0")}`
-  }
+  const validPileRows = useMemo(() => pileDepths.filter((r) => String(r.depth ?? "").trim() !== ""), [pileDepths])
+  const hazirlananKazik = validPileRows.length
+  const toplamImalat = useMemo(() => validPileRows.reduce((s, r) => s + (parseFloat(String(r.depth).replace(",", ".")) || 0), 0), [validPileRows])
+  const bosForajCount = useMemo(() => validPileRows.filter((r) => r.bosForaj).length, [validPileRows])
+  const onForajCount = useMemo(() => validPileRows.filter((r) => r.onForaj).length, [validPileRows])
 
-  const handleStartTimeChange = (value: string) => {
-    setStartTime(value)
-    if (value && machineHours.trim()) {
-      const h = parseFloat(machineHours.replace(",", "."))
-      if (!Number.isNaN(h) && h > 0) setEndTime(addHoursToTime(value.slice(0, 5), h))
+  const [recordingTime, setRecordingTime] = useState<"start" | "end" | null>(null)
+  const handleRecordTime = async (type: "start" | "end") => {
+    if (!siteId || !reportDate || !machineId || !machineName) {
+      setMessage({ type: "error", text: "Tarih, şantiye ve makine seçimi zorunludur." })
+      return
     }
-  }
-
-  const handleMachineHoursChange = (value: string) => {
-    setMachineHours(value)
-    if (startTime && value.trim()) {
-      const h = parseFloat(value.replace(",", "."))
-      if (!Number.isNaN(h) && h > 0) setEndTime(addHoursToTime(startTime.slice(0, 5), h))
+    const motorSaati = type === "start" ? motorSaatBinis.trim() : motorSaatInis.trim()
+    if (!motorSaati) {
+      setMessage({ type: "error", text: type === "start" ? "Biniş için motor saatini girin." : "İniş için motor saatini girin." })
+      return
+    }
+    setRecordingTime(type)
+    setMessage(null)
+    try {
+      const res = await fetch("/api/operator-entry/record-time", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          siteId: Number(siteId),
+          reportDate,
+          machineId,
+          machineName,
+          type,
+          motorSaati,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.success) {
+        if (data.startTime) setStartTime(data.startTime)
+        if (data.endTime) setEndTime(data.endTime)
+        setMessage({ type: "success", text: type === "start" ? "Mesai başlangıcı kaydedildi." : "Mesai bitişi kaydedildi." })
+      } else {
+        setMessage({ type: "error", text: data.error || "Kayıt sırasında hata oluştu." })
+      }
+    } catch {
+      setMessage({ type: "error", text: "Kayıt sırasında hata oluştu." })
+    } finally {
+      setRecordingTime(null)
     }
   }
 
@@ -175,17 +194,18 @@ export default function OperatorFormPage() {
           startTime: startTime.trim().slice(0, 5),
           endTime: endTime.trim().slice(0, 5),
           machineHours: machineHours.trim(),
+          motorSaatBinis: motorSaatBinis.trim(),
+          motorSaatInis: motorSaatInis.trim(),
           pileDepths: payloadPileDepths,
           usedFuel: usedFuel.trim(),
           elmasMiktar: elmasTrim || (finalElmasDegisimYok ? "yok" : ""),
           elmasDegisimYok: finalElmasDegisimYok,
           bentonitMiktar: bentonitMiktar.trim(),
-          workDone: workDone.trim(),
           note: note.trim(),
-          dailyPileCount: dailyPileCount.trim(),
-          totalProduction: totalProduction.trim(),
-          emptyBorehole: emptyBorehole.trim(),
-          preBorehole: preBorehole.trim(),
+          dailyPileCount: String(hazirlananKazik),
+          totalProduction: String(toplamImalat),
+          emptyBorehole: String(bosForajCount),
+          preBorehole: String(onForajCount),
           concretePoured: concretePoured.trim(),
           image1: image1 || null,
           image2: image2 || null,
@@ -195,6 +215,8 @@ export default function OperatorFormPage() {
       const data = await res.json().catch(() => ({}))
       if (res.ok && data.success) {
         setMessage({ type: "success", text: "Kayıt başarılı. Veriler ana rapora birleştirilecektir." })
+        setMotorSaatBinis("")
+        setMotorSaatInis("")
         setStartTime("")
         setEndTime("")
         setMachineHours("")
@@ -203,12 +225,7 @@ export default function OperatorFormPage() {
         setElmasMiktar("")
         setElmasDegisimYok(false)
         setBentonitMiktar("")
-        setWorkDone("")
         setNote("")
-        setDailyPileCount("")
-        setTotalProduction("")
-        setEmptyBorehole("")
-        setPreBorehole("")
         setConcretePoured("")
         setImage1("")
         setImage2("")
@@ -290,13 +307,23 @@ export default function OperatorFormPage() {
             </Select>
           </FormControl>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-            Biniş saati = makineye biniş (mesai başlangıcı). İniş saati = iniş (mesai bitişi); makine çalışma saati girildiğinde otomatik hesaplanır.
+            Makine motor saatini girin, ok butonuna basın; o anki bölgesel saat mesai başlangıcı/bitişi olarak kaydedilir.
           </Typography>
-          <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-            <TextField fullWidth label="Biniş saati (mesai başlangıcı)" type="time" value={startTime} onChange={(e) => handleStartTimeChange(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: 140 }} />
-            <TextField fullWidth label="Makine çalışma saati" type="number" value={machineHours} onChange={(e) => handleMachineHoursChange(e.target.value)} placeholder="Saat (örn: 8 veya 8,5)" inputProps={{ min: 0, step: 0.5 }} sx={{ minWidth: 140 }} />
-            <TextField fullWidth label="İniş saati (mesai bitişi)" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} InputLabelProps={{ shrink: true }} helperText="Biniş + makine saati ile otomatik dolar, düzenleyebilirsiniz" sx={{ minWidth: 140 }} />
+          <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, flexWrap: "wrap" }}>
+            <TextField label="Motor saati (biniş)" type="number" value={motorSaatBinis} onChange={(e) => setMotorSaatBinis(e.target.value)} placeholder="Örn: 5092" sx={{ width: 140 }} />
+            <Button variant="outlined" size="small" startIcon={<ArrowForward />} onClick={() => handleRecordTime("start")} disabled={recordingTime !== null} sx={{ mt: 1 }} title="Mesai başlangıcını şimdi kaydet">
+              Kaydet
+            </Button>
+            {startTime ? <Typography variant="body2" sx={{ alignSelf: "center", ml: 1 }}>Başlangıç: {startTime}</Typography> : null}
           </Box>
+          <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, flexWrap: "wrap" }}>
+            <TextField label="Motor saati (iniş)" type="number" value={motorSaatInis} onChange={(e) => setMotorSaatInis(e.target.value)} placeholder="Örn: 5100" sx={{ width: 140 }} />
+            <Button variant="outlined" size="small" startIcon={<ArrowForward />} onClick={() => handleRecordTime("end")} disabled={recordingTime !== null} sx={{ mt: 1 }} title="Mesai bitişini şimdi kaydet">
+              Kaydet
+            </Button>
+            {endTime ? <Typography variant="body2" sx={{ alignSelf: "center", ml: 1 }}>Bitiş: {endTime}</Typography> : null}
+          </Box>
+          <TextField fullWidth label="Makine çalışma saati (opsiyonel)" type="number" value={machineHours} onChange={(e) => setMachineHours(e.target.value)} placeholder="Saat (örn: 8 veya 8,5)" inputProps={{ min: 0, step: 0.5 }} sx={{ maxWidth: 160 }} />
           <TextField fullWidth label="Mazot Miktarı (Litre)" type="number" value={usedFuel} onChange={(e) => setUsedFuel(e.target.value)} placeholder="Örn: 120" />
           <Typography variant="subtitle2" sx={{ mt: 1, fontWeight: 600 }}>Kazık derinlikleri</Typography>
           {pileDepths.map((row, index) => (
@@ -310,14 +337,18 @@ export default function OperatorFormPage() {
           ))}
           <Button size="small" startIcon={<Add />} onClick={addPileRow} variant="outlined">Satır ekle</Button>
           <Typography variant="subtitle2" sx={{ mt: 1, fontWeight: 600 }}>Diğer malzemeler</Typography>
-          <TextField fullWidth size="small" label="Elmas (miktar)" value={elmasMiktar} onChange={(e) => setElmasMiktar(e.target.value)} placeholder="Elmas miktarı; boş bırakırsanız kayıtta sorulacak" />
-          <TextField fullWidth size="small" label="Bentonit (miktar)" value={bentonitMiktar} onChange={(e) => setBentonitMiktar(e.target.value)} placeholder="Bentonit miktarı" />
-          <TextField fullWidth label="O gün yapılan kazık sayısı (Ad.)" type="number" value={dailyPileCount} onChange={(e) => setDailyPileCount(e.target.value)} placeholder="Beton dökülen kazık adedi" />
-          <TextField fullWidth label="Kazık İmalatı (m)" type="number" value={totalProduction} onChange={(e) => setTotalProduction(e.target.value)} placeholder="Metre" />
-          <TextField fullWidth label="Boş Foraj (Adet)" type="number" value={emptyBorehole} onChange={(e) => setEmptyBorehole(e.target.value)} />
-          <TextField fullWidth label="Ön Foraj (Adet)" type="number" value={preBorehole} onChange={(e) => setPreBorehole(e.target.value)} />
-          <TextField fullWidth label="Beton Dökülen Kazık (Ad.)" type="number" value={concretePoured} onChange={(e) => setConcretePoured(e.target.value)} />
-          <TextField fullWidth label="Yaptığı İmalat (özet)" value={workDone} onChange={(e) => setWorkDone(e.target.value)} placeholder="O gün yapılan imalat özeti" />
+          <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+            <TextField size="small" label="Elmas" value={elmasMiktar} onChange={(e) => setElmasMiktar(e.target.value.slice(0, 3))} placeholder="Miktar" inputProps={{ maxLength: 3 }} sx={{ width: 100 }} />
+            <TextField size="small" label="Bentonit" value={bentonitMiktar} onChange={(e) => setBentonitMiktar(e.target.value.slice(0, 3))} placeholder="Miktar" inputProps={{ maxLength: 3 }} sx={{ width: 100 }} />
+          </Box>
+          <Typography variant="subtitle2" sx={{ mt: 1.5, fontWeight: 600 }}>Özet (kazık derinliklerinden otomatik)</Typography>
+          <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "center" }}>
+            <TextField size="small" label="Hazırlanan kazık (Ad.)" value={hazirlananKazik} InputProps={{ readOnly: true }} sx={{ width: 120 }} />
+            <TextField size="small" label="Toplam imalat (m)" value={toplamImalat.toFixed(1)} InputProps={{ readOnly: true }} sx={{ width: 120 }} />
+            <TextField size="small" label="Boş foraj (Adet)" value={bosForajCount} InputProps={{ readOnly: true }} sx={{ width: 110 }} />
+            <TextField size="small" label="Ön foraj (Adet)" value={onForajCount} InputProps={{ readOnly: true }} sx={{ width: 110 }} />
+          </Box>
+          <TextField fullWidth size="small" label="Beton dökülen kazık (Ad.) – sadece döküldüyse" type="number" value={concretePoured} onChange={(e) => setConcretePoured(e.target.value)} placeholder="Beton döküldüyse adet girin" sx={{ maxWidth: 280 }} />
           <TextField fullWidth label="Makine İçin Not" multiline minRows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Makine ile ilgili notlar" />
         </Box>
       </Paper>

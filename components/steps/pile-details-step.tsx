@@ -16,6 +16,8 @@ import {
   Button,
   IconButton,
   Alert,
+  Checkbox,
+  FormControlLabel,
 } from "@mui/material"
 import { Add, Delete } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
@@ -76,7 +78,7 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
     }
   }
 
-  const updatePile = (index: number, field: keyof PileDetail, value: string | number) => {
+  const updatePile = (index: number, field: keyof PileDetail, value: string | number | boolean) => {
     const newData = [...data]
     newData[index] = { ...newData[index], [field]: value }
     onChange(newData)
@@ -237,8 +239,11 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "25%" }}>
                 {t("drilled_short").toUpperCase()}
               </TableCell>
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "50%" }}>
+              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "40%" }}>
                 {t("notes").toUpperCase()}
+              </TableCell>
+              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "15%" }}>
+                Beton döküldü
               </TableCell>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "10%" }}>
                 {t("action").toUpperCase()}
@@ -249,7 +254,15 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
             {data.map((pile, index) => (
               <TableRow key={index}>
                 <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                  {pile.pileNumber}
+                  <TextField
+                    size="small"
+                    type="number"
+                    value={pile.pileNumber}
+                    onChange={(e) => updatePile(index, "pileNumber", parseInt(e.target.value, 10) || index + 1)}
+                    variant="standard"
+                    InputProps={{ disableUnderline: true, inputProps: { min: 1 } }}
+                    sx={{ width: 56, "& input": { textAlign: "center" } }}
+                  />
                 </TableCell>
                 <TableCell sx={{ border: "1px solid #000", p: 0.5 }}>
                   <TextField
@@ -281,6 +294,18 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
                       inputProps: { "data-pile-index": `${index}-notes` },
                     }}
                     sx={{ "& input": { fontSize: "0.9rem" } }}
+                  />
+                </TableCell>
+                <TableCell sx={{ border: "1px solid #000", textAlign: "center", p: 0.5 }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={!!pile.concretePoured}
+                        onChange={(e) => updatePile(index, "concretePoured", e.target.checked)}
+                      />
+                    }
+                    label=""
                   />
                 </TableCell>
                 <TableCell sx={{ border: "1px solid #000", textAlign: "center", p: 0.5 }}>

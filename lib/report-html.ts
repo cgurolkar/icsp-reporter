@@ -223,13 +223,14 @@ export function generatePDFMainReport(
           </table>
           <div class="section-title">KAZIK DETAYLARI</div>
           <table>
-            <thead><tr><th>KAZIK</th><th>DELİNEN</th><th>NOTLAR</th></tr></thead>
+            <thead><tr><th>KAZIK</th><th>DELİNEN</th><th>NOTLAR</th><th>BETON</th></tr></thead>
             <tbody>
               ${(pileDetailsList || []).filter((pile: any) => pile.drilled || pile.notes).map((pile: any) => `
                 <tr>
                   <td style="text-align: center; font-weight: bold;">${pile.pileNumber}</td>
                   <td style="text-align: center;">${pile.drilled}</td>
                   <td>${pile.notes}</td>
+                  <td style="text-align: center;">${pile.concretePoured ? "Evet" : "—"}</td>
                 </tr>
               `).join("")}
             </tbody>

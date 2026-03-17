@@ -92,9 +92,11 @@ function AdminPanel() {
   const [dbSites, setDbSites] = useState<{ id: number; name: string; code: string; email_list: string[]; report_count?: number; total_piles?: number | null; region?: string | null; city?: string | null; country?: string | null; authorized_person?: string | null; employer?: string | null; assigned_machine_operators?: { machineId: string; personelId: number }[] }[]>([])
   const [personelList, setPersonelList] = useState<{ id: number; ad: string; soyad: string; gorev: string }[]>([])
   const [siteDialogOpen, setSiteDialogOpen] = useState(false)
-  const [siteDialogData, setSiteDialogData] = useState<{ id?: number; name: string; code: string; emailList: string[]; totalPiles: string; authorizedPerson: string; employer: string; projectStartDate: string; isOngoing: boolean; initialPilesDone: string; assignedMachineIds: string[]; assignedOperatorIds: number[]; assignedMachineOperators: { machineId: string; personelId: number }[] }>({
+  const [siteDialogData, setSiteDialogData] = useState<{ id?: number; name: string; code: string; country: string; timezone: string; emailList: string[]; totalPiles: string; authorizedPerson: string; employer: string; projectStartDate: string; isOngoing: boolean; initialPilesDone: string; assignedMachineIds: string[]; assignedOperatorIds: number[]; assignedMachineOperators: { machineId: string; personelId: number }[] }>({
     name: "",
     code: "",
+    country: "",
+    timezone: "",
     emailList: [],
     totalPiles: "",
     authorizedPerson: "",
@@ -920,7 +922,7 @@ function AdminPanel() {
               variant="contained"
               startIcon={<Add />}
               onClick={() => {
-                setSiteDialogData({ name: "", code: "", emailList: [], totalPiles: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [] })
+                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [] })
                 if (personelList.length === 0) fetch("/api/idari/personel").then((r) => (r.ok ? r.json() : [])).then((data: { id: number; ad: string; soyad: string; gorev: string }[]) => setPersonelList(data)).catch(() => {})
                 setSiteDialogOpen(true)
               }}
@@ -952,6 +954,8 @@ function AdminPanel() {
                     id: site.id,
                     name: site.name,
                     code: site.code,
+                    country: (site as any).country != null ? String((site as any).country) : "",
+                    timezone: (site as any).timezone != null ? String((site as any).timezone) : "",
                     emailList: site.email_list || [],
                     totalPiles: site.total_piles != null ? String(site.total_piles) : "",
                     authorizedPerson: (site as any).authorized_person != null ? String((site as any).authorized_person) : "",
@@ -1137,6 +1141,10 @@ function AdminPanel() {
               variant="outlined"
               size="small"
             />
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1.5, mb: 0.5 }}>Bölgesel saat (operatör biniş/iniş kaydı)</Typography>
+            <TextField margin="dense" fullWidth label="Ülke (kodu veya adı)" value={siteDialogData.country} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, country: e.target.value }))} placeholder="Örn: TR, IQ" variant="outlined" size="small" helperText="Zaman dilimi ülkeye göre belirlenir" />
+            <TextField margin="dense" fullWidth label="Zaman dilimi (opsiyonel)" value={siteDialogData.timezone} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, timezone: e.target.value }))} placeholder="Örn: Europe/Istanbul" variant="outlined" size="small" />
+
             <TextField margin="dense" fullWidth label="Yetkili kişi" value={siteDialogData.authorizedPerson} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, authorizedPerson: e.target.value }))} placeholder="Şantiye yetkilisi" variant="outlined" size="small" />
             <TextField margin="dense" fullWidth label="İşveren" value={siteDialogData.employer} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, employer: e.target.value }))} placeholder="İşveren / firma" variant="outlined" size="small" />
 
@@ -1269,6 +1277,8 @@ function AdminPanel() {
                 const payload = {
                   name: siteDialogData.name.trim(),
                   code: siteDialogData.code.trim(),
+                  country: siteDialogData.country.trim() || null,
+                  timezone: siteDialogData.timezone.trim() || null,
                   emailList: Array.isArray(siteDialogData.emailList) ? siteDialogData.emailList : [],
                   totalPiles: siteDialogData.totalPiles.trim() ? parseInt(siteDialogData.totalPiles, 10) || null : null,
                   authorizedPerson: siteDialogData.authorizedPerson.trim() || null,
