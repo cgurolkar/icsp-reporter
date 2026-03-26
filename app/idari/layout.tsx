@@ -64,7 +64,7 @@ export default function IdariLayout({ children }: { children: React.ReactNode })
           <Typography variant="h6" sx={{ color: "var(--icsp-lacivert)", fontWeight: 700 }}>
             İdari Yönetim
           </Typography>
-          <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+          <Box sx={{ display: "flex", gap: 0.5, flexWrap: { xs: "nowrap", sm: "wrap" }, overflowX: { xs: "auto", sm: "visible" }, WebkitOverflowScrolling: "touch", pb: { xs: 0.5, sm: 0 } }}>
             {navItems.filter((item) => item.href !== "/idari/puantaj-onay" || role === "admin" || role === "manager").map(({ href, label, icon: Icon }) => (
               <Button
                 key={href}
@@ -75,12 +75,14 @@ export default function IdariLayout({ children }: { children: React.ReactNode })
                 sx={{
                   color: pathname === href ? "var(--icsp-lacivert)" : "#666",
                   fontWeight: pathname === href ? 600 : 500,
+                  flexShrink: 0,
+                  whiteSpace: "nowrap",
                 }}
               >
                 {label}
               </Button>
             ))}
-            <Button component={Link} href="/proje" size="small" startIcon={<Home />} sx={{ color: "#666" }}>
+            <Button component={Link} href="/proje" size="small" startIcon={<Home />} sx={{ color: "#666", flexShrink: 0, whiteSpace: "nowrap" }}>
               Ana menü
             </Button>
           </Box>

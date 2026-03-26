@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     await savePuantajBulk({
       siteId,
       tarih,
-      userId: session.userId,
+      userId: session.id,
       rows: rows
         .map((r: { personel_id: number; carpan?: number; durum_kod?: string; mesai_saat?: number; notlar?: string }) => ({
           personel_id: Number(r.personel_id),

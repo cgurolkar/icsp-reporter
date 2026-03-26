@@ -3,6 +3,9 @@ import { getDatabase } from "@/lib/sqlite"
 import bcrypt from "bcryptjs"
 
 export async function POST(request: NextRequest) {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not Found" }, { status: 404 })
+  }
   try {
     const { username, password } = await request.json()
     const db = await getDatabase()

@@ -1,9 +1,20 @@
 import { type NextRequest, NextResponse } from "next/server"
 import path from "path"
 import fs from "fs"
+import { z } from "zod"
 import { getSessionFromRequest } from "@/lib/auth"
 import { canAccessIdari, canManageIdariCentral } from "@/lib/auth"
 import { initializeDatabase, getIslemler, createIslem } from "@/lib/database"
+
+const IslemSchema = z.object({
+  siteId: z.number({ coerce: true }).int().positive(),
+  kategoriId: z.number({ coerce: true }).int().positive(),
+  tutar: z.number({ coerce: true }).positive(),
+  islem_tarihi: z.string().regex(/^\d{4}-\d{2}-\d{2}/),
+  odeme_kaynagi: z.enum(["Merkez_Banka", "Santiye_Kasa"]).default("Santiye_Kasa"),
+  aciklama: z.string().max(500).optional().nullable(),
+  evrak_base64: z.string().optional().nullable(),
+})
 
 const UPLOAD_DIR = "public/uploads/idari/evrak"
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
@@ -54,30 +65,26 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
   if (!canManageIdariCentral(session.role)) return NextResponse.json({ error: "Harcama girişi yetkiniz yok." }, { status: 403 })
   try {
-    const body = await request.json().catch(() => ({}))
-    const site_id = body?.siteId != null ? Number(body.siteId) : NaN
-    const kategori_id = body?.kategoriId != null ? Number(body.kategoriId) : NaN
-    const tutar = body?.tutar != null ? Number(body.tutar) : NaN
-    const islem_tarihi = body?.islem_tarihi ? String(body.islem_tarihi).trim().slice(0, 10) : ""
-    const odeme_kaynagi = body?.odeme_kaynagi === "Merkez_Banka" ? "Merkez_Banka" : "Santiye_Kasa"
-    const aciklama = body?.aciklama ? String(body.aciklama).trim() : null
-    if (!site_id || !kategori_id || Number.isNaN(tutar) || !islem_tarihi) {
-      return NextResponse.json({ error: "siteId, kategoriId, tutar ve islem_tarihi gerekli." }, { status: 400 })
+    const rawBody = await request.json().catch(() => ({}))
+    const parsed = IslemSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Geçersiz veri.", details: parsed.error.flatten() }, { status: 400 })
     }
+    const { siteId, kategoriId, tutar, islem_tarihi, odeme_kaynagi, aciklama, evrak_base64 } = parsed.data
     let evrak_yolu: string | null = null
-    if (body?.evrak_base64) {
-      evrak_yolu = saveEvrak(body.evrak_base64, `islem_${site_id}_${Date.now()}`)
+    if (evrak_base64) {
+      evrak_yolu = saveEvrak(evrak_base64, `islem_${siteId}_${Date.now()}`)
     }
     await initializeDatabase()
     const id = await createIslem({
-      site_id,
-      kategori_id,
+      site_id: siteId,
+      kategori_id: kategoriId,
       tutar,
-      islem_tarihi,
+      islem_tarihi: islem_tarihi.slice(0, 10),
       odeme_kaynagi,
-      aciklama,
+      aciklama: aciklama ?? null,
       evrak_yolu,
-      olusturan_id: session.userId,
+      olusturan_id: session.id,
     })
     return NextResponse.json({ id })
   } catch (error) {

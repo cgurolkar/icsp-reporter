@@ -10,8 +10,19 @@ const pool = new Pool({
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
 });
+// Singleton flag: her istek initializeDatabase çağırsa da yalnızca bir kez çalışır
+let _dbInitialized = false
+let _dbInitPromise: Promise<void> | null = null
+
 // Veritabanı tablolarını oluştur
 export async function initializeDatabase() {
+  if (_dbInitialized) return
+  if (_dbInitPromise) return _dbInitPromise
+  _dbInitPromise = _doInitializeDatabase().then(() => { _dbInitialized = true }).catch((e) => { _dbInitPromise = null; throw e })
+  return _dbInitPromise
+}
+
+async function _doInitializeDatabase() {
   const client = await pool.connect()
   
   try {
@@ -412,6 +423,17 @@ export async function initializeDatabase() {
         THEN ALTER TABLE personeller ADD COLUMN calistigi_bolum VARCHAR(100); END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='foto_yolu')
         THEN ALTER TABLE personeller ADD COLUMN foto_yolu VARCHAR(500); END IF;
+        -- Personel-User FK: operatör kullanıcıyla ilişki
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='user_id')
+        THEN ALTER TABLE personeller ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL; END IF;
+      END $$
+    `)
+    // islemler tablosuna work_report_id ekle (rapor harcamalarını islemler'e sync edince kaynak takibi)
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='islemler' AND column_name='work_report_id')
+        THEN ALTER TABLE islemler ADD COLUMN work_report_id INTEGER REFERENCES work_reports(id) ON DELETE CASCADE; END IF;
+      EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'islemler work_report_id: %', SQLERRM;
       END $$
     `)
 
@@ -432,6 +454,23 @@ export async function initializeDatabase() {
     `)
 
     await seedIdariInitialData(client)
+
+    // ---------- Performans indeksleri ----------
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_work_reports_site_id ON work_reports(site_id);
+      CREATE INDEX IF NOT EXISTS idx_work_reports_date ON work_reports(date);
+      CREATE INDEX IF NOT EXISTS idx_work_reports_site_date ON work_reports(site_id, date);
+      CREATE INDEX IF NOT EXISTS idx_operator_entries_site_date ON operator_entries(site_id, report_date);
+      CREATE INDEX IF NOT EXISTS idx_operator_entries_user ON operator_entries(user_id);
+      CREATE INDEX IF NOT EXISTS idx_puantaj_site_tarih ON puantaj(site_id, tarih);
+      CREATE INDEX IF NOT EXISTS idx_puantaj_personel ON puantaj(personel_id);
+      CREATE INDEX IF NOT EXISTS idx_puantaj_durum ON puantaj(durum);
+      CREATE INDEX IF NOT EXISTS idx_islemler_site_tarih ON islemler(site_id, islem_tarihi);
+      CREATE INDEX IF NOT EXISTS idx_islemler_kategori ON islemler(kategori_id);
+      CREATE INDEX IF NOT EXISTS idx_personel_atama_personel ON personel_atama(personel_id);
+      CREATE INDEX IF NOT EXISTS idx_personel_atama_site ON personel_atama(site_id);
+      CREATE INDEX IF NOT EXISTS idx_users_site_id ON users(site_id);
+    `)
 
     console.log('Database tables created successfully')
   } catch (error) {
@@ -867,6 +906,43 @@ export async function getAggregatedStats(options: { siteId?: number | null; star
     monthly[monthKey].reportCount += 1
   }
 
+  // İdari modülden eklenen harcamaları (work_report_id IS NULL) ayrıca istatistiklere ekle
+  try {
+    const client2 = await pool.connect()
+    try {
+      let iQuery = `SELECT i.islem_tarihi, i.tutar, hk.kod as kat_kod
+        FROM islemler i
+        JOIN harcama_kategorileri hk ON hk.id = i.kategori_id
+        WHERE i.work_report_id IS NULL`
+      const iParams: (string | number)[] = []
+      let pi = 1
+      if (options.siteId != null) { iQuery += ` AND i.site_id = $${pi++}`; iParams.push(options.siteId) }
+      if (options.startDate) { iQuery += ` AND i.islem_tarihi >= $${pi++}`; iParams.push(options.startDate.slice(0, 10)) }
+      if (options.endDate) { iQuery += ` AND i.islem_tarihi <= $${pi++}`; iParams.push(options.endDate.slice(0, 10)) }
+      const iRows = await client2.query(iQuery, iParams)
+      // Kategori kodu → form kategorisi eşleştirmesi
+      const idariCatMap: Record<string, string> = { sarf: 'santiye', akaryakit: 'yakit', yemek: 'personel', tason: 'diger', maas: 'personel', diger: 'diger' }
+      for (const ir of iRows.rows) {
+        const dateStr = typeof ir.islem_tarihi === 'string' ? ir.islem_tarihi.slice(0, 10) : ir.islem_tarihi?.toISOString?.()?.slice(0, 10) ?? ''
+        if (!dateStr) continue
+        const d = new Date(dateStr)
+        const dayLabel = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`
+        const weekKey = getWeekKey(d)
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        const amt = parseFloat(ir.tutar) || 0
+
+        if (!daily[dateStr]) daily[dateStr] = { date: dateStr, dayLabel, piles: 0, fuel: 0, production: 0, expenses: 0, reportCount: 0 }
+        daily[dateStr].expenses += amt
+        if (!weekly[weekKey]) weekly[weekKey] = { piles: 0, fuel: 0, production: 0, expenses: 0, reportCount: 0 }
+        weekly[weekKey].expenses += amt
+        if (!monthly[monthKey]) monthly[monthKey] = { piles: 0, fuel: 0, production: 0, expenses: 0, reportCount: 0 }
+        monthly[monthKey].expenses += amt
+      }
+    } finally {
+      client2.release()
+    }
+  } catch { /* İdari harcamalar getirilemezse sessizce devam et */ }
+
   const weekLabels: Record<string, string> = {}
   Object.keys(weekly).sort().forEach((key) => {
     const parts = key.split('-')
@@ -894,7 +970,7 @@ export async function getAggregatedStats(options: { siteId?: number | null; star
   }
   const machineComparison = Object.values(byMachine).sort((a, b) => b.totalProduction - a.totalProduction)
 
-  // Harcama dağılımı (türe göre toplam tutar)
+  // Harcama dağılımı: rapor harcamaları + idari modül harcamaları (work_report_id IS NULL)
   const expenseDistribution: Record<string, number> = { santiye: 0, makine: 0, personel: 0, yakit: 0, diger: 0 }
   for (const r of rows) {
     if (r.expenses && Array.isArray(r.expenses)) {
@@ -904,6 +980,26 @@ export async function getAggregatedStats(options: { siteId?: number | null; star
       }
     }
   }
+  // İdari modül harcamalarını (work_report_id IS NULL) expenseDistribution'a ekle
+  try {
+    const client3 = await pool.connect()
+    try {
+      let dQuery = `SELECT i.tutar, hk.kod as kat_kod FROM islemler i JOIN harcama_kategorileri hk ON hk.id = i.kategori_id WHERE i.work_report_id IS NULL`
+      const dParams: (string | number)[] = []
+      let pi = 1
+      if (options.siteId != null) { dQuery += ` AND i.site_id = $${pi++}`; dParams.push(options.siteId) }
+      if (options.startDate) { dQuery += ` AND i.islem_tarihi >= $${pi++}`; dParams.push(options.startDate.slice(0, 10)) }
+      if (options.endDate) { dQuery += ` AND i.islem_tarihi <= $${pi++}`; dParams.push(options.endDate.slice(0, 10)) }
+      const dRows = await client3.query(dQuery, dParams)
+      const idariCatMap: Record<string, string> = { sarf: 'santiye', akaryakit: 'yakit', yemek: 'personel', tason: 'diger', maas: 'personel', diger: 'diger' }
+      for (const dr of dRows.rows) {
+        const cat = idariCatMap[dr.kat_kod] ?? 'diger'
+        expenseDistribution[cat] = (expenseDistribution[cat] || 0) + (parseFloat(dr.tutar) || 0)
+      }
+    } finally {
+      client3.release()
+    }
+  } catch { /* İdari harcamalar getirilemezse sessizce devam et */ }
 
   const dailyList = Object.entries(daily)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -1132,11 +1228,22 @@ export async function createSite(data: {
         data.timezone ?? null,
       ]
     )
+    const newSite = result.rows[0]
+    const today = new Date().toISOString().slice(0, 10)
+    const seenCreate = new Set<number>()
     for (const { machineId, personelId } of ops) {
       const machineName = MACHINE_ID_TO_NAME[machineId] || machineId
       await client.query(`UPDATE personeller SET calistigi_bolum = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [machineName, personelId])
+      if (!seenCreate.has(personelId)) {
+        seenCreate.add(personelId)
+        await client.query(`
+          INSERT INTO personel_atama (personel_id, site_id, baslangic_tarihi)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (personel_id, site_id, baslangic_tarihi) DO NOTHING
+        `, [personelId, newSite.id, today])
+      }
     }
-    return result.rows[0]
+    return newSite
   } catch (error) {
     console.error('Error creating site:', error)
     throw error
@@ -1196,9 +1303,20 @@ export async function updateSite(id: number, data: {
       values
     )
     const ops = data.assignedMachineOperators || []
+    const today = new Date().toISOString().slice(0, 10)
+    const seenPersonelIds = new Set<number>()
     for (const { machineId, personelId } of ops) {
       const machineName = MACHINE_ID_TO_NAME[machineId] || machineId
       await client.query(`UPDATE personeller SET calistigi_bolum = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [machineName, personelId])
+      // personel_atama sync: eğer bu şantiyede aktif atama yoksa yeni kayıt oluştur
+      if (!seenPersonelIds.has(personelId)) {
+        seenPersonelIds.add(personelId)
+        await client.query(`
+          INSERT INTO personel_atama (personel_id, site_id, baslangic_tarihi)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (personel_id, site_id, baslangic_tarihi) DO NOTHING
+        `, [personelId, id, today])
+      }
     }
     return result.rows[0] || null
   } catch (error) {
@@ -1305,43 +1423,70 @@ export async function deleteWorkReport(id: number) {
 }
 
 // ---------- İdari modül: Personel ----------
-export async function getPersoneller(options: { siteId?: number | null; gorev?: string | null } = {}) {
+export async function getPersoneller(options: { siteId?: number | null; gorev?: string | null; limit?: number; offset?: number; search?: string } = {}) {
   const client = await pool.connect()
   try {
-    const { siteId, gorev } = options
-    let query = `
-      SELECT p.*, 
-        (SELECT json_agg(json_build_object('id', pa.id, 'site_id', pa.site_id, 'site_name', s.name, 'baslangic_tarihi', pa.baslangic_tarihi, 'bitis_tarihi', pa.bitis_tarihi))
-         FROM personel_atama pa LEFT JOIN sites s ON pa.site_id = s.id WHERE pa.personel_id = p.id
-        ) AS atamalar
-      FROM personeller p
-      WHERE 1=1
-    `
+    const { siteId, gorev, limit, offset, search } = options
     const params: (number | string)[] = []
     let i = 1
+    const atamalarSubq = `(SELECT json_agg(json_build_object('id', pa.id, 'site_id', pa.site_id, 'site_name', s.name, 'baslangic_tarihi', pa.baslangic_tarihi, 'bitis_tarihi', pa.bitis_tarihi)) FROM personel_atama pa LEFT JOIN sites s ON pa.site_id = s.id WHERE pa.personel_id = p.id) AS atamalar`
+
     if (siteId != null && siteId > 0) {
-      query = `
-        SELECT p.*,
-          (SELECT json_agg(json_build_object('id', pa.id, 'site_id', pa.site_id, 'site_name', s.name, 'baslangic_tarihi', pa.baslangic_tarihi, 'bitis_tarihi', pa.bitis_tarihi))
-           FROM personel_atama pa LEFT JOIN sites s ON pa.site_id = s.id WHERE pa.personel_id = p.id
-          ) AS atamalar
-        FROM personeller p
-        WHERE EXISTS (
-          SELECT 1 FROM personel_atama pa WHERE pa.personel_id = p.id AND pa.site_id = $1
-          AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= CURRENT_DATE)
-        )
-        ORDER BY p.soyad, p.ad
-      `
+      const query = `SELECT p.*, ${atamalarSubq} FROM personeller p WHERE EXISTS (SELECT 1 FROM personel_atama pa WHERE pa.personel_id = p.id AND pa.site_id = $1 AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= CURRENT_DATE)) ORDER BY p.soyad, p.ad`
       const result = await client.query(query, [siteId])
       return result.rows
     }
+
+    let query = `SELECT p.*, ${atamalarSubq} FROM personeller p WHERE 1=1`
     if (gorev && String(gorev).trim()) {
       query += ` AND p.gorev = $${i++}`
       params.push(String(gorev).trim())
     }
+    if (search && String(search).trim()) {
+      const s = `%${String(search).trim()}%`
+      query += ` AND (p.ad ILIKE $${i} OR p.soyad ILIKE $${i} OR p.gorev ILIKE $${i})`
+      params.push(s)
+      i++
+    }
     query += ` ORDER BY p.soyad, p.ad`
+    if (limit && limit > 0) {
+      query += ` LIMIT $${i++}`
+      params.push(limit)
+    }
+    if (offset && offset > 0) {
+      query += ` OFFSET $${i++}`
+      params.push(offset)
+    }
     const result = params.length ? await client.query(query, params) : await client.query(query)
     return result.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function getPersonellerCount(options: { siteId?: number | null; gorev?: string | null; search?: string } = {}): Promise<number> {
+  const client = await pool.connect()
+  try {
+    const { siteId, gorev, search } = options
+    const params: (number | string)[] = []
+    let i = 1
+    if (siteId != null && siteId > 0) {
+      const r = await client.query(`SELECT COUNT(*) FROM personeller p WHERE EXISTS (SELECT 1 FROM personel_atama pa WHERE pa.personel_id = p.id AND pa.site_id = $1 AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= CURRENT_DATE))`, [siteId])
+      return parseInt(r.rows[0].count, 10)
+    }
+    let query = `SELECT COUNT(*) FROM personeller p WHERE 1=1`
+    if (gorev && String(gorev).trim()) {
+      query += ` AND p.gorev = $${i++}`
+      params.push(String(gorev).trim())
+    }
+    if (search && String(search).trim()) {
+      const s = `%${String(search).trim()}%`
+      query += ` AND (p.ad ILIKE $${i} OR p.soyad ILIKE $${i} OR p.gorev ILIKE $${i})`
+      params.push(s)
+      i++
+    }
+    const r = params.length ? await client.query(query, params) : await client.query(query)
+    return parseInt(r.rows[0].count, 10)
   } finally {
     client.release()
   }
@@ -1751,7 +1896,7 @@ export async function getPersonelBelgeTipleri() {
 }
 
 // ---------- İdari modül: Envanter ----------
-export async function getEnvanter(options: { siteId?: number | null; yer?: string | null } = {}) {
+export async function getEnvanter(options: { siteId?: number | null; yer?: string | null; limit?: number; offset?: number; search?: string } = {}) {
   const client = await pool.connect()
   try {
     let query = `SELECT e.*, s.name AS site_name FROM envanter e LEFT JOIN sites s ON e.site_id = s.id WHERE 1=1`
@@ -1765,9 +1910,50 @@ export async function getEnvanter(options: { siteId?: number | null; yer?: strin
       query += ` AND e.yer = $${i++}`
       params.push(String(options.yer).trim())
     }
+    if (options.search && String(options.search).trim()) {
+      const s = `%${String(options.search).trim()}%`
+      query += ` AND (e.kod ILIKE $${i} OR e.malzeme_adi ILIKE $${i} OR e.yer ILIKE $${i})`
+      params.push(s)
+      i++
+    }
     query += ` ORDER BY e.kod`
+    if (options.limit && options.limit > 0) {
+      query += ` LIMIT $${i++}`
+      params.push(options.limit)
+    }
+    if (options.offset && options.offset > 0) {
+      query += ` OFFSET $${i++}`
+      params.push(options.offset)
+    }
     const r = params.length ? await client.query(query, params) : await client.query(query)
     return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function getEnvanterCount(options: { siteId?: number | null; yer?: string | null; search?: string } = {}): Promise<number> {
+  const client = await pool.connect()
+  try {
+    let query = `SELECT COUNT(*) FROM envanter e WHERE 1=1`
+    const params: (number | string)[] = []
+    let i = 1
+    if (options.siteId != null && options.siteId > 0) {
+      query += ` AND (e.site_id = $${i++} OR e.site_id IS NULL)`
+      params.push(options.siteId)
+    }
+    if (options.yer != null && String(options.yer).trim()) {
+      query += ` AND e.yer = $${i++}`
+      params.push(String(options.yer).trim())
+    }
+    if (options.search && String(options.search).trim()) {
+      const s = `%${String(options.search).trim()}%`
+      query += ` AND (e.kod ILIKE $${i} OR e.malzeme_adi ILIKE $${i} OR e.yer ILIKE $${i})`
+      params.push(s)
+      i++
+    }
+    const r = params.length ? await client.query(query, params) : await client.query(query)
+    return parseInt(r.rows[0].count, 10)
   } finally {
     client.release()
   }
@@ -1901,4 +2087,57 @@ export async function getIsGucuRaporu(siteId: number, baslangic: string, bitis: 
   }
 }
 
-export default pool 
+/**
+ * Günlük çalışma raporundaki harcamaları islemler tablosuna senkronize eder.
+ * Aynı rapor tekrar gönderilirse eskiler silinip yeniden yazılır.
+ * Yalnızca siteId ve reportId mevcutsa ve en az bir harcama varsa çalışır.
+ */
+export async function syncExpensesToIslemler(
+  reportId: number,
+  siteId: number,
+  reportDate: string, // YYYY-MM-DD
+  userId: number,
+  expenses: Array<{ description?: string; amount?: number; category?: string }>
+): Promise<void> {
+  if (!siteId || !reportId || !Array.isArray(expenses)) return
+  const validExpenses = expenses.filter(e => e && Number(e.amount) > 0)
+  if (validExpenses.length === 0) return
+
+  const client = await pool.connect()
+  try {
+    // Kategori kodu → id haritası
+    const catRows = await client.query(`SELECT id, kod FROM harcama_kategorileri`)
+    const catMap: Record<string, number> = {}
+    for (const row of catRows.rows) catMap[row.kod] = row.id
+
+    // Form'daki kategori → DB kodu eşleştirmesi
+    const categoryMapping: Record<string, string> = {
+      santiye: 'sarf',
+      makine:  'sarf',
+      personel: 'maas',
+      yakit:   'akaryakit',
+      diger:   'diger',
+    }
+
+    const digerKatId = catMap['diger']
+    if (!digerKatId) return // kategori tablosu henüz seed edilmemişse atla
+
+    // Aynı rapor için önceki kayıtları sil (idempotent sync)
+    await client.query(`DELETE FROM islemler WHERE work_report_id = $1`, [reportId])
+
+    const date = (reportDate || '').slice(0, 10)
+    for (const exp of validExpenses) {
+      const catKod = categoryMapping[exp.category ?? ''] ?? 'diger'
+      const katId = catMap[catKod] ?? digerKatId
+      await client.query(
+        `INSERT INTO islemler (site_id, kategori_id, tutar, islem_tarihi, odeme_kaynagi, aciklama, olusturan_id, work_report_id)
+         VALUES ($1, $2, $3, $4, 'rapor', $5, $6, $7)`,
+        [siteId, katId, Number(exp.amount), date, exp.description ?? '', userId, reportId]
+      )
+    }
+  } finally {
+    client.release()
+  }
+}
+
+export default pool

@@ -2,9 +2,12 @@ import { NextResponse } from "next/server"
 import { getDatabase } from "@/lib/sqlite"
 
 export async function GET() {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not Found" }, { status: 404 })
+  }
   try {
     const db = await getDatabase()
-    
+
     // Kullanıcıları listele
     const users = await db.all("SELECT id, username, email, full_name FROM users")
     

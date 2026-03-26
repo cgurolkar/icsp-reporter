@@ -22,8 +22,10 @@ import {
   DialogActions,
   TextField,
   IconButton,
+  TablePagination,
+  Chip,
 } from "@mui/material"
-import { Add, Edit, Visibility, Download, Upload } from "@mui/icons-material"
+import { Add, Edit, Visibility, Download, Upload, Delete } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
 
 const GOREVLER = ["İşçi", "Kalfa", "Usta", "Mühendis", "Operatör", "Proje Müdürü", "Şantiye Şefi"]
@@ -53,11 +55,17 @@ interface PersonelRow {
 export default function IdariPersonelPage() {
   const { user } = useAuth()
   const [list, setList] = useState<PersonelRow[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(0)
+  const PAGE_SIZE = 25
+  const [search, setSearch] = useState("")
   const [sites, setSites] = useState<SiteItem[]>([])
   const [siteId, setSiteId] = useState<string>("")
   const [gorev, setGorev] = useState<string>("")
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [importing, setImporting] = useState(false)
   const [form, setForm] = useState({
@@ -90,24 +98,28 @@ export default function IdariPersonelPage() {
       .catch(() => setSites([]))
   }
 
-  const loadList = () => {
+  const loadList = (p = page) => {
     setLoading(true)
     const params = new URLSearchParams()
     if (siteId) params.set("siteId", siteId)
     if (gorev) params.set("gorev", gorev)
+    if (search.trim()) params.set("search", search.trim())
+    params.set("limit", String(PAGE_SIZE))
+    params.set("offset", String(p * PAGE_SIZE))
     fetch(`/api/idari/personel?${params}`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: PersonelRow[]) => setList(data))
-      .catch(() => setList([]))
+      .then((r) => (r.ok ? r.json() : { data: [], total: 0 }))
+      .then((res: { data: PersonelRow[]; total: number } | PersonelRow[]) => {
+        // Backward compat: eski format düz array olabilir
+        if (Array.isArray(res)) { setList(res); setTotal(res.length) }
+        else { setList(res.data ?? []); setTotal(res.total ?? 0) }
+      })
+      .catch(() => { setList([]); setTotal(0) })
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => {
-    loadSites()
-  }, [])
-  useEffect(() => {
-    loadList()
-  }, [siteId, gorev])
+  useEffect(() => { loadSites() }, [])
+  useEffect(() => { setPage(0); loadList(0) }, [siteId, gorev, search])
+  useEffect(() => { loadList(page) }, [page])
 
   const openAdd = () => {
     setEditingId(null)
@@ -155,6 +167,25 @@ export default function IdariPersonelPage() {
       aylik_maas: row.aylik_maas != null ? String(row.aylik_maas) : "",
     })
     setDialogOpen(true)
+  }
+
+  const handleDelete = async () => {
+    if (confirmDeleteId == null) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/idari/personel/${confirmDeleteId}`, { method: "DELETE" })
+      if (res.ok) {
+        setConfirmDeleteId(null)
+        loadList()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || "Silinemedi.")
+      }
+    } catch {
+      alert("Bağlantı hatası.")
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const handleSave = async () => {
@@ -232,6 +263,14 @@ export default function IdariPersonelPage() {
 
       <Paper sx={{ p: 2, mb: 2 }}>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, alignItems: "center", mb: 2 }}>
+          <TextField
+            size="small"
+            label="Ara"
+            placeholder="Ad, soyad veya görev..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            sx={{ minWidth: 200 }}
+          />
           <FormControl size="small" sx={{ minWidth: 200 }}>
             <InputLabel>Şantiye</InputLabel>
             <Select value={siteId} label="Şantiye" onChange={(e) => setSiteId(e.target.value)}>
@@ -286,6 +325,7 @@ export default function IdariPersonelPage() {
         {loading ? (
           <Typography color="text.secondary">Yükleniyor...</Typography>
         ) : (
+          <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <Table size="small" sx={{ minWidth: 600 }}>
             <TableHead>
               <TableRow>
@@ -319,9 +359,14 @@ export default function IdariPersonelPage() {
                         <Visibility fontSize="small" />
                       </IconButton>
                       {canManage && (
-                        <IconButton size="small" onClick={() => openEdit(row)} title="Düzenle">
-                          <Edit fontSize="small" />
-                        </IconButton>
+                        <>
+                          <IconButton size="small" onClick={() => openEdit(row)} title="Düzenle">
+                            <Edit fontSize="small" />
+                          </IconButton>
+                          <IconButton size="small" onClick={() => setConfirmDeleteId(row.id)} title="Sil" sx={{ color: "error.main" }}>
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </>
                       )}
                     </TableCell>
                   </TableRow>
@@ -329,6 +374,23 @@ export default function IdariPersonelPage() {
               )}
             </TableBody>
           </Table>
+          {total > PAGE_SIZE && (
+            <TablePagination
+              component="div"
+              count={total}
+              page={page}
+              onPageChange={(_, p) => setPage(p)}
+              rowsPerPage={PAGE_SIZE}
+              rowsPerPageOptions={[PAGE_SIZE]}
+              labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+            />
+          )}
+          </Box>
+        )}
+        {!loading && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1, pb: 1 }}>
+            <Chip label={`Toplam: ${total}`} size="small" variant="outlined" />
+          </Box>
         )}
       </Paper>
 
@@ -371,6 +433,20 @@ export default function IdariPersonelPage() {
           <Button onClick={() => setDialogOpen(false)}>İptal</Button>
           <Button variant="contained" onClick={handleSave} disabled={!form.ad.trim() || !form.soyad.trim()} sx={{ background: "var(--icsp-lacivert)" }}>
             {editingId != null ? "Güncelle" : "Ekle"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Silme onay dialogu */}
+      <Dialog open={confirmDeleteId != null} onClose={() => setConfirmDeleteId(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Personel Sil</DialogTitle>
+        <DialogContent>
+          <Typography>Bu personel kaydı kalıcı olarak silinecek. Emin misiniz?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDeleteId(null)} disabled={deleting}>İptal</Button>
+          <Button variant="contained" color="error" onClick={handleDelete} disabled={deleting}>
+            {deleting ? "Siliniyor…" : "Evet, Sil"}
           </Button>
         </DialogActions>
       </Dialog>

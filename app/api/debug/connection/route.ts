@@ -4,6 +4,9 @@ import mysql from 'mysql2/promise'
 export const dynamic = "force-dynamic"
 
 export async function GET() {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not Found" }, { status: 404 })
+  }
   try {
     // MySQL bağlantısını test et
     const connection = await mysql.createConnection({

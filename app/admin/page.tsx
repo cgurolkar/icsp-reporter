@@ -38,7 +38,11 @@ import {
   FormControlLabel,
   Checkbox,
 } from "@mui/material"
-import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility } from "@mui/icons-material"
+import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility, Notifications, NotificationsActive, Close } from "@mui/icons-material"
+import Badge from "@mui/material/Badge"
+import Snackbar from "@mui/material/Snackbar"
+import Alert from "@mui/material/Alert"
+import Drawer from "@mui/material/Drawer"
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, PieChart, Pie, Cell } from "recharts"
 import { ThemeProvider } from "@mui/material/styles"
 import CssBaseline from "@mui/material/CssBaseline"
@@ -80,7 +84,19 @@ function AdminPanel() {
   const [editIndex, setEditIndex] = useState(-1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  
+
+  // SSE bildirimleri
+  const [notifications, setNotifications] = useState<{ id: string; type: string; title: string; message: string; siteName?: string; anomalyCount?: number; timestamp: number }[]>([])
+  const [notifDrawerOpen, setNotifDrawerOpen] = useState(false)
+  const [newNotifSnack, setNewNotifSnack] = useState<{ open: boolean; message: string; severity: "info" | "warning" }>({ open: false, message: "", severity: "info" })
+  const unreadCount = notifications.filter(n => n.timestamp > (typeof window !== "undefined" ? parseInt(localStorage.getItem("notif_last_read") || "0", 10) : 0)).length
+
+  // E-posta araçları
+  const [testEmailLoading, setTestEmailLoading] = useState(false)
+  const [testEmailMsg, setTestEmailMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [dailySummaryLoading, setDailySummaryLoading] = useState(false)
+  const [dailySummaryMsg, setDailySummaryMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
   // Kullanıcı yönetimi için state'ler
   const [dbUsers, setDbUsers] = useState<any[]>([])
   const [dbProjects, setDbProjects] = useState<any[]>([])
@@ -157,6 +173,28 @@ function AdminPanel() {
   useEffect(() => {
     if (tabValue === 4) loadReportList()
   }, [tabValue])
+
+  // SSE bağlantısı
+  useEffect(() => {
+    const es = new EventSource("/api/notifications/stream")
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === "connected") return
+        setNotifications((prev) => {
+          // Tekrar önleme
+          if (prev.some((n) => n.id === data.id)) return prev
+          return [data, ...prev].slice(0, 50)
+        })
+        const severity = data.anomalyCount > 0 ? "warning" : "info"
+        setNewNotifSnack({ open: true, message: `${data.title}: ${data.message}`, severity })
+      } catch {}
+    }
+    es.onerror = () => {
+      // Bağlantı koptu — tarayıcı otomatik yeniden bağlanır
+    }
+    return () => es.close()
+  }, [])
 
   const loadReportList = async () => {
     setReportListLoading(true)
@@ -309,6 +347,49 @@ function AdminPanel() {
     }
   }
 
+  const handleTestEmail = async () => {
+    setTestEmailLoading(true)
+    setTestEmailMsg(null)
+    try {
+      const res = await fetch("/api/admin/test-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) })
+      const data = await res.json()
+      if (data.ok) {
+        setTestEmailMsg({ ok: true, text: data.message || "Test e-postası gönderildi." })
+      } else {
+        setTestEmailMsg({ ok: false, text: data.error || "Gönderilemedi." })
+      }
+    } catch {
+      setTestEmailMsg({ ok: false, text: "Bağlantı hatası." })
+    } finally {
+      setTestEmailLoading(false)
+    }
+  }
+
+  const handleDailySummary = async () => {
+    setDailySummaryLoading(true)
+    setDailySummaryMsg(null)
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const res = await fetch("/api/admin/daily-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: today, recipients: emails.filter(e => e.trim()) }),
+      })
+      const data = await res.json()
+      if (data.ok && data.emailSent) {
+        setDailySummaryMsg({ ok: true, text: `Günlük özet ${data.recipients?.join(", ")} adreslerine gönderildi. (${data.totalReports} rapor)` })
+      } else if (data.ok) {
+        setDailySummaryMsg({ ok: false, text: data.emailError || "SMTP yapılandırılmamış. Özet oluşturuldu ama gönderilemedi." })
+      } else {
+        setDailySummaryMsg({ ok: false, text: data.error || "Hata oluştu." })
+      }
+    } catch {
+      setDailySummaryMsg({ ok: false, text: "Bağlantı hatası." })
+    } finally {
+      setDailySummaryLoading(false)
+    }
+  }
+
   const handleAdd = (type: "email" | "user" | "field") => {
     setDialogType(type)
     setDialogValue("")
@@ -454,12 +535,12 @@ function AdminPanel() {
   }
 
   return (
-    <Box sx={{ minHeight: "100vh", background: "#f5f5f5", py: 3 }}>
-      <Container maxWidth="lg">
+    <Box sx={{ minHeight: "100vh", background: "#f5f5f5", py: { xs: 1, sm: 3 } }}>
+      <Container maxWidth="lg" sx={{ px: { xs: 1, sm: 2, md: 3 } }}>
         <Paper
           elevation={0}
           sx={{
-            p: 3,
+            p: { xs: 1.5, sm: 3 },
             borderRadius: 2,
             background: "#fff",
             border: "1px solid #e0e0e0",
@@ -472,9 +553,22 @@ function AdminPanel() {
             "& .MuiFormLabel-root": { color: "rgba(0,0,0,0.6)" },
           }}
         >
-          <Typography variant="h6" sx={{ color: "#1a237e", fontWeight: 600, mb: 2 }}>
-            {t("admin_panel")}
-          </Typography>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+            <Typography variant="h6" sx={{ color: "#1a237e", fontWeight: 600 }}>
+              {t("admin_panel")}
+            </Typography>
+            <IconButton
+              onClick={() => {
+                setNotifDrawerOpen(true)
+                if (typeof window !== "undefined") localStorage.setItem("notif_last_read", String(Date.now()))
+              }}
+              sx={{ color: notifications.length > 0 ? "#1a237e" : "#9e9e9e" }}
+            >
+              <Badge badgeContent={unreadCount} color="error" max={9}>
+                {unreadCount > 0 ? <NotificationsActive /> : <Notifications />}
+              </Badge>
+            </IconButton>
+          </Box>
 
         {error && (
           <Box sx={{ mb: 2, p: 2, backgroundColor: "#ffebee", color: "#c62828", borderRadius: 1 }}>
@@ -486,8 +580,11 @@ function AdminPanel() {
           <Tabs
             value={tabValue}
             onChange={(_, newValue) => setTabValue(newValue)}
+            variant="scrollable"
+            scrollButtons="auto"
+            allowScrollButtonsMobile
             sx={{
-              "& .MuiTab-root": { color: "#616161" },
+              "& .MuiTab-root": { color: "#616161", minWidth: { xs: 80, sm: 120 }, fontSize: { xs: "0.75rem", sm: "0.875rem" }, px: { xs: 1, sm: 2 } },
               "& .Mui-selected": { color: "#1a237e", fontWeight: 600 },
               "& .MuiTabs-indicator": { backgroundColor: "#1a237e" },
             }}
@@ -745,6 +842,7 @@ function AdminPanel() {
                 <Typography variant="subtitle1" sx={{ color: "var(--icsp-lacivert)", p: 2, borderBottom: "1px solid var(--icsp-nav-border)", fontWeight: 600 }}>
                   Son raporlar (bilgi girişi kayıtları)
                 </Typography>
+                <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
                 <Table size="small">
                   <TableHead>
                     <TableRow>
@@ -783,6 +881,7 @@ function AdminPanel() {
                     )}
                   </TableBody>
                 </Table>
+                </Box>
               </Paper>
             </>
           )}
@@ -810,6 +909,47 @@ function AdminPanel() {
               </ListItem>
             ))}
           </List>
+
+          {/* E-posta araçları */}
+          <Box sx={{ mt: 3, p: 2, border: "1px solid", borderColor: "divider", borderRadius: 2, background: "#f8fafc" }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: "#1a237e", mb: 1.5 }}>
+              E-posta Araçları
+            </Typography>
+            <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "center" }}>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={handleTestEmail}
+                disabled={testEmailLoading}
+                sx={{ borderColor: "#2563eb", color: "#2563eb" }}
+              >
+                {testEmailLoading ? "Gönderiliyor..." : "✉️ Test E-postası Gönder"}
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={handleDailySummary}
+                disabled={dailySummaryLoading}
+                sx={{ borderColor: "#16a34a", color: "#16a34a" }}
+              >
+                {dailySummaryLoading ? "Oluşturuluyor..." : "📊 Bugünkü Özeti Gönder"}
+              </Button>
+            </Box>
+            {testEmailMsg && (
+              <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 1, background: testEmailMsg.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${testEmailMsg.ok ? "#bbf7d0" : "#fecaca"}` }}>
+                <Typography variant="caption" sx={{ color: testEmailMsg.ok ? "#16a34a" : "#dc2626" }}>
+                  {testEmailMsg.ok ? "✅ " : "❌ "}{testEmailMsg.text}
+                </Typography>
+              </Box>
+            )}
+            {dailySummaryMsg && (
+              <Box sx={{ mt: 1, p: 1.5, borderRadius: 1, background: dailySummaryMsg.ok ? "#f0fdf4" : "#fffbeb", border: `1px solid ${dailySummaryMsg.ok ? "#bbf7d0" : "#fde68a"}` }}>
+                <Typography variant="caption" sx={{ color: dailySummaryMsg.ok ? "#16a34a" : "#d97706" }}>
+                  {dailySummaryMsg.ok ? "✅ " : "⚠️ "}{dailySummaryMsg.text}
+                </Typography>
+              </Box>
+            )}
+          </Box>
         </TabPanel>
 
         <TabPanel value={tabValue} index={2}>
@@ -1086,11 +1226,14 @@ function AdminPanel() {
           </Paper>
         </TabPanel>
 
-        <Box sx={{ mt: 4, display: "flex", justifyContent: "center" }}>
-          <Button variant="contained" size="large" onClick={saveSettings} disabled={loading}>
-            {loading ? "Saving..." : t("save_settings")}
-          </Button>
-        </Box>
+        {/* Ayarları kaydet butonu yalnızca E-posta Ayarları sekmesinde görünür */}
+        {tabValue === 1 && (
+          <Box sx={{ mt: 4, display: "flex", justifyContent: "center" }}>
+            <Button variant="contained" size="large" onClick={saveSettings} disabled={loading}>
+              {loading ? "Kaydediliyor..." : t("save_settings")}
+            </Button>
+          </Box>
+        )}
 
         <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
           <DialogTitle>{getDialogTitle()}</DialogTitle>
@@ -1160,7 +1303,8 @@ function AdminPanel() {
                   setSiteDialogData((prev) => ({
                     ...prev,
                     assignedMachineIds: next,
-                    assignedMachineOperators: next.map((mid) => ({ machineId: mid, personelId: prev.assignedMachineOperators.find((o) => o.machineId === mid)?.personelId ?? 0 })),
+                    // Mevcut operatör atamalarını koru, çıkarılan makineleri sil
+                    assignedMachineOperators: prev.assignedMachineOperators.filter((o) => next.includes(o.machineId)),
                   }))
                 }}
                 renderValue={(sel) => (sel as string[]).map((id) => AVAILABLE_MACHINES.find((m) => m.id === id)?.name ?? id).join(", ") || "Seçin"}
@@ -1172,33 +1316,42 @@ function AdminPanel() {
             </FormControl>
             {siteDialogData.assignedMachineIds.length > 0 && (
               <Box sx={{ mt: 1.5, display: "flex", flexDirection: "column", gap: 1 }}>
-                {siteDialogData.assignedMachineIds.map((machineId) => (
+                {siteDialogData.assignedMachineIds.map((machineId) => {
+                  const assignedIds = siteDialogData.assignedMachineOperators
+                    .filter((o) => o.machineId === machineId)
+                    .map((o) => o.personelId)
+                  return (
                   <Box key={machineId} sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
                     <Typography variant="body2" sx={{ minWidth: 140 }}>{AVAILABLE_MACHINES.find((m) => m.id === machineId)?.name ?? machineId}</Typography>
                     <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
-                      <InputLabel>Operatör (personel)</InputLabel>
+                      <InputLabel>Operatörler (birden fazla seçilebilir)</InputLabel>
                       <Select
-                        value={siteDialogData.assignedMachineOperators.find((o) => o.machineId === machineId)?.personelId ?? ""}
-                        label="Operatör (personel)"
+                        multiple
+                        value={assignedIds}
+                        label="Operatörler (birden fazla seçilebilir)"
                         onChange={(e) => {
-                          const personelId = e.target.value === "" ? 0 : Number(e.target.value)
+                          const ids = (e.target.value as number[]).filter((n) => n > 0)
                           setSiteDialogData((prev) => ({
                             ...prev,
-                            assignedMachineOperators: prev.assignedMachineIds.map((mid) => ({
-                              machineId: mid,
-                              personelId: mid === machineId ? personelId : (prev.assignedMachineOperators.find((o) => o.machineId === mid)?.personelId ?? 0),
-                            })),
+                            assignedMachineOperators: [
+                              ...prev.assignedMachineOperators.filter((o) => o.machineId !== machineId),
+                              ...ids.map((personelId) => ({ machineId, personelId })),
+                            ],
                           }))
                         }}
+                        renderValue={(sel) => (sel as number[]).map((id) => {
+                          const p = personelList.find((p) => p.id === id)
+                          return p ? `${p.ad} ${p.soyad}` : String(id)
+                        }).join(", ") || "— Seçin"}
                       >
-                        <MenuItem value="">— Seçin</MenuItem>
                         {personelList.map((p) => (
                           <MenuItem key={p.id} value={p.id}>{p.ad} {p.soyad} ({p.gorev})</MenuItem>
                         ))}
                       </Select>
                     </FormControl>
                   </Box>
-                ))}
+                  )
+                })}
               </Box>
             )}
 
@@ -1502,6 +1655,67 @@ function AdminPanel() {
         </Dialog>
       </Paper>
       </Container>
+
+      {/* Bildirim drawer */}
+      <Drawer anchor="right" open={notifDrawerOpen} onClose={() => setNotifDrawerOpen(false)} PaperProps={{ sx: { width: { xs: "100%", sm: 380 }, p: 2 } }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600, color: "#1a237e" }}>Bildirimler</Typography>
+          <IconButton onClick={() => setNotifDrawerOpen(false)}><Close /></IconButton>
+        </Box>
+        {notifications.length === 0 ? (
+          <Box sx={{ textAlign: "center", py: 6, color: "#9e9e9e" }}>
+            <Notifications sx={{ fontSize: 48, mb: 1, opacity: 0.3 }} />
+            <Typography variant="body2">Henüz bildirim yok.</Typography>
+          </Box>
+        ) : (
+          <List sx={{ p: 0 }}>
+            {notifications.map((n) => (
+              <ListItem key={n.id} divider alignItems="flex-start" sx={{ py: 1.5, px: 0 }}>
+                <ListItemText
+                  primary={
+                    <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>{n.title}</Typography>
+                      {n.anomalyCount && n.anomalyCount > 0 && (
+                        <Chip label={`${n.anomalyCount} uyarı`} size="small" sx={{ background: "#fef3c7", color: "#92400e", fontSize: "0.65rem" }} />
+                      )}
+                    </Box>
+                  }
+                  secondary={
+                    <>
+                      <Typography variant="caption" display="block" sx={{ color: "#64748b" }}>{n.message}</Typography>
+                      <Typography variant="caption" sx={{ color: "#94a3b8" }}>{new Date(n.timestamp).toLocaleTimeString("tr-TR")}</Typography>
+                    </>
+                  }
+                />
+              </ListItem>
+            ))}
+          </List>
+        )}
+        {notifications.length > 0 && (
+          <Box sx={{ mt: 2 }}>
+            <Button size="small" onClick={() => setNotifications([])} sx={{ color: "#9e9e9e" }}>
+              Tümünü temizle
+            </Button>
+          </Box>
+        )}
+      </Drawer>
+
+      {/* Yeni bildirim toast */}
+      <Snackbar
+        open={newNotifSnack.open}
+        autoHideDuration={5000}
+        onClose={() => setNewNotifSnack((s) => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+      >
+        <Alert
+          severity={newNotifSnack.severity}
+          onClose={() => setNewNotifSnack((s) => ({ ...s, open: false }))}
+          sx={{ width: "100%", cursor: "pointer" }}
+          onClick={() => { setNotifDrawerOpen(true); setNewNotifSnack((s) => ({ ...s, open: false })) }}
+        >
+          {newNotifSnack.message}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }

@@ -24,8 +24,9 @@ import {
   Chip,
   useMediaQuery,
   useTheme,
+  TablePagination,
 } from "@mui/material"
-import { Add, Edit, Search, Visibility, Inventory2 } from "@mui/icons-material"
+import { Add, Edit, Search, Inventory2, Download, Upload, Delete } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
 
 interface SiteItem {
@@ -52,12 +53,18 @@ export default function IdariEnvanterPage() {
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"))
   const [list, setList] = useState<EnvanterRow[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(0)
+  const PAGE_SIZE = 24
   const [sites, setSites] = useState<SiteItem[]>([])
   const [siteId, setSiteId] = useState<string>("")
   const [yerFilter, setYerFilter] = useState<string>("")
   const [search, setSearch] = useState("")
   const [loading, setLoading] = useState(true)
+  const [importing, setImporting] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState({
     kod: "",
@@ -79,32 +86,29 @@ export default function IdariEnvanterPage() {
       .catch(() => setSites([]))
   }, [])
 
-  const loadList = () => {
+  const loadList = (p = page) => {
     setLoading(true)
     const params = new URLSearchParams()
     if (siteId) params.set("siteId", siteId)
     if (yerFilter) params.set("yer", yerFilter)
+    if (search.trim()) params.set("search", search.trim())
+    params.set("limit", String(PAGE_SIZE))
+    params.set("offset", String(p * PAGE_SIZE))
     fetch(`/api/idari/envanter?${params}`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: EnvanterRow[]) => setList(data))
-      .catch(() => setList([]))
+      .then((r) => (r.ok ? r.json() : { data: [], total: 0 }))
+      .then((res: { data: EnvanterRow[]; total: number } | EnvanterRow[]) => {
+        if (Array.isArray(res)) { setList(res); setTotal(res.length) }
+        else { setList(res.data ?? []); setTotal(res.total ?? 0) }
+      })
+      .catch(() => { setList([]); setTotal(0) })
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => {
-    loadList()
-  }, [siteId, yerFilter])
+  useEffect(() => { setPage(0); loadList(0) }, [siteId, yerFilter, search])
+  useEffect(() => { loadList(page) }, [page])
 
   const yerler = Array.from(new Set(list.map((e) => e.yer).filter(Boolean))) as string[]
-
-  const filteredList = search.trim()
-    ? list.filter(
-        (e) =>
-          e.kod.toLowerCase().includes(search.toLowerCase()) ||
-          e.malzeme_adi.toLowerCase().includes(search.toLowerCase()) ||
-          (e.yer && e.yer.toLowerCase().includes(search.toLowerCase()))
-      )
-    : list
+  const filteredList = list  // filtering now done server-side
 
   const openAdd = () => {
     setEditingId(null)
@@ -124,6 +128,25 @@ export default function IdariEnvanterPage() {
       site_id: row.site_id ? String(row.site_id) : "",
     })
     setDialogOpen(true)
+  }
+
+  const handleDelete = async () => {
+    if (confirmDeleteId == null) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/idari/envanter/${confirmDeleteId}`, { method: "DELETE" })
+      if (res.ok) {
+        setConfirmDeleteId(null)
+        loadList()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || "Silinemedi.")
+      }
+    } catch {
+      alert("Bağlantı hatası.")
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const handleSave = async () => {
@@ -207,9 +230,56 @@ export default function IdariEnvanterPage() {
             </Select>
           </FormControl>
           {canManage && (
-            <Button variant="contained" startIcon={<Add />} onClick={openAdd} sx={{ background: "var(--icsp-lacivert)", ml: { xs: 0, sm: "auto" } }}>
-              Yeni kayıt
-            </Button>
+            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", ml: { xs: 0, sm: "auto" } }}>
+              <Button
+                variant="outlined"
+                startIcon={<Download />}
+                href="/api/idari/envanter/template"
+                download="envanter_sablonu.xlsx"
+                sx={{ borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}
+              >
+                Şablon
+              </Button>
+              <Button
+                variant="outlined"
+                component="label"
+                startIcon={<Upload />}
+                disabled={importing}
+                sx={{ borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}
+              >
+                {importing ? "Yükleniyor…" : "Excel'den aktar"}
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  hidden
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    setImporting(true)
+                    try {
+                      const fd = new FormData()
+                      fd.append("file", file)
+                      const res = await fetch("/api/idari/envanter/import", { method: "POST", body: fd })
+                      const data = await res.json().catch(() => ({}))
+                      if (res.ok) {
+                        alert(`${data.inserted} kayıt eklendi.${data.failed > 0 ? ` ${data.failed} satır atlandı.` : ""}`)
+                        loadList()
+                      } else {
+                        alert(data.error || "İçe aktarma hatası.")
+                      }
+                    } catch {
+                      alert("Bağlantı hatası.")
+                    } finally {
+                      setImporting(false)
+                      e.target.value = ""
+                    }
+                  }}
+                />
+              </Button>
+              <Button variant="contained" startIcon={<Add />} onClick={openAdd} sx={{ background: "var(--icsp-lacivert)" }}>
+                Yeni kayıt
+              </Button>
+            </Box>
           )}
         </Box>
 
@@ -224,24 +294,41 @@ export default function IdariEnvanterPage() {
             {filteredList.map((row) => (
               <Card key={row.id} variant="outlined" sx={{ borderRadius: 2 }}>
                 <CardActionArea component={Link} href={`/idari/envanter/${row.id}`}>
-                  <CardContent sx={{ "&:last-child": { pb: 2 } }}>
-                    <Typography variant="subtitle1" fontWeight={600} sx={{ color: "var(--icsp-lacivert)" }}>
-                      {row.kod}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {row.malzeme_adi}
-                    </Typography>
-                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 1 }}>
-                      <Chip size="small" label={`Adet: ${row.adet}`} />
-                      {row.yer && <Chip size="small" label={row.yer} variant="outlined" />}
-                      {row.fiyat != null && <Chip size="small" label={`${row.fiyat} ₺`} />}
+                  <CardContent sx={{ "&:last-child": { pb: 2 }, display: "flex", gap: 1.5, alignItems: "flex-start" }}>
+                    {row.fotograf_yolu ? (
+                      <Box
+                        component="img"
+                        src={row.fotograf_yolu}
+                        alt={row.malzeme_adi}
+                        sx={{ width: 56, height: 56, objectFit: "cover", borderRadius: 1, flexShrink: 0, bgcolor: "grey.100" }}
+                      />
+                    ) : (
+                      <Box sx={{ width: 56, height: 56, borderRadius: 1, bgcolor: "grey.100", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        <Inventory2 sx={{ fontSize: 28, color: "grey.400" }} />
+                      </Box>
+                    )}
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="subtitle1" fontWeight={600} sx={{ color: "var(--icsp-lacivert)", lineHeight: 1.2 }} noWrap>
+                        {row.malzeme_adi}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                        {row.kod}
+                      </Typography>
+                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.75 }}>
+                        <Chip size="small" label={`Adet: ${row.adet}`} />
+                        {row.yer && <Chip size="small" label={row.yer} variant="outlined" />}
+                        {row.fiyat != null && <Chip size="small" label={`${Number(row.fiyat).toLocaleString("tr-TR")} ₺`} />}
+                      </Box>
                     </Box>
                   </CardContent>
                 </CardActionArea>
                 {canManage && (
-                  <Box sx={{ px: 2, pb: 1 }}>
+                  <Box sx={{ px: 2, pb: 1, display: "flex", gap: 0.5 }}>
                     <IconButton size="small" onClick={() => openEdit(row)} title="Düzenle">
                       <Edit fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" onClick={() => setConfirmDeleteId(row.id)} title="Sil" sx={{ color: "error.main" }}>
+                      <Delete fontSize="small" />
                     </IconButton>
                   </Box>
                 )}
@@ -253,19 +340,31 @@ export default function IdariEnvanterPage() {
             {filteredList.map((row) => (
               <Card key={row.id} variant="outlined" sx={{ borderRadius: 2, display: "flex", flexDirection: "column" }}>
                 <CardActionArea component={Link} href={`/idari/envanter/${row.id}`} sx={{ flex: 1, display: "block" }}>
+                  {row.fotograf_yolu ? (
+                    <Box
+                      component="img"
+                      src={row.fotograf_yolu}
+                      alt={row.malzeme_adi}
+                      sx={{ width: "100%", height: 140, objectFit: "cover", bgcolor: "grey.100" }}
+                    />
+                  ) : (
+                    <Box sx={{ width: "100%", height: 80, bgcolor: "grey.50", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Inventory2 sx={{ fontSize: 36, color: "grey.300" }} />
+                    </Box>
+                  )}
                   <CardContent sx={{ "&:last-child": { pb: 2 } }}>
-                    <Typography variant="subtitle1" fontWeight={600} sx={{ color: "var(--icsp-lacivert)" }}>
-                      {row.kod}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                    <Typography variant="subtitle1" fontWeight={600} sx={{ color: "var(--icsp-lacivert)", lineHeight: 1.3 }}>
                       {row.malzeme_adi}
                     </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                      {row.kod}
+                    </Typography>
                     {row.aciklama && (
-                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }} noWrap>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }} noWrap>
                         {row.aciklama}
                       </Typography>
                     )}
-                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 1.5 }}>
+                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 1 }}>
                       <Chip size="small" label={`Adet: ${row.adet}`} />
                       {row.yer && <Chip size="small" label={row.yer} variant="outlined" />}
                       {row.fiyat != null && <Chip size="small" label={`${Number(row.fiyat).toLocaleString("tr-TR")} ₺`} />}
@@ -273,14 +372,36 @@ export default function IdariEnvanterPage() {
                   </CardContent>
                 </CardActionArea>
                 {canManage && (
-                  <Box sx={{ px: 2, pb: 1, pt: 0 }}>
+                  <Box sx={{ px: 2, pb: 1, pt: 0, display: "flex", gap: 0.5 }}>
                     <IconButton size="small" onClick={() => openEdit(row)} title="Düzenle">
                       <Edit fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" onClick={() => setConfirmDeleteId(row.id)} title="Sil" sx={{ color: "error.main" }}>
+                      <Delete fontSize="small" />
                     </IconButton>
                   </Box>
                 )}
               </Card>
             ))}
+          </Box>
+        )}
+
+        {/* Pagination */}
+        {!loading && total > PAGE_SIZE && (
+          <TablePagination
+            component="div"
+            count={total}
+            page={page}
+            onPageChange={(_, p) => setPage(p)}
+            rowsPerPage={PAGE_SIZE}
+            rowsPerPageOptions={[PAGE_SIZE]}
+            labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+            sx={{ borderTop: "1px solid", borderColor: "divider" }}
+          />
+        )}
+        {!loading && (
+          <Box sx={{ px: 2, pb: 1.5, display: "flex", alignItems: "center", gap: 1 }}>
+            <Chip label={`Toplam: ${total} malzeme`} size="small" variant="outlined" />
           </Box>
         )}
       </Paper>
@@ -310,6 +431,20 @@ export default function IdariEnvanterPage() {
           <Button onClick={() => setDialogOpen(false)}>İptal</Button>
           <Button variant="contained" onClick={handleSave} disabled={!form.kod.trim() || !form.malzeme_adi.trim()} sx={{ background: "var(--icsp-lacivert)" }}>
             {editingId != null ? "Güncelle" : "Ekle"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Silme onay dialogu */}
+      <Dialog open={confirmDeleteId != null} onClose={() => setConfirmDeleteId(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Envanter Kaydı Sil</DialogTitle>
+        <DialogContent>
+          <Typography>Bu kayıt kalıcı olarak silinecek. Emin misiniz?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDeleteId(null)} disabled={deleting}>İptal</Button>
+          <Button variant="contained" color="error" onClick={handleDelete} disabled={deleting}>
+            {deleting ? "Siliniyor…" : "Evet, Sil"}
           </Button>
         </DialogActions>
       </Dialog>

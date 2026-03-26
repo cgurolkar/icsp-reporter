@@ -84,14 +84,39 @@ const HEADER_ALIASES: Record<string, PersonelField> = {
   "aylık maaş": "aylik_maas",
   maas: "aylik_maas",
   maaş: "aylik_maas",
-  "aylık ücreti": "aylik_maas",
-  "aylik ucreti": "aylik_maas",
+  "aylık ücreti": "aylik_maas",   // aylık ücreti (ı + ü)
+  "aylik ücreti": "aylik_maas",   // AYLIK ÜCRETİ normalize edilince (i + ü) → bu alias gerekli!
+  "aylik ucreti": "aylik_maas",   // aksan yok
+  "aylık ücret": "aylik_maas",
+  "aylik ucret": "aylik_maas",
   ücret: "aylik_maas",
   ucret: "aylik_maas",
+  "brüt maaş": "aylik_maas",
+  "brut maas": "aylik_maas",
+  "net maaş": "aylik_maas",
+  "net maas": "aylik_maas",
+  "aylık ücret": "aylik_maas",
+  "aylik ucret": "aylik_maas",
+  "günlük ücret": "gunluk_yevmiye",
+  "gunluk ucret": "gunluk_yevmiye",
+  "günlük": "gunluk_yevmiye",
+  gunluk: "gunluk_yevmiye",
   görevi: "gorev",
   gorevi: "gorev",
+  unvan: "gorev",
+  ünvan: "gorev",
+  pozisyon: "gorev",
+  meslek: "gorev",
+  "iş unvanı": "gorev",
+  "is unvani": "gorev",
   "işe başlama": "ise_giris_tarihi",
   "ise baslama": "ise_giris_tarihi",
+  "giriş tarihi": "ise_giris_tarihi",
+  "giris tarihi": "ise_giris_tarihi",
+  "çıkış tarihi": "isten_cikis_tarihi",
+  "cikis tarihi": "isten_cikis_tarihi",
+  "işten ayrılış": "isten_cikis_tarihi",
+  "isten ayrilis": "isten_cikis_tarihi",
   "personel adi ve soyadi": "ad_soyad",
   "personel adı ve soyadı": "ad_soyad",
   "adi ve soyadi": "ad_soyad",
@@ -113,8 +138,13 @@ const HEADER_ALIASES: Record<string, PersonelField> = {
 }
 
 function normalizeHeader(h: unknown): string {
-  const s = String(h ?? "").replace(/\r\n/g, " ").trim().toLowerCase()
-  return s.replace(/\s+/g, " ")
+  return String(h ?? "")
+    .replace(/\r\n/g, " ")
+    .trim()
+    .replace(/İ/g, "i") // Handle Turkish İ (U+0130) before toLowerCase to avoid combining-dot issue
+    .toLowerCase()
+    .replace(/\u0307/g, "") // Remove combining dot above that toLowerCase may add for İ
+    .replace(/\s+/g, " ")
 }
 
 export function mapHeaderToField(header: string): PersonelField | null {

@@ -133,33 +133,38 @@ function LoginForm() {
             >
               {loading ? "Giriş yapılıyor..." : "Giriş"}
             </Button>
-            <Typography variant="caption" display="block" sx={{ mt: 1, textAlign: "center", color: "text.secondary" }}>
-              İlk giriş?{" "}
-              <button
-                type="button"
-                onClick={async () => {
-                  setSeedMessage("")
-                  setSeedLoading(true)
-                  try {
-                    const res = await fetch("/api/seed-admin")
-                    const data = await res.json().catch(() => ({}))
-                    setSeedMessage(data.message || data.error || (res.ok ? "Hesap oluşturuldu." : "İşlem başarısız."))
-                    if (res.ok) setTimeout(() => setSeedMessage(""), 5000)
-                  } catch {
-                    setSeedMessage("Bağlantı hatası.")
-                  }
-                  setSeedLoading(false)
-                }}
-                disabled={seedLoading}
-                style={{ background: "none", border: "none", color: "#1a237e", cursor: "pointer", textDecoration: "underline", padding: 0, font: "inherit" }}
-              >
-                {seedLoading ? "Oluşturuluyor..." : "Yönetici hesabı oluştur (the_boss / Admin123!)"}
-              </button>
-            </Typography>
-            {seedMessage && (
-              <Typography variant="caption" display="block" sx={{ mt: 0.5, textAlign: "center", color: "success.main" }}>
-                {seedMessage}
-              </Typography>
+            {/* Seed butonu sadece geliştirme ortamında görünür */}
+            {process.env.NODE_ENV === "development" && (
+              <>
+                <Typography variant="caption" display="block" sx={{ mt: 1, textAlign: "center", color: "text.secondary" }}>
+                  İlk giriş?{" "}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setSeedMessage("")
+                      setSeedLoading(true)
+                      try {
+                        const res = await fetch("/api/seed-admin")
+                        const data = await res.json().catch(() => ({}))
+                        setSeedMessage(data.message || data.error || (res.ok ? "Hesap oluşturuldu." : "İşlem başarısız."))
+                        if (res.ok) setTimeout(() => setSeedMessage(""), 5000)
+                      } catch {
+                        setSeedMessage("Bağlantı hatası.")
+                      }
+                      setSeedLoading(false)
+                    }}
+                    disabled={seedLoading}
+                    style={{ background: "none", border: "none", color: "#1a237e", cursor: "pointer", textDecoration: "underline", padding: 0, font: "inherit" }}
+                  >
+                    {seedLoading ? "Oluşturuluyor..." : "Yönetici hesabı oluştur"}
+                  </button>
+                </Typography>
+                {seedMessage && (
+                  <Typography variant="caption" display="block" sx={{ mt: 0.5, textAlign: "center", color: "success.main" }}>
+                    {seedMessage}
+                  </Typography>
+                )}
+              </>
             )}
           </form>
         </Paper>

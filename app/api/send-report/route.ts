@@ -1,10 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
 import fs from "fs"
 import path from "path"
-import { saveWorkReport, initializeDatabase, getSiteReportEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate } from "@/lib/database"
+import { saveWorkReport, initializeDatabase, getSiteReportEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler } from "@/lib/database"
 import { isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
 import { getSessionFromRequest, canDoDataEntry } from "@/lib/auth"
+import { buildReportNotificationEmail } from "@/lib/email-templates"
+import { detectReportAnomalies } from "@/lib/anomaly-detection"
+import { publishNotification } from "@/lib/notification-bus"
 
 export async function POST(request: NextRequest) {
   const session = await getSessionFromRequest(request)
@@ -137,6 +140,47 @@ export async function POST(request: NextRequest) {
       fuelMachines: formData.fuel.machines,
     })
 
+    // Harcamaları islemler tablosuna senkronize et (idari modülle senkron)
+    if (siteIdForDb && Array.isArray(formData.expenses) && formData.expenses.length > 0) {
+      try {
+        await syncExpensesToIslemler(
+          reportId,
+          siteIdForDb,
+          formData.basicInfo.date,
+          session.id,
+          formData.expenses
+        )
+      } catch (syncErr) {
+        console.warn(`Report ${reportId}: expense sync to islemler failed:`, syncErr)
+      }
+    }
+
+    // SSE: admin dashboard'a anlık bildirim gönder (fire-and-forget)
+    try {
+      const expTotalForNotif = Array.isArray(formData.expenses)
+        ? formData.expenses.reduce((s: number, e: { amount?: string | number }) => s + (parseFloat(String(e.amount ?? "0")) || 0), 0)
+        : 0
+      const anomaliesForNotif = detectReportAnomalies({
+        machineHours: firstOperatorHours || currentMachine?.machineHours,
+        dailyPileCount: dailyPileForDb,
+        personnelTotal: formData.personnel?.total,
+        remainingPiles: remainingPilesForDb,
+        expenseTotal: expTotalForNotif || null,
+      })
+      publishNotification({
+        type: anomaliesForNotif.length > 0 ? "anomaly" : "new_report",
+        title: `Yeni Rapor: ${projectName || "Şantiye"}`,
+        message: `${formData.basicInfo.date} tarihli rapor gönderildi.${dailyPileForDb ? ` Kazık: ${dailyPileForDb}` : ""}`,
+        siteName: projectName || site?.name || "Şantiye",
+        siteCode: site?.code,
+        reportId,
+        date: formData.basicInfo.date,
+        anomalyCount: anomaliesForNotif.length,
+      })
+    } catch (notifErr) {
+      console.warn("Notification publish failed:", notifErr)
+    }
+
     // E-posta listesi: önce şantiye bazlı, yoksa varsayılan
     const siteEmails = await getSiteReportEmails(siteIdForDb)
     const settings = siteEmails.length > 0
@@ -172,10 +216,55 @@ export async function POST(request: NextRequest) {
     let emailError: string | undefined
 
     if (settings.emails.length > 0 && isEmailSendEnabled()) {
+      // Harcama toplamını hesapla
+      const expenseTotal = Array.isArray(formData.expenses)
+        ? formData.expenses.reduce((s: number, e: { amount?: string | number }) => s + (parseFloat(String(e.amount ?? "0")) || 0), 0)
+        : null
+
+      // Anomali tespiti
+      const anomalies = detectReportAnomalies({
+        machineHours: firstOperatorHours || currentMachine?.machineHours,
+        dailyPileCount: dailyPileForDb,
+        personnelTotal: formData.personnel?.total,
+        dailyFuelUsage: formData.fuel?.dailyUsage || (formData.fuel?.machines || []).reduce((s: number, m: { used?: string }) => s + (parseFloat(m?.used ?? "") || 0), 0) || null,
+        expenseTotal: expenseTotal || null,
+        remainingPiles: remainingPilesForDb,
+        notes: formData.notes,
+        dailyNotes: formData.dailyInfo?.notes,
+        selectedMachineName: formData.machineSelection?.selectedMachine?.name,
+      })
+
+      // Temiz özet e-posta — tam HTML rapor yerine
+      const appUrl = process.env.NEXTAUTH_URL || process.env.APP_URL || ""
+      const reportUrl = appUrl ? `${appUrl}/api/reports/${reportId}/preview` : undefined
+
+      const { subject: emailSubject, html: emailHtml } = buildReportNotificationEmail({
+        reportId,
+        date: formData.basicInfo.date,
+        siteName: projectName || site?.name || "Şantiye",
+        siteCode: site?.code,
+        project: projectName,
+        submittedBy: session.username || session.role,
+        dailyPileCount: dailyPileForDb,
+        totalPileCount: totalPileForDb,
+        remainingPiles: remainingPilesForDb,
+        concretePoured: currentProductionSummary?.concretePoured,
+        personnelTotal: formData.personnel?.total,
+        engineerCount: formData.personnel?.engineer,
+        machineHours: firstOperatorHours || currentMachine?.machineHours,
+        selectedMachineName: formData.machineSelection?.selectedMachine?.name,
+        dailyFuelUsage: formData.fuel?.dailyUsage || ((formData.fuel?.machines || []).reduce((s: number, m: { used?: string }) => s + (parseFloat(m?.used ?? "") || 0), 0) || null),
+        expenseTotal: expenseTotal || null,
+        notes: formData.notes,
+        dailyNotes: formData.dailyInfo?.notes,
+        anomalies,
+        reportUrl,
+      })
+
       const result = await sendReportEmail({
         to: settings.emails,
-        subject,
-        html: fullHtml,
+        subject: emailSubject,
+        html: emailHtml,
       })
       emailSent = result.sent
       emailError = result.error

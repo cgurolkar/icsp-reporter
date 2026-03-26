@@ -4,12 +4,12 @@
 
 /* Prevent horizontal overflow on mobile */
 html {
-  overflow-x: hidden;
+  overflow-x: clip; /* clip yerine hidden kullanmak child scroll'ı engeller */
   max-width: 100%;
 }
 body {
   font-family: Arial, Helvetica, sans-serif;
-  overflow-x: hidden;
+  /* overflow-x: hidden kaldırıldı — child elementlerin yatay scroll yapabilmesi için */
   max-width: 100%;
   box-sizing: border-box;
   /* PWA standalone (iOS/Android): safe area for notch & home indicator */

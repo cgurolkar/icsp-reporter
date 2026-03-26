@@ -1,8 +1,9 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
-import { Box, Container, Typography, Paper } from "@mui/material"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Box, Container, Typography, Paper, CircularProgress } from "@mui/material"
 import { ThemeProvider } from "@mui/material/styles"
 import CssBaseline from "@mui/material/CssBaseline"
 import { theme } from "@/lib/theme"
@@ -42,6 +43,36 @@ function LogoBox({ src, alt, fallbackText }: { src: string; alt: string; fallbac
 }
 
 export default function AnaGirisPage() {
+  const router = useRouter()
+  const [checking, setChecking] = useState(true)
+
+  useEffect(() => {
+    // Giriş yapmış kullanıcıyı rolüne göre yönlendir
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.user) {
+          const role = String(data.user.role ?? "").toLowerCase()
+          if (role === "operator") router.replace("/operator-form")
+          else router.replace("/proje")
+        } else {
+          setChecking(false)
+        }
+      })
+      .catch(() => setChecking(false))
+  }, [router])
+
+  if (checking) {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Box sx={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #1a237e 0%, #534bae 100%)" }}>
+          <CircularProgress sx={{ color: "#fff" }} />
+        </Box>
+      </ThemeProvider>
+    )
+  }
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -116,7 +147,7 @@ export default function AnaGirisPage() {
                 </Paper>
               </Link>
               <Link
-                href="/login"
+                href="/proje"
                 style={{ display: "block" }}
               >
                 <Paper

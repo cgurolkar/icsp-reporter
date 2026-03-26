@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSessionFromRequest } from "@/lib/auth"
 import { canAccessIdari, canManageIdariCentral } from "@/lib/auth"
-import { initializeDatabase, getEnvanter, createEnvanter } from "@/lib/database"
+import { initializeDatabase, getEnvanter, getEnvanterCount, createEnvanter } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
   const session = await getSessionFromRequest(request)
@@ -12,12 +12,22 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const siteIdParam = searchParams.get("siteId")
     const yer = searchParams.get("yer")?.trim() || undefined
+    const search = searchParams.get("search")?.trim() || undefined
+    const limitParam = searchParams.get("limit")
+    const offsetParam = searchParams.get("offset")
     const siteId = siteIdParam ? parseInt(siteIdParam, 10) : undefined
-    const list = await getEnvanter({
+    const limit = limitParam ? parseInt(limitParam, 10) : undefined
+    const offset = offsetParam ? parseInt(offsetParam, 10) : undefined
+
+    const opts = {
       siteId: siteId && !Number.isNaN(siteId) ? siteId : undefined,
       yer,
-    })
-    return NextResponse.json(list)
+      search,
+      limit: limit && !Number.isNaN(limit) ? limit : undefined,
+      offset: offset && !Number.isNaN(offset) ? offset : undefined,
+    }
+    const [list, total] = await Promise.all([getEnvanter(opts), getEnvanterCount(opts)])
+    return NextResponse.json({ data: list, total, limit: opts.limit, offset: opts.offset ?? 0 })
   } catch (error) {
     console.error("Envanter GET error:", error)
     return NextResponse.json({ error: "Liste alınamadı." }, { status: 500 })

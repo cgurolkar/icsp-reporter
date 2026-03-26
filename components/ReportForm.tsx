@@ -1,9 +1,10 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Container, Paper, Stepper, Step, StepLabel, Box, Button, Typography, Grid, Table, TableBody, TableCell, TableHead, TableRow, Alert } from "@mui/material"
+import { Container, Paper, Stepper, Step, StepLabel, Box, Button, Typography, Grid, Table, TableBody, TableCell, TableHead, TableRow, Alert, Snackbar } from "@mui/material"
 import { useLanguage } from "@/contexts/language-context"
 import LanguageSelector from "@/components/language-selector"
+import { useFormDraft, loadDraft, clearDraft } from "@/lib/use-form-draft"
 import MachineSelectionStep from "@/components/steps/machine-selection-step"
 import BasicInfoStep, { type SiteSummaryForForm } from "@/components/steps/basic-info-step"
 import ProductionSummaryStep from "@/components/steps/production-summary-step"
@@ -75,8 +76,34 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     pile_depths?: Array<{ depth?: string | number; onForaj?: boolean; bosForaj?: boolean }>
   }
   const [operatorEntriesForDate, setOperatorEntriesForDate] = useState<OperatorEntryRow[]>([])
+  const [draftSnack, setDraftSnack] = useState<{ open: boolean; savedAt?: number }>({ open: false })
+  const [draftRestoreSnack, setDraftRestoreSnack] = useState(false)
   const { t } = useLanguage()
   const stepsToUse = isRestricted ? stepsRestricted : steps
+
+  // Taslak otomatik kayıt
+  const siteIdForDraft = formData.basicInfo?.siteId ?? initialSiteId ?? null
+  const { clear: clearDraftFn } = useFormDraft(
+    formData,
+    siteIdForDraft,
+    formData.basicInfo?.siteName,
+    formData.basicInfo?.date,
+    true,
+  )
+
+  // Sayfa açıldığında taslak var mı kontrol et
+  useEffect(() => {
+    // 2sn bekle — initialSiteId zaten setlendikten sonra kontrol et
+    const timer = setTimeout(() => {
+      const siteId = formData.basicInfo?.siteId ?? initialSiteId ?? null
+      const draft = loadDraft(siteId)
+      if (draft && draft.meta.savedAt) {
+        setDraftSnack({ open: true, savedAt: draft.meta.savedAt })
+      }
+    }, 800)
+    return () => clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (initialSiteId != null && initialSiteName) {
@@ -280,6 +307,9 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
             message = "Kaydedildi. PDF oluşturuldu. E-posta listesi tanımlı değil."
           }
         }
+        // Başarılı submit: taslağı temizle
+        clearDraftFn()
+        clearDraft(siteIdForDraft)
         alert(message)
         setFormData(initialFormData)
         setActiveStep(0)
@@ -334,38 +364,40 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
             <Paper sx={{ p: 2 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>Kazık Detayları – Makine Detayları (Operatör girişi)</Typography>
               {operatorEntriesForDate.length > 0 ? (
-                <Table size="small" sx={{ minWidth: 600 }}>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell><strong>Makine</strong></TableCell>
-                      <TableCell><strong>Operatör</strong></TableCell>
-                      <TableCell><strong>Makine Saati</strong></TableCell>
-                      <TableCell><strong>Mazot</strong></TableCell>
-                      <TableCell><strong>Kazık (Ad.)</strong></TableCell>
-                      <TableCell><strong>İmalat (m)</strong></TableCell>
-                      <TableCell><strong>Boş Foraj</strong></TableCell>
-                      <TableCell><strong>Ön Foraj</strong></TableCell>
-                      <TableCell><strong>Beton Dökülen</strong></TableCell>
-                      <TableCell><strong>Not</strong></TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {operatorEntriesForDate.map((row, idx) => (
-                      <TableRow key={row.id ?? idx}>
-                        <TableCell>{row.machine_name ?? "—"}</TableCell>
-                        <TableCell>{row.username ?? "—"}</TableCell>
-                        <TableCell>{row.machine_hours ?? "—"}</TableCell>
-                        <TableCell>{row.used_fuel ?? "—"}</TableCell>
-                        <TableCell>{row.daily_pile_count ?? "—"}</TableCell>
-                        <TableCell>{row.total_production ?? "—"}</TableCell>
-                        <TableCell>{row.empty_borehole ?? "—"}</TableCell>
-                        <TableCell>{row.pre_borehole ?? "—"}</TableCell>
-                        <TableCell>{row.concrete_poured ?? "—"}</TableCell>
-                        <TableCell sx={{ maxWidth: 180 }}>{row.note ?? "—"}</TableCell>
+                <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                  <Table size="small" sx={{ minWidth: 600 }}>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell><strong>Makine</strong></TableCell>
+                        <TableCell><strong>Operatör</strong></TableCell>
+                        <TableCell><strong>Makine Saati</strong></TableCell>
+                        <TableCell><strong>Mazot</strong></TableCell>
+                        <TableCell><strong>Kazık (Ad.)</strong></TableCell>
+                        <TableCell><strong>İmalat (m)</strong></TableCell>
+                        <TableCell><strong>Boş Foraj</strong></TableCell>
+                        <TableCell><strong>Ön Foraj</strong></TableCell>
+                        <TableCell><strong>Beton Dökülen</strong></TableCell>
+                        <TableCell><strong>Not</strong></TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHead>
+                    <TableBody>
+                      {operatorEntriesForDate.map((row, idx) => (
+                        <TableRow key={row.id ?? idx}>
+                          <TableCell>{row.machine_name ?? "—"}</TableCell>
+                          <TableCell>{row.username ?? "—"}</TableCell>
+                          <TableCell>{row.machine_hours ?? "—"}</TableCell>
+                          <TableCell>{row.used_fuel ?? "—"}</TableCell>
+                          <TableCell>{row.daily_pile_count ?? "—"}</TableCell>
+                          <TableCell>{row.total_production ?? "—"}</TableCell>
+                          <TableCell>{row.empty_borehole ?? "—"}</TableCell>
+                          <TableCell>{row.pre_borehole ?? "—"}</TableCell>
+                          <TableCell>{row.concrete_poured ?? "—"}</TableCell>
+                          <TableCell sx={{ maxWidth: 180 }}>{row.note ?? "—"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </Box>
               ) : (
                 <Alert severity="warning">Operatör giriş yapmamıştır. Lütfen operatörün makine bilgilerini girmesini bekleyin veya raporu yine de kaydedebilirsiniz.</Alert>
               )}
@@ -434,38 +466,40 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
             <Paper sx={{ p: 2 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>Kazık Detayları – Makine Detayları (Operatör girişi)</Typography>
               {operatorEntriesForDate.length > 0 ? (
-                <Table size="small" sx={{ minWidth: 600 }}>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell><strong>Makine</strong></TableCell>
-                      <TableCell><strong>Operatör</strong></TableCell>
-                      <TableCell><strong>Makine Saati</strong></TableCell>
-                      <TableCell><strong>Mazot</strong></TableCell>
-                      <TableCell><strong>Kazık (Ad.)</strong></TableCell>
-                      <TableCell><strong>İmalat (m)</strong></TableCell>
-                      <TableCell><strong>Boş Foraj</strong></TableCell>
-                      <TableCell><strong>Ön Foraj</strong></TableCell>
-                      <TableCell><strong>Beton Dökülen</strong></TableCell>
-                      <TableCell><strong>Not</strong></TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {operatorEntriesForDate.map((row, idx) => (
-                      <TableRow key={row.id ?? idx}>
-                        <TableCell>{row.machine_name ?? "—"}</TableCell>
-                        <TableCell>{row.username ?? "—"}</TableCell>
-                        <TableCell>{row.machine_hours ?? "—"}</TableCell>
-                        <TableCell>{row.used_fuel ?? "—"}</TableCell>
-                        <TableCell>{row.daily_pile_count ?? "—"}</TableCell>
-                        <TableCell>{row.total_production ?? "—"}</TableCell>
-                        <TableCell>{row.empty_borehole ?? "—"}</TableCell>
-                        <TableCell>{row.pre_borehole ?? "—"}</TableCell>
-                        <TableCell>{row.concrete_poured ?? "—"}</TableCell>
-                        <TableCell sx={{ maxWidth: 180 }}>{row.note ?? "—"}</TableCell>
+                <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                  <Table size="small" sx={{ minWidth: 600 }}>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell><strong>Makine</strong></TableCell>
+                        <TableCell><strong>Operatör</strong></TableCell>
+                        <TableCell><strong>Makine Saati</strong></TableCell>
+                        <TableCell><strong>Mazot</strong></TableCell>
+                        <TableCell><strong>Kazık (Ad.)</strong></TableCell>
+                        <TableCell><strong>İmalat (m)</strong></TableCell>
+                        <TableCell><strong>Boş Foraj</strong></TableCell>
+                        <TableCell><strong>Ön Foraj</strong></TableCell>
+                        <TableCell><strong>Beton Dökülen</strong></TableCell>
+                        <TableCell><strong>Not</strong></TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHead>
+                    <TableBody>
+                      {operatorEntriesForDate.map((row, idx) => (
+                        <TableRow key={row.id ?? idx}>
+                          <TableCell>{row.machine_name ?? "—"}</TableCell>
+                          <TableCell>{row.username ?? "—"}</TableCell>
+                          <TableCell>{row.machine_hours ?? "—"}</TableCell>
+                          <TableCell>{row.used_fuel ?? "—"}</TableCell>
+                          <TableCell>{row.daily_pile_count ?? "—"}</TableCell>
+                          <TableCell>{row.total_production ?? "—"}</TableCell>
+                          <TableCell>{row.empty_borehole ?? "—"}</TableCell>
+                          <TableCell>{row.pre_borehole ?? "—"}</TableCell>
+                          <TableCell>{row.concrete_poured ?? "—"}</TableCell>
+                          <TableCell sx={{ maxWidth: 180 }}>{row.note ?? "—"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </Box>
               ) : (
                 <Alert severity="info">Bu şantiye ve tarih için henüz operatör girişi yok. Operatör makine girişi yaptığında burada görünecektir.</Alert>
               )}
@@ -549,15 +583,40 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
         <Typography variant="h6" sx={{ color: "var(--icsp-lacivert)", fontWeight: 600, mb: 3 }}>
           {t("daily_work_report")}
         </Typography>
-        <Stepper activeStep={activeStep} sx={{ mb: 4 }} alternativeLabel>
-          {stepsToUse.map((label) => (
-            <Step key={label}>
-              <StepLabel sx={{ "& .MuiStepLabel-label": { fontWeight: 500, fontSize: { xs: "0.8rem", sm: "0.9rem" } }, "& .MuiStepIcon-root": { fontSize: { xs: "1.1rem", sm: "1.5rem" } } }}>
-                {t(label)}
-              </StepLabel>
-            </Step>
-          ))}
-        </Stepper>
+        {/* Masaüstü: tam stepper, mobil: adım X / Y göstergesi */}
+        <Box sx={{ display: { xs: "none", sm: "block" }, mb: 4 }}>
+          <Stepper activeStep={activeStep} alternativeLabel>
+            {stepsToUse.map((label) => (
+              <Step key={label}>
+                <StepLabel sx={{ "& .MuiStepLabel-label": { fontWeight: 500, fontSize: "0.85rem" }, "& .MuiStepIcon-root": { fontSize: "1.4rem" } }}>
+                  {t(label)}
+                </StepLabel>
+              </Step>
+            ))}
+          </Stepper>
+        </Box>
+        {/* Mobil adım göstergesi */}
+        <Box sx={{ display: { xs: "block", sm: "none" }, mb: 3 }}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, color: "var(--icsp-lacivert)" }}>
+              {t(stepsToUse[activeStep])}
+            </Typography>
+            <Typography variant="caption" sx={{ color: "text.secondary" }}>
+              {activeStep + 1} / {stepsToUse.length}
+            </Typography>
+          </Box>
+          <Box sx={{ width: "100%", height: 6, borderRadius: 3, bgcolor: "#e0e0e0", overflow: "hidden" }}>
+            <Box
+              sx={{
+                height: "100%",
+                borderRadius: 3,
+                bgcolor: "var(--icsp-lacivert)",
+                width: `${((activeStep + 1) / stepsToUse.length) * 100}%`,
+                transition: "width 0.3s ease",
+              }}
+            />
+          </Box>
+        </Box>
         <Box sx={{ minHeight: { xs: 200, sm: 400 }, mb: 4, p: { xs: 1, sm: 3 }, backgroundColor: "background.paper", borderRadius: 2, border: "1px solid #e0e0e0", width: "100%", maxWidth: "100%", boxSizing: "border-box", overflowX: "auto" }}>
           {renderStepContent(activeStep)}
         </Box>
@@ -586,6 +645,51 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
           <Button onClick={() => { setShowAddMachinePrompt(false); setActiveStep(0) }} color="secondary" variant="outlined">{t("yes_add_machine")}</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Taslak bulundu — yükle / iptal */}
+      <Dialog open={draftSnack.open} onClose={() => setDraftSnack({ open: false })} maxWidth="xs" fullWidth>
+        <DialogTitle>Kaydedilmemiş Taslak Bulundu</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: "#64748b" }}>
+            {draftSnack.savedAt
+              ? `${new Date(draftSnack.savedAt).toLocaleString("tr-TR")} tarihinde otomatik kaydedilmiş bir form taslağı var.`
+              : "Önceki oturumdan kaydedilmiş bir taslak var."}
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 1, color: "#64748b" }}>
+            Kaldığınız yerden devam etmek ister misiniz?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            clearDraft(siteIdForDraft)
+            setDraftSnack({ open: false })
+          }} sx={{ color: "#9e9e9e" }}>
+            Hayır, Sil
+          </Button>
+          <Button variant="contained" onClick={() => {
+            const draft = loadDraft<typeof formData>(siteIdForDraft)
+            if (draft?.formData) {
+              setFormData(draft.formData)
+              setDraftRestoreSnack(true)
+            }
+            setDraftSnack({ open: false })
+          }}>
+            Evet, Devam Et
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Taslak yüklendi bilgisi */}
+      <Snackbar
+        open={draftRestoreSnack}
+        autoHideDuration={3000}
+        onClose={() => setDraftRestoreSnack(false)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert severity="success" onClose={() => setDraftRestoreSnack(false)}>
+          Taslak yüklendi. Kaldığınız yerden devam edebilirsiniz.
+        </Alert>
+      </Snackbar>
 
       <Dialog open={showPrevDayPlannedDialog} onClose={() => setShowPrevDayPlannedDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Dün kaydettiğiniz bir sonraki gün planlanan işler</DialogTitle>

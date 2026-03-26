@@ -4,6 +4,9 @@ import { cookies } from "next/headers"
 export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not Found" }, { status: 404 })
+  }
   try {
     const cookieStore = cookies()
     const authToken = cookieStore.get('auth-token')

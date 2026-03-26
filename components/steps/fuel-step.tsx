@@ -126,7 +126,8 @@ export default function FuelStep({ data, onChange, selectedMachine, additionalMa
         sx={{ p: 3, background: "linear-gradient(135deg, #fce4ec 0%, #f8bbd9 100%)", border: "1px solid #e91e63" }}
       >
         {/* Machine Fuel Table */}
-        <Table size="small" sx={{ border: "2px solid #000", backgroundColor: "white", mb: 3 }}>
+        <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch", mb: 3 }}>
+        <Table size="small" sx={{ border: "2px solid #000", backgroundColor: "white", minWidth: 520 }}>
           <TableHead>
             <TableRow sx={{ backgroundColor: "#f0f0f0" }}>
               <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "20%" }}>
@@ -259,6 +260,7 @@ export default function FuelStep({ data, onChange, selectedMachine, additionalMa
             ))}
           </TableBody>
         </Table>
+        </Box>
 
         <Box sx={{ display: "flex", justifyContent: "center", mb: 3 }}>
           <Button

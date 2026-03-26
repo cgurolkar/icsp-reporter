@@ -51,7 +51,8 @@ export function canAccessAdmin(role: Role): boolean {
 }
 
 export function canViewReports(role: Role): boolean {
-  return role === "admin" || role === "manager"
+  // admin ve manager tüm şantiyeleri görebilir; user ve personel kendi şantiyelerini görebilir
+  return role === "admin" || role === "manager" || role === "user" || role === "personel"
 }
 
 export function canDoDataEntry(role: Role): boolean {

@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
 
   try {
     await initializeDatabase()
-    const count = await approvePuantaj(siteId, baslangicTarih, bitisTarih, session.userId)
+    const count = await approvePuantaj(siteId, baslangicTarih, bitisTarih, session.id)
     return NextResponse.json({ ok: true, count })
   } catch (error) {
     console.error("Puantaj onay POST error:", error)

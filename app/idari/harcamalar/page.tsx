@@ -156,6 +156,7 @@ export default function IdariHarcamalarPage() {
         ) : list.length === 0 ? (
           <Typography color="text.secondary">Kayıt yok.</Typography>
         ) : (
+          <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -172,12 +173,20 @@ export default function IdariHarcamalarPage() {
                   <TableCell>{String(row.islem_tarihi).slice(0, 10)}</TableCell>
                   <TableCell>{row.kategori_adi}</TableCell>
                   <TableCell align="right">{Number(row.tutar).toLocaleString("tr-TR")}</TableCell>
-                  <TableCell>{row.odeme_kaynagi === "Merkez_Banka" ? "Merkez" : "Şantiye Kasası"}</TableCell>
+                  <TableCell>
+                    {row.odeme_kaynagi === "Merkez_Banka" ? "Merkez" : row.odeme_kaynagi === "rapor" ? "Günlük Rapor" : "Şantiye Kasası"}
+                  </TableCell>
                   <TableCell>{row.aciklama ?? "—"}</TableCell>
                 </TableRow>
               ))}
+              <TableRow sx={{ backgroundColor: "#f5f5f5" }}>
+                <TableCell colSpan={2}><strong>Toplam</strong></TableCell>
+                <TableCell align="right"><strong>{list.reduce((s, r) => s + Number(r.tutar), 0).toLocaleString("tr-TR")}</strong></TableCell>
+                <TableCell colSpan={2} />
+              </TableRow>
             </TableBody>
           </Table>
+          </Box>
         )}
       </Paper>
 

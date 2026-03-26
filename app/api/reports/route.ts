@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getAggregatedStats, getWorkReportsFiltered, initializeDatabase } from "@/lib/database"
-import { getSessionFromRequest, canViewReports } from "@/lib/auth"
+import { getSessionFromRequest, canViewReports, canViewAllSites } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
 
@@ -20,7 +20,17 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get("endDate") || undefined
     const raw = searchParams.get("raw") === "1"
 
-    const siteId = siteIdParam ? parseInt(siteIdParam, 10) : undefined
+    // user/personel rolleri yalnızca kendi şantiyelerinin raporlarını görebilir
+    let siteId: number | undefined
+    if (!canViewAllSites(session.role)) {
+      // Şantiye kısıtlaması: session.siteId'den farklı bir şantiye istenemez
+      if (session.siteId == null) {
+        return NextResponse.json({ error: "Şantiye atanmamış." }, { status: 403 })
+      }
+      siteId = session.siteId
+    } else {
+      siteId = siteIdParam ? parseInt(siteIdParam, 10) : undefined
+    }
     const options = { siteId: siteId ?? null, startDate, endDate }
 
     if (raw) {
