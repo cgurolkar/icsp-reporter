@@ -29,9 +29,11 @@ export interface EnvanterExcelRow {
   fiyat?: number | null
   yer?: string | null
   fotograf_yolu?: string | null
+  /** Excel satırında gerçekten dolu olan sütunlar (içe aktarmada kısmi güncelleme) */
+  filledFields: EnvanterExcelField[]
 }
 
-type EnvanterField =
+export type EnvanterExcelField =
   | "kod"
   | "malzeme_adi"
   | "aciklama"
@@ -39,6 +41,8 @@ type EnvanterField =
   | "fiyat"
   | "yer"
   | "fotograf_yolu"
+
+type EnvanterField = EnvanterExcelField
 
 /**
  * Header normalizasyonu: Turkish İ sorunu, büyük/küçük harf, fazla boşluk.
@@ -244,7 +248,7 @@ function extractImagesFromXlsx(
       if (!existsSync(mediaPath)) continue
 
       const imgData = readFileSync(mediaPath)
-      // 2 MB sınırı — DB'de base64 sakladığımız için
+      // 2 MB sınırı — import sırasında dosyaya yazılır veya data URL geçici taşınır
       if (imgData.length > 2 * 1024 * 1024) continue
 
       const ext = (mediaFile.split(".").pop() ?? "png").toLowerCase()
@@ -302,37 +306,47 @@ export function parseEnvanterExcel(buffer: ArrayBuffer): EnvanterExcelRow[] {
   for (let i = dataStartRow; i < data.length; i++) {
     const row = data[i] as unknown[]
     const record: Record<string, unknown> = {}
+    const filled = new Set<EnvanterField>()
 
     for (let c = 0; c < colToField.length; c++) {
       const field = colToField[c]
       if (!field) continue
       const raw = row[c]
       if (field === "adet" || field === "fiyat") {
-        record[field] = toNum(raw)
+        const n = toNum(raw)
+        if (n !== null) {
+          record[field] = n
+          filled.add(field)
+        }
       } else {
-        record[field] = toStr(raw) || null
+        const s = toStr(raw)
+        if (s) {
+          record[field] = s
+          filled.add(field)
+        }
       }
     }
 
-    // Gömülü resim varsa ekle (URL sütunu boşsa)
-    const dataRowIndex = i - dataStartRow  // 0-tabanlı veri satırı indeksi
+    const dataRowIndex = i - dataStartRow
     const embeddedImage = imageMap.get(dataRowIndex)
     if (embeddedImage && !record.fotograf_yolu) {
       record.fotograf_yolu = embeddedImage
+      filled.add("fotograf_yolu")
     }
 
     const kod = toStr(record.kod)
     const malzeme_adi = toStr(record.malzeme_adi)
-    if (!kod && !malzeme_adi) continue  // boş satırları atla
+    if (!kod && !malzeme_adi) continue
 
     rows.push({
       kod: kod || `ITEM-${dataRowIndex + 1}`,
       malzeme_adi: malzeme_adi || "—",
-      aciklama: (record.aciklama as string) ?? null,
-      adet: (record.adet as number) ?? 1,
-      fiyat: (record.fiyat as number) ?? null,
-      yer: (record.yer as string) ?? null,
-      fotograf_yolu: (record.fotograf_yolu as string) ?? null,
+      aciklama: filled.has("aciklama") ? ((record.aciklama as string) ?? null) : null,
+      adet: filled.has("adet") ? (record.adet as number) : null,
+      fiyat: filled.has("fiyat") ? (record.fiyat as number) : null,
+      yer: filled.has("yer") ? ((record.yer as string) ?? null) : null,
+      fotograf_yolu: filled.has("fotograf_yolu") ? ((record.fotograf_yolu as string) ?? null) : null,
+      filledFields: Array.from(filled),
     })
   }
 

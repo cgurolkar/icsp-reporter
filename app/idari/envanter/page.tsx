@@ -14,6 +14,7 @@ import {
   GridView, ViewList, AddPhotoAlternate,
 } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
+import { SortableTh, type SortDir } from "@/components/idari/SortableTh"
 
 const DURUM_OPTS = [
   { value: "aktif", label: "Aktif" },
@@ -65,6 +66,8 @@ export default function IdariEnvanterPage() {
   const [deleting, setDeleting] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
+  const [sortBy, setSortBy] = useState("kod")
+  const [sortDir, setSortDir] = useState<SortDir>("asc")
   const imgInputRef = useRef<HTMLInputElement>(null)
   const [imgPreview, setImgPreview] = useState<string>("")
 
@@ -84,6 +87,12 @@ export default function IdariEnvanterPage() {
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
   const canManage = role === "admin" || role === "manager"
 
+  const handleListSort = (k: string, d: SortDir) => {
+    setSortBy(k)
+    setSortDir(d)
+    setPage(0)
+  }
+
   useEffect(() => {
     fetch("/api/sites").then((r) => (r.ok ? r.json() : [])).then(setSites).catch(() => setSites([]))
   }, [])
@@ -97,6 +106,8 @@ export default function IdariEnvanterPage() {
     if (search.trim()) params.set("search", search.trim())
     params.set("limit", String(PAGE_SIZE))
     params.set("offset", String(p * PAGE_SIZE))
+    params.set("sortBy", sortBy)
+    params.set("sortDir", sortDir)
     fetch(`/api/idari/envanter?${params}`)
       .then((r) => (r.ok ? r.json() : { data: [], total: 0 }))
       .then((res: { data: EnvanterRow[]; total: number } | EnvanterRow[]) => {
@@ -107,7 +118,7 @@ export default function IdariEnvanterPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { setPage(0); loadList(0) }, [siteId, yerFilter, durumFilter, search])
+  useEffect(() => { setPage(0); loadList(0) }, [siteId, yerFilter, durumFilter, search, sortBy, sortDir])
   useEffect(() => { loadList(page) }, [page])
 
   const openAdd = () => {
@@ -293,7 +304,18 @@ export default function IdariEnvanterPage() {
                       const fd = new FormData(); fd.append("file", file)
                       const res = await fetch("/api/idari/envanter/import", { method: "POST", body: fd })
                       const data = await res.json().catch(() => ({}))
-                      if (res.ok) { alert(`${data.inserted} kayıt eklendi.${data.failed > 0 ? ` ${data.failed} atlandı.` : ""}`); loadList() }
+                      if (res.ok) {
+                        const parts = [
+                          data.inserted > 0 ? `${data.inserted} yeni` : "",
+                          data.updated > 0 ? `${data.updated} güncellendi` : "",
+                          data.skipped > 0 ? `${data.skipped} değişiklik yok (aynı kod, boş satır)` : "",
+                        ].filter(Boolean)
+                        alert(
+                          (parts.length ? parts.join(", ") : "İşlem tamamlandı") +
+                            (data.failed > 0 ? ` · ${data.failed} hata` : ""),
+                        )
+                        loadList()
+                      }
                       else alert(data.error || "Aktarma hatası.")
                     } finally { setImporting(false); e.target.value = "" }
                   }} />
@@ -316,12 +338,12 @@ export default function IdariEnvanterPage() {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell><strong>Malzeme</strong></TableCell>
-                  <TableCell><strong>Kod</strong></TableCell>
-                  <TableCell align="center"><strong>Adet</strong></TableCell>
-                  <TableCell><strong>Yer</strong></TableCell>
-                  <TableCell><strong>Durum</strong></TableCell>
-                  <TableCell align="right"><strong>Fiyat</strong></TableCell>
+                  <SortableTh label="Malzeme" sortKey="malzeme_adi" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
+                  <SortableTh label="Kod" sortKey="kod" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
+                  <SortableTh label="Adet" sortKey="adet" sortBy={sortBy} sortDir={sortDir} align="center" onSort={handleListSort} />
+                  <SortableTh label="Yer" sortKey="yer" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
+                  <SortableTh label="Durum" sortKey="durum" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
+                  <SortableTh label="Fiyat" sortKey="fiyat" sortBy={sortBy} sortDir={sortDir} align="right" onSort={handleListSort} />
                   <TableCell align="right">İşlem</TableCell>
                 </TableRow>
               </TableHead>

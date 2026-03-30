@@ -49,6 +49,7 @@ import {
   AddPhotoAlternate,
 } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
+import { SortableTh, type SortDir } from "@/components/idari/SortableTh"
 
 const GOREVLER = [
   "İşçi", "Satın Alma", "Formen", "Operatör", "Mühendis",
@@ -136,6 +137,8 @@ export default function IdariPersonelPage() {
   const [importing, setImporting] = useState(false)
   const [tabValue, setTabValue] = useState<"aktif" | "arsiv">("aktif")
   const [viewMode, setViewMode] = useState<"list" | "grid">("list")
+  const [sortBy, setSortBy] = useState("ad_soyad")
+  const [sortDir, setSortDir] = useState<SortDir>("asc")
 
   // İzin dialog state
   const [izinDialogOpen, setIzinDialogOpen] = useState(false)
@@ -176,6 +179,12 @@ export default function IdariPersonelPage() {
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
   const canManage = role === "admin" || role === "manager"
 
+  const handleListSort = (k: string, d: SortDir) => {
+    setSortBy(k)
+    setSortDir(d)
+    setPage(0)
+  }
+
   const loadSites = () => {
     fetch("/api/sites")
       .then((r) => (r.ok ? r.json() : []))
@@ -192,6 +201,8 @@ export default function IdariPersonelPage() {
     params.set("arsiv", tabValue === "arsiv" ? "true" : "false")
     params.set("limit", String(PAGE_SIZE))
     params.set("offset", String(p * PAGE_SIZE))
+    params.set("sortBy", sortBy)
+    params.set("sortDir", sortDir)
     fetch(`/api/idari/personel?${params}`)
       .then((r) => (r.ok ? r.json() : { data: [], total: 0 }))
       .then((res: { data: PersonelRow[]; total: number } | PersonelRow[]) => {
@@ -203,7 +214,7 @@ export default function IdariPersonelPage() {
   }
 
   useEffect(() => { loadSites() }, [])
-  useEffect(() => { setPage(0); loadList(0) }, [siteId, gorev, search, tabValue])
+  useEffect(() => { setPage(0); loadList(0) }, [siteId, gorev, search, tabValue, sortBy, sortDir])
   useEffect(() => { loadList(page) }, [page])
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -464,11 +475,11 @@ export default function IdariPersonelPage() {
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ width: 48 }}></TableCell>
-                  <TableCell><strong>Ad Soyad</strong></TableCell>
-                  <TableCell><strong>Görev</strong></TableCell>
-                  <TableCell><strong>TC / Pasaport</strong></TableCell>
-                  <TableCell><strong>Görev Yeri</strong></TableCell>
-                  <TableCell align="right"><strong>Günlük / Aylık</strong></TableCell>
+                  <SortableTh label="Ad Soyad" sortKey="ad_soyad" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
+                  <SortableTh label="Görev" sortKey="gorev" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
+                  <SortableTh label="TC / Pasaport" sortKey="kimlik" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
+                  <SortableTh label="Görev Yeri" sortKey="gorev_yeri" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
+                  <SortableTh label="Günlük / Aylık" sortKey="ucret" sortBy={sortBy} sortDir={sortDir} align="right" onSort={handleListSort} />
                   <TableCell align="right">İşlem</TableCell>
                 </TableRow>
               </TableHead>

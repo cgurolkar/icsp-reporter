@@ -4,6 +4,8 @@ import { getSessionFromRequest } from "@/lib/auth"
 import { canAccessIdari, canManageIdariCentral } from "@/lib/auth"
 import { initializeDatabase, getPersoneller, getPersonellerCount, createPersonel, upsertPersonelAtama } from "@/lib/database"
 
+const PERSONEL_SORT_KEYS = new Set(["ad_soyad", "gorev", "kimlik", "gorev_yeri", "ucret"])
+
 const PersonelSchema = z.object({
   ad: z.string().min(1).max(100).trim(),
   soyad: z.string().min(1).max(100).trim(),
@@ -46,6 +48,11 @@ export async function GET(request: NextRequest) {
     const arsivParam = searchParams.get("arsiv")
     const arsiv = arsivParam === "true" ? true : arsivParam === "false" ? false : false // default aktif
 
+    const sortByRaw = searchParams.get("sortBy")?.trim() ?? ""
+    const sortBy = PERSONEL_SORT_KEYS.has(sortByRaw) ? sortByRaw : undefined
+    const sortDirRaw = searchParams.get("sortDir")?.toLowerCase()
+    const sortDir = sortDirRaw === "desc" || sortDirRaw === "asc" ? (sortDirRaw as "asc" | "desc") : undefined
+
     const opts = {
       siteId: siteId && !Number.isNaN(siteId) ? siteId : undefined,
       gorev,
@@ -53,6 +60,8 @@ export async function GET(request: NextRequest) {
       arsiv,
       limit: limit && !Number.isNaN(limit) ? limit : undefined,
       offset: offset && !Number.isNaN(offset) ? offset : undefined,
+      sortBy: sortBy ?? null,
+      sortDir: sortDir ?? null,
     }
     const [list, total] = await Promise.all([getPersoneller(opts), getPersonellerCount(opts)])
     return NextResponse.json({ data: list, total, limit: opts.limit, offset: opts.offset ?? 0 })

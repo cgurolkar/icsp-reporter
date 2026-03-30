@@ -3,6 +3,16 @@ import { getSessionFromRequest } from "@/lib/auth"
 import { canAccessIdari, canManageIdariCentral } from "@/lib/auth"
 import { initializeDatabase, getEnvanter, getEnvanterCount, createEnvanter } from "@/lib/database"
 
+const ENVANTER_SORT_KEYS = new Set([
+  "malzeme_adi",
+  "kod",
+  "adet",
+  "yer",
+  "durum",
+  "fiyat",
+  "site_name",
+])
+
 export async function GET(request: NextRequest) {
   const session = await getSessionFromRequest(request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
@@ -19,12 +29,19 @@ export async function GET(request: NextRequest) {
     const limit = limitParam ? parseInt(limitParam, 10) : undefined
     const offset = offsetParam ? parseInt(offsetParam, 10) : undefined
 
+    const sortByRaw = searchParams.get("sortBy")?.trim() ?? ""
+    const sortBy = ENVANTER_SORT_KEYS.has(sortByRaw) ? sortByRaw : undefined
+    const sortDirRaw = searchParams.get("sortDir")?.toLowerCase()
+    const sortDir = sortDirRaw === "desc" || sortDirRaw === "asc" ? (sortDirRaw as "asc" | "desc") : undefined
+
     const opts = {
       siteId: siteId && !Number.isNaN(siteId) ? siteId : undefined,
       yer,
       search,
       limit: limit && !Number.isNaN(limit) ? limit : undefined,
       offset: offset && !Number.isNaN(offset) ? offset : undefined,
+      sortBy: sortBy ?? null,
+      sortDir: sortDir ?? null,
     }
     const [list, total] = await Promise.all([getEnvanter(opts), getEnvanterCount(opts)])
     return NextResponse.json({ data: list, total, limit: opts.limit, offset: opts.offset ?? 0 })

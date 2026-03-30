@@ -1583,8 +1583,44 @@ export async function deleteWorkReport(id: number) {
   }
 }
 
+const GOREV_YERI_ORDER_SUBQ = `(SELECT s2.name FROM personel_atama pa2 LEFT JOIN sites s2 ON s2.id = pa2.site_id WHERE pa2.personel_id = p.id AND (pa2.bitis_tarihi IS NULL OR pa2.bitis_tarihi >= CURRENT_DATE) ORDER BY pa2.baslangic_tarihi DESC NULLS LAST LIMIT 1)`
+
+function personelOrderClause(sortBy?: string | null, sortDir?: string | null): string {
+  const dir = sortDir?.toLowerCase() === "desc" ? "DESC" : "ASC"
+  const key = String(sortBy || "").trim() || "ad_soyad"
+  let order: string
+  switch (key) {
+    case "gorev":
+      order = `p.gorev ${dir} NULLS LAST`
+      break
+    case "kimlik":
+      order = `COALESCE(NULLIF(TRIM(p.tc_kimlik), ''), NULLIF(TRIM(p.pasaport_no), '')) ${dir} NULLS LAST`
+      break
+    case "gorev_yeri":
+      order = `${GOREV_YERI_ORDER_SUBQ} ${dir} NULLS LAST`
+      break
+    case "ucret":
+      order = `COALESCE(p.gunluk_yevmiye, p.aylik_maas) ${dir} NULLS LAST`
+      break
+    case "ad_soyad":
+    default:
+      order = `p.soyad ${dir} NULLS LAST, p.ad ${dir} NULLS LAST`
+      break
+  }
+  return ` ORDER BY ${order}, p.id ASC`
+}
+
 // ---------- İdari modül: Personel ----------
-export async function getPersoneller(options: { siteId?: number | null; gorev?: string | null; limit?: number; offset?: number; search?: string; arsiv?: boolean } = {}) {
+export async function getPersoneller(options: {
+  siteId?: number | null
+  gorev?: string | null
+  limit?: number
+  offset?: number
+  search?: string
+  arsiv?: boolean
+  sortBy?: string | null
+  sortDir?: "asc" | "desc" | null
+} = {}) {
   const client = await pool.connect()
   try {
     const { siteId, gorev, limit, offset, search, arsiv } = options
@@ -1600,7 +1636,7 @@ export async function getPersoneller(options: { siteId?: number | null; gorev?: 
         : ``
 
     if (siteId != null && siteId > 0) {
-      const query = `SELECT p.*, ${atamalarSubq} FROM personeller p WHERE EXISTS (SELECT 1 FROM personel_atama pa WHERE pa.personel_id = p.id AND pa.site_id = $1 AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= CURRENT_DATE)) ${arsivFilter} ORDER BY p.soyad, p.ad`
+      const query = `SELECT p.*, ${atamalarSubq} FROM personeller p WHERE EXISTS (SELECT 1 FROM personel_atama pa WHERE pa.personel_id = p.id AND pa.site_id = $1 AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= CURRENT_DATE)) ${arsivFilter}${personelOrderClause(options.sortBy, options.sortDir)}`
       const result = await client.query(query, [siteId])
       return result.rows
     }
@@ -1616,7 +1652,7 @@ export async function getPersoneller(options: { siteId?: number | null; gorev?: 
       params.push(s)
       i++
     }
-    query += ` ORDER BY p.soyad, p.ad`
+    query += personelOrderClause(options.sortBy, options.sortDir)
     if (limit && limit > 0) {
       query += ` LIMIT $${i++}`
       params.push(limit)
@@ -1828,19 +1864,25 @@ export async function addPersonelAtama(data: { personel_id: number; site_id: num
 }
 
 // ---------- İdari modül: Puantaj ----------
-/** O şantiyede o tarihte atanmış personel + o günkü puantaj kayıtları */
+/** O şantiyede o tarihte atanmış personel + o günkü puantaj kayıtları (işten ayrılmış / henüz işe başlamamış olanlar hariç) */
 export async function getPuantajForSiteAndDate(siteId: number, tarih: string) {
   const client = await pool.connect()
   const dateStr = (tarih || '').slice(0, 10)
   try {
     const r = await client.query(`
-      SELECT p.id AS personel_id, p.ad, p.soyad, p.gorev,
-        pu.id AS puantaj_id, pu.carpan, pu.durum_kod, pu.mesai_saat, pu.notlar, pu.durum AS puantaj_durum
-      FROM personeller p
-      INNER JOIN personel_atama pa ON pa.personel_id = p.id AND pa.site_id = $1
-        AND pa.baslangic_tarihi <= $2 AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= $2)
-      LEFT JOIN puantaj pu ON pu.personel_id = p.id AND pu.site_id = $1 AND pu.tarih = $2
-      ORDER BY p.soyad, p.ad
+      SELECT t.personel_id, t.ad, t.soyad, t.gorev, t.puantaj_id, t.carpan, t.durum_kod, t.mesai_saat, t.notlar, t.puantaj_durum
+      FROM (
+        SELECT DISTINCT ON (p.id) p.id AS personel_id, p.ad, p.soyad, p.gorev,
+          pu.id AS puantaj_id, pu.carpan, pu.durum_kod, pu.mesai_saat, pu.notlar, pu.durum AS puantaj_durum
+        FROM personeller p
+        INNER JOIN personel_atama pa ON pa.personel_id = p.id AND pa.site_id = $1
+          AND pa.baslangic_tarihi <= $2::date AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= $2::date)
+        LEFT JOIN puantaj pu ON pu.personel_id = p.id AND pu.site_id = $1 AND pu.tarih = $2::date
+        WHERE (p.isten_cikis_tarihi IS NULL OR p.isten_cikis_tarihi > $2::date)
+          AND (p.ise_giris_tarihi IS NULL OR p.ise_giris_tarihi <= $2::date)
+        ORDER BY p.id
+      ) t
+      ORDER BY t.soyad, t.ad
     `, [siteId, dateStr])
     return r.rows.map((row: Record<string, unknown>) => ({
       personel_id: row.personel_id,
@@ -2149,8 +2191,31 @@ export async function getPersonelBelgeTipleri() {
   }
 }
 
+function envanterOrderClause(sortBy?: string | null, sortDir?: string | null): string {
+  const dir = sortDir?.toLowerCase() === "desc" ? "DESC" : "ASC"
+  const colMap: Record<string, string> = {
+    malzeme_adi: "e.malzeme_adi",
+    kod: "e.kod",
+    adet: "e.adet",
+    yer: "e.yer",
+    durum: "e.durum",
+    fiyat: "e.fiyat",
+    site_name: "s.name",
+  }
+  const col = colMap[String(sortBy || "").trim()] ?? "e.kod"
+  return ` ORDER BY ${col} ${dir} NULLS LAST, e.id ASC`
+}
+
 // ---------- İdari modül: Envanter ----------
-export async function getEnvanter(options: { siteId?: number | null; yer?: string | null; limit?: number; offset?: number; search?: string } = {}) {
+export async function getEnvanter(options: {
+  siteId?: number | null
+  yer?: string | null
+  limit?: number
+  offset?: number
+  search?: string
+  sortBy?: string | null
+  sortDir?: "asc" | "desc" | null
+} = {}) {
   const client = await pool.connect()
   try {
     let query = `SELECT e.*, s.name AS site_name FROM envanter e LEFT JOIN sites s ON e.site_id = s.id WHERE 1=1`
@@ -2170,7 +2235,7 @@ export async function getEnvanter(options: { siteId?: number | null; yer?: strin
       params.push(s)
       i++
     }
-    query += ` ORDER BY e.kod`
+    query += envanterOrderClause(options.sortBy, options.sortDir)
     if (options.limit && options.limit > 0) {
       query += ` LIMIT $${i++}`
       params.push(options.limit)
@@ -2217,6 +2282,21 @@ export async function getEnvanterById(id: number) {
   const client = await pool.connect()
   try {
     const r = await client.query(`SELECT e.*, s.name AS site_name FROM envanter e LEFT JOIN sites s ON e.site_id = s.id WHERE e.id = $1`, [id])
+    return r.rows[0] ?? null
+  } finally {
+    client.release()
+  }
+}
+
+export async function getEnvanterByKod(kod: string) {
+  const k = String(kod ?? "").trim()
+  if (!k) return null
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `SELECT e.*, s.name AS site_name FROM envanter e LEFT JOIN sites s ON e.site_id = s.id WHERE e.kod = $1 LIMIT 1`,
+      [k],
+    )
     return r.rows[0] ?? null
   } finally {
     client.release()
