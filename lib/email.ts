@@ -1,3 +1,4 @@
+import tls from "node:tls"
 import nodemailer from "nodemailer"
 import type SMTPTransport from "nodemailer/lib/smtp-transport"
 
@@ -17,7 +18,7 @@ function envBool(key: string): boolean {
  * Şifrede @, # veya boşluk varsa değeri çift tırnak içinde yazın: SMTP_PASSWORD="...."
  * SMTP_DEBUG=true ile sunucu konsolunda SMTP diyaloğu loglanır (geçici teşhis).
  * Sertifika alan adı SMTP_HOST ile uyuşmuyorsa (ör. cert: *.natrohost.com):
- *   SMTP_TLS_SERVERNAME=natrohost.com — TLS doğrulamasını sertifikadaki isimle eşleştirir.
+ *   SMTP_TLS_SERVERNAME=natrohost.com — SNI + sertifika doğrulaması bu isimle yapılır (Natro/kurumsaleposta).
  * Son çare: SMTP_TLS_INSECURE=true (sertifika doğrulamasını kapatır, MITM riski).
  */
 export function getMailTransporter(): nodemailer.Transporter | null {
@@ -45,7 +46,15 @@ export function getMailTransporter(): nodemailer.Transporter | null {
     tls: {
       rejectUnauthorized: tlsReject,
       minVersion: "TLSv1.2",
-      ...(tlsServername ? { servername: tlsServername } : {}),
+      ...(tlsServername
+        ? {
+            servername: tlsServername,
+            // STARTTLS sırasında Node varsayılan olarak SMTP_HOST ile doğrular; cert farklı alan adındaysa hata verir.
+            checkServerIdentity(_hostname: string, cert: tls.PeerCertificate) {
+              return tls.checkServerIdentity(tlsServername, cert)
+            },
+          }
+        : {}),
     },
   }
 

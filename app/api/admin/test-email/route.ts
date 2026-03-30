@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error: `SMTP bağlantı doğrulaması başarısız: ${verify.error}. Port 465 çalışmıyorsa 587 + SMTP_SECURE=false deneyin; şifrede özel karakter varsa SMTP_PASSWORD="..." şeklinde tırnak kullanın.`,
+        error: `SMTP bağlantı doğrulaması başarısız: ${verify.error}. 587 kullanın (SMTP_SECURE=false). Sertifika host ile uyuşmuyorsa .env: SMTP_TLS_SERVERNAME=natrohost.com. Şifrede @ vb. için SMTP_PASSWORD="...".`,
       },
       { status: 500 },
     )
