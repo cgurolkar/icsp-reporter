@@ -6,7 +6,7 @@
 
 import { type NextRequest, NextResponse } from "next/server"
 import { getSessionFromRequest, canManageIdariCentral } from "@/lib/auth"
-import { isEmailSendEnabled, sendReportEmail } from "@/lib/email"
+import { isEmailSendEnabled, sendReportEmail, verifySmtpConnection } from "@/lib/email"
 import { buildTestEmail } from "@/lib/email-templates"
 
 export async function POST(request: NextRequest) {
@@ -27,6 +27,17 @@ export async function POST(request: NextRequest) {
 
   if (!to) {
     return NextResponse.json({ ok: false, error: "Alıcı e-posta adresi belirtilmedi ve SMTP_USER tanımlı değil." }, { status: 400 })
+  }
+
+  const verify = await verifySmtpConnection()
+  if (!verify.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `SMTP bağlantı doğrulaması başarısız: ${verify.error}. Port 465 çalışmıyorsa 587 + SMTP_SECURE=false deneyin; şifrede özel karakter varsa SMTP_PASSWORD="..." şeklinde tırnak kullanın.`,
+      },
+      { status: 500 },
+    )
   }
 
   const { subject, html } = buildTestEmail()
