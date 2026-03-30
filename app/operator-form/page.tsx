@@ -8,17 +8,14 @@ import {
   TextField,
   Button,
   Box,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Select,
   FormControlLabel,
   Checkbox,
+  Alert,
+  Chip,
 } from "@mui/material"
 import { Save, PhotoCamera, Add, Delete, ArrowForward } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
 import { useRouter } from "next/navigation"
-import { AVAILABLE_MACHINES } from "@/types/form-data"
 
 const MAX_IMAGE_SIZE_MB = 5
 const ACCEPT_IMAGE = "image/jpeg,image/png,image/webp"
@@ -32,11 +29,13 @@ function readFileAsDataUrl(file: File): Promise<string> {
   })
 }
 
-interface SiteOption {
+interface DbMachine {
   id: number
   name: string
-  code: string
-  assigned_machine_ids?: string[]
+  machine_type: string
+  marka: string | null
+  model: string | null
+  plaka_no: string | null
 }
 
 export default function OperatorFormPage() {
@@ -44,10 +43,21 @@ export default function OperatorFormPage() {
   const router = useRouter()
   const role = (user?.role ?? "").toLowerCase()
   const isOperator = role === "operator"
-  const [sites, setSites] = useState<SiteOption[]>([])
-  const [siteId, setSiteId] = useState<number | "">(user?.siteId ?? "")
+
+  // Site is always from the user's assigned site — no selection needed
+  const siteId: number | null = user?.siteId ?? null
+
   const [reportDate, setReportDate] = useState(() => new Date().toISOString().split("T")[0])
-  const [machineId, setMachineId] = useState("")
+
+  // DB machines for this site
+  const [dbMachines, setDbMachines] = useState<DbMachine[]>([])
+  const [selectedDbMachine, setSelectedDbMachine] = useState<DbMachine | null>(null)
+  const [machinesLoaded, setMachinesLoaded] = useState(false)
+
+  // Legacy string IDs for backward compat with operator_entry API
+  const machineId = selectedDbMachine ? `DB_${selectedDbMachine.id}` : ""
+  const machineName = selectedDbMachine?.name ?? ""
+
   const [motorSaatBinis, setMotorSaatBinis] = useState("")
   const [motorSaatInis, setMotorSaatInis] = useState("")
   const [startTime, setStartTime] = useState("")
@@ -63,6 +73,12 @@ export default function OperatorFormPage() {
   const [image1, setImage1] = useState("")
   const [image2, setImage2] = useState("")
   const [notes, setNotes] = useState("")
+
+  // New fields
+  const [kullanılanMalzeme, setKullanılanMalzeme] = useState("")
+  const [malzemeIhtiyaci, setMalzemeIhtiyaci] = useState(false)
+  const [servisIhtiyaci, setServisIhtiyaci] = useState(false)
+
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
   const input1Ref = useRef<HTMLInputElement>(null)
@@ -73,23 +89,18 @@ export default function OperatorFormPage() {
       router.replace("/proje")
       return
     }
-    fetch("/api/sites")
-      .then((res) => (res.ok ? res.json() : []))
-      .then((list: SiteOption[]) => {
-        setSites(list)
-        if (user?.siteId != null && siteId === "") setSiteId(user.siteId)
-        else if (list.length === 1 && siteId === "") setSiteId(list[0].id)
-      })
-      .catch(() => setSites([]))
-  }, [isOperator, router, user?.siteId])
+    if (!siteId) return
 
-  const selectedSite = sites.find((s) => s.id === siteId)
-  const assignedMachineIds = Array.isArray(selectedSite?.assigned_machine_ids) ? selectedSite.assigned_machine_ids : []
-  const machinesToShow = assignedMachineIds.length > 0
-    ? AVAILABLE_MACHINES.filter((m) => assignedMachineIds.includes(m.id))
-    : AVAILABLE_MACHINES
-  const selectedMachine = machinesToShow.find((m) => m.id === machineId) ?? AVAILABLE_MACHINES.find((m) => m.id === machineId)
-  const machineName = selectedMachine?.name ?? ""
+    // Fetch DB machines for this site (auto-assigned to operator)
+    fetch(`/api/operator-entry/my-machine?siteId=${siteId}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: DbMachine[]) => {
+        setDbMachines(list)
+        if (list.length === 1) setSelectedDbMachine(list[0])
+        setMachinesLoaded(true)
+      })
+      .catch(() => { setDbMachines([]); setMachinesLoaded(true) })
+  }, [isOperator, router, siteId])
 
   const handleImageChange = async (slot: 1 | 2, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -124,7 +135,7 @@ export default function OperatorFormPage() {
   const [recordingTime, setRecordingTime] = useState<"start" | "end" | null>(null)
   const handleRecordTime = async (type: "start" | "end") => {
     if (!siteId || !reportDate || !machineId || !machineName) {
-      setMessage({ type: "error", text: "Tarih, şantiye ve makine seçimi zorunludur." })
+      setMessage({ type: "error", text: "Tarih ve makine seçimi zorunludur." })
       return
     }
     const motorSaati = type === "start" ? motorSaatBinis.trim() : motorSaatInis.trim()
@@ -138,14 +149,7 @@ export default function OperatorFormPage() {
       const res = await fetch("/api/operator-entry/record-time", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          siteId: Number(siteId),
-          reportDate,
-          machineId,
-          machineName,
-          type,
-          motorSaati,
-        }),
+        body: JSON.stringify({ siteId: Number(siteId), reportDate, machineId, machineName, type, motorSaati }),
       })
       const data = await res.json().catch(() => ({}))
       if (res.ok && data.success) {
@@ -164,7 +168,7 @@ export default function OperatorFormPage() {
 
   const handleSubmit = async () => {
     if (!siteId || !reportDate || !machineId || !machineName) {
-      setMessage({ type: "error", text: "Tarih, şantiye ve makine seçimi zorunludur." })
+      setMessage({ type: "error", text: !selectedDbMachine ? "Lütfen makine seçin." : "Tarih zorunludur." })
       return
     }
     const elmasTrim = elmasMiktar.trim()
@@ -191,6 +195,7 @@ export default function OperatorFormPage() {
           reportDate,
           machineId,
           machineName,
+          dbMachineId: selectedDbMachine?.id ?? null,
           startTime: startTime.trim().slice(0, 5),
           endTime: endTime.trim().slice(0, 5),
           machineHours: machineHours.trim(),
@@ -201,6 +206,9 @@ export default function OperatorFormPage() {
           elmasMiktar: elmasTrim || (finalElmasDegisimYok ? "yok" : ""),
           elmasDegisimYok: finalElmasDegisimYok,
           bentonitMiktar: bentonitMiktar.trim(),
+          kullanılanMalzeme: kullanılanMalzeme.trim(),
+          malzemeIhtiyaci,
+          servisIhtiyaci,
           note: note.trim(),
           dailyPileCount: String(hazirlananKazik),
           totalProduction: String(toplamImalat),
@@ -225,6 +233,9 @@ export default function OperatorFormPage() {
         setElmasMiktar("")
         setElmasDegisimYok(false)
         setBentonitMiktar("")
+        setKullanılanMalzeme("")
+        setMalzemeIhtiyaci(false)
+        setServisIhtiyaci(false)
         setNote("")
         setConcretePoured("")
         setImage1("")
@@ -242,70 +253,77 @@ export default function OperatorFormPage() {
 
   if (!isOperator) return null
 
-  const lockedSite = user?.siteId != null
-
   return (
     <Container maxWidth="sm" sx={{ py: 3 }}>
       <Typography variant="h6" sx={{ mb: 2, color: "var(--icsp-lacivert)", fontWeight: 600 }}>
         Operatör – Makine ve Üretim Girişi
       </Typography>
 
-      {/* 1. Tarih ve Şantiye (ilk adım) */}
+      {/* 1. Tarih */}
       <Paper sx={{ p: 2, mb: 2, background: "linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)", border: "1px solid #ff9800" }}>
         <Typography variant="subtitle1" sx={{ color: "#e65100", fontWeight: 600, mb: 2 }}>
-          Tarih ve Şantiye
+          Rapor Tarihi
         </Typography>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <TextField
-            fullWidth
-            label="Rapor Tarihi"
-            type="date"
-            value={reportDate}
-            onChange={(e) => setReportDate(e.target.value.slice(0, 10))}
-            InputLabelProps={{ shrink: true }}
-          />
-          <FormControl fullWidth disabled={lockedSite}>
-            <InputLabel>Şantiye</InputLabel>
-            <Select
-              value={siteId}
-              label="Şantiye"
-              onChange={(e) => {
-                setSiteId(e.target.value === "" ? "" : Number(e.target.value))
-                setMachineId("")
-              }}
-            >
-              <MenuItem value="">Seçiniz</MenuItem>
-              {sites.map((s) => (
-                <MenuItem key={s.id} value={s.id}>
-                  {s.name} ({s.code})
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Box>
+        <TextField
+          fullWidth
+          label="Rapor Tarihi"
+          type="date"
+          value={reportDate}
+          onChange={(e) => setReportDate(e.target.value.slice(0, 10))}
+          InputLabelProps={{ shrink: true }}
+        />
       </Paper>
 
-      {/* 2. Makine seçimi ve üretim özeti */}
+      {/* 2. Makine bilgisi (otomatik) */}
       <Paper sx={{ p: 2, mb: 2, background: "linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)", border: "1px solid #2196f3" }}>
         <Typography variant="subtitle1" sx={{ color: "#1565c0", fontWeight: 600, mb: 2 }}>
           Makine Seçimi ve Üretim Özeti
         </Typography>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <FormControl fullWidth>
-            <InputLabel>Kazık Makinesi</InputLabel>
-            <Select
-              value={machineId}
-              label="Kazık Makinesi"
-              onChange={(e) => setMachineId(e.target.value)}
-            >
-              <MenuItem value="">Seçiniz</MenuItem>
-              {machinesToShow.map((m) => (
-                <MenuItem key={m.id} value={m.id}>
-                  {m.name}
-                </MenuItem>
+
+        {/* Machine display */}
+        {!machinesLoaded ? (
+          <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>Makine bilgisi yükleniyor...</Typography>
+        ) : dbMachines.length === 0 ? (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Bu şantiyeye atanmış aktif makine bulunamadı. Yönetici ile iletişime geçin.
+          </Alert>
+        ) : dbMachines.length === 1 ? (
+          <Box sx={{ mb: 2, p: 1.5, bgcolor: "#e8f0fe", borderRadius: 1, border: "1px solid #1976d2" }}>
+            <Typography variant="body2" color="text.secondary">Makineniz</Typography>
+            <Typography variant="subtitle1" fontWeight={700}>{dbMachines[0].name}</Typography>
+            {dbMachines[0].marka && (
+              <Typography variant="body2" color="text.secondary">
+                {dbMachines[0].marka} {dbMachines[0].model ?? ""} {dbMachines[0].plaka_no ? `• ${dbMachines[0].plaka_no}` : ""}
+              </Typography>
+            )}
+          </Box>
+        ) : (
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Bu şantiyede birden fazla makine mevcut. Lütfen kullandığınız makineyi seçin:
+            </Typography>
+            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+              {dbMachines.map((m) => (
+                <Chip
+                  key={m.id}
+                  label={m.name}
+                  variant={selectedDbMachine?.id === m.id ? "filled" : "outlined"}
+                  color={selectedDbMachine?.id === m.id ? "primary" : "default"}
+                  onClick={() => setSelectedDbMachine(m)}
+                  sx={{ cursor: "pointer" }}
+                />
               ))}
-            </Select>
-          </FormControl>
+            </Box>
+            {selectedDbMachine && (
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+                Seçili: {selectedDbMachine.name}
+                {selectedDbMachine.marka ? ` | ${selectedDbMachine.marka} ${selectedDbMachine.model ?? ""}` : ""}
+              </Typography>
+            )}
+          </Box>
+        )}
+
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
             Makine motor saatini girin, ok butonuna basın; o anki bölgesel saat mesai başlangıcı/bitişi olarak kaydedilir.
           </Typography>
@@ -325,6 +343,18 @@ export default function OperatorFormPage() {
           </Box>
           <TextField fullWidth label="Makine çalışma saati (opsiyonel)" type="number" value={machineHours} onChange={(e) => setMachineHours(e.target.value)} placeholder="Saat (örn: 8 veya 8,5)" inputProps={{ min: 0, step: 0.5 }} sx={{ maxWidth: 160 }} />
           <TextField fullWidth label="Mazot Miktarı (Litre)" type="number" value={usedFuel} onChange={(e) => setUsedFuel(e.target.value)} placeholder="Örn: 120" />
+
+          {/* Kullanılan malzeme */}
+          <TextField
+            fullWidth
+            label="Kullanılan Malzeme"
+            multiline
+            minRows={2}
+            value={kullanılanMalzeme}
+            onChange={(e) => setKullanılanMalzeme(e.target.value)}
+            placeholder="Örn: 3 adet elmas, 40 lt yağ..."
+          />
+
           <Typography variant="subtitle2" sx={{ mt: 1, fontWeight: 600 }}>Kazık derinlikleri</Typography>
           {pileDepths.map((row, index) => (
             <Box key={index} sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
@@ -353,7 +383,48 @@ export default function OperatorFormPage() {
         </Box>
       </Paper>
 
-      {/* 3. Fotoğraf ve bilgi/not */}
+      {/* 3. Malzeme / Servis ihtiyacı */}
+      <Paper sx={{ p: 2, mb: 2, background: "linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%)", border: "1px solid #ffc107" }}>
+        <Typography variant="subtitle1" sx={{ color: "#e65100", fontWeight: 600, mb: 1.5 }}>
+          Malzeme ve Servis İhtiyacı
+        </Typography>
+
+        {/* Malzeme ihtiyacı */}
+        <Box sx={{ mb: 2 }}>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={malzemeIhtiyaci}
+                onChange={(e) => setMalzemeIhtiyaci(e.target.checked)}
+                color="warning"
+              />
+            }
+            label={<Typography fontWeight={600}>Malzeme İhtiyacı var mı?</Typography>}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", ml: 4, mt: -0.5 }}>
+            Bilgi amaçlı malzeme türleri: Elmas, Yağ, Halat, Bentonit, Beton, Çimento, Su, Diğer
+          </Typography>
+        </Box>
+
+        {/* Servis ihtiyacı */}
+        <Box>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={servisIhtiyaci}
+                onChange={(e) => setServisIhtiyaci(e.target.checked)}
+                color="warning"
+              />
+            }
+            label={<Typography fontWeight={600}>Servis veya Bakım ihtiyacı var mı?</Typography>}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", ml: 4, mt: -0.5 }}>
+            Bilgi amaçlı servis türleri: Servis, Yağ Değişimi, Bakım, Tamir, Parça Değişimi
+          </Typography>
+        </Box>
+      </Paper>
+
+      {/* 4. Fotoğraf ve not */}
       <Paper sx={{ p: 2, mb: 2, background: "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)", border: "1px solid #4caf50" }}>
         <Typography variant="subtitle1" sx={{ color: "#2e7d32", fontWeight: 600, mb: 2 }}>
           Fotoğraf ve Önemli Olay/Talep/Not
@@ -386,9 +457,7 @@ export default function OperatorFormPage() {
         <Typography
           variant="body2"
           sx={{
-            p: 1.5,
-            mb: 2,
-            borderRadius: 1,
+            p: 1.5, mb: 2, borderRadius: 1,
             bgcolor: message.type === "success" ? "success.light" : "error.light",
             color: message.type === "success" ? "success.dark" : "error.dark",
           }}
@@ -397,7 +466,11 @@ export default function OperatorFormPage() {
         </Typography>
       )}
 
-      <Button fullWidth variant="contained" startIcon={<Save />} onClick={handleSubmit} disabled={saving} sx={{ py: 1.5 }}>
+      <Button
+        fullWidth variant="contained" startIcon={<Save />} onClick={handleSubmit}
+        disabled={saving || !selectedDbMachine}
+        sx={{ py: 1.5 }}
+      >
         {saving ? "Kaydediliyor..." : "Kayıt Et"}
       </Button>
     </Container>

@@ -164,9 +164,11 @@ function AdminPanel() {
   useEffect(() => {
     if (tabValue === 3) {
       loadSites()
-      fetch("/api/idari/personel")
-        .then((r) => (r.ok ? r.json() : []))
-        .then((data: { id: number; ad: string; soyad: string; gorev: string }[]) => setPersonelList(data))
+      fetch("/api/idari/personel?limit=500")
+        .then((r) => (r.ok ? r.json() : { data: [] }))
+        .then((res: { data?: { id: number; ad: string; soyad: string; gorev: string }[] } | { id: number; ad: string; soyad: string; gorev: string }[]) => {
+          setPersonelList(Array.isArray(res) ? res : (res.data ?? []))
+        })
         .catch(() => setPersonelList([]))
     }
   }, [tabValue])
@@ -1063,7 +1065,7 @@ function AdminPanel() {
               startIcon={<Add />}
               onClick={() => {
                 setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [] })
-                if (personelList.length === 0) fetch("/api/idari/personel").then((r) => (r.ok ? r.json() : [])).then((data: { id: number; ad: string; soyad: string; gorev: string }[]) => setPersonelList(data)).catch(() => {})
+                if (personelList.length === 0) fetch("/api/idari/personel?limit=500").then((r) => (r.ok ? r.json() : { data: [] })).then((res: any) => setPersonelList(Array.isArray(res) ? res : (res.data ?? []))).catch(() => {})
                 setSiteDialogOpen(true)
               }}
             >

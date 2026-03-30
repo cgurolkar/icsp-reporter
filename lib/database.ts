@@ -178,6 +178,17 @@ async function _doInitializeDatabase() {
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'operator_entries motor_saat: %', SQLERRM;
       END $$
     `)
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'operator_entries' AND column_name = 'kullanilan_malzeme') THEN
+          ALTER TABLE operator_entries ADD COLUMN kullanilan_malzeme TEXT;
+          ALTER TABLE operator_entries ADD COLUMN malzeme_ihtiyaci BOOLEAN DEFAULT false;
+          ALTER TABLE operator_entries ADD COLUMN servis_ihtiyaci BOOLEAN DEFAULT false;
+          ALTER TABLE operator_entries ADD COLUMN db_machine_id INTEGER;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'operator_entries malzeme/servis: %', SQLERRM;
+      END $$
+    `)
 
     // Kullanıcılar tablosu
     await client.query(`
@@ -422,10 +433,20 @@ async function _doInitializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='calistigi_bolum')
         THEN ALTER TABLE personeller ADD COLUMN calistigi_bolum VARCHAR(100); END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='foto_yolu')
-        THEN ALTER TABLE personeller ADD COLUMN foto_yolu VARCHAR(500); END IF;
+        THEN ALTER TABLE personeller ADD COLUMN foto_yolu TEXT; END IF;
         -- Personel-User FK: operatör kullanıcıyla ilişki
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='user_id')
         THEN ALTER TABLE personeller ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL; END IF;
+      END $$
+    `)
+    // Migrate foto_yolu to TEXT if it was created as VARCHAR(500)
+    await client.query(`
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='foto_yolu' AND data_type='character varying')
+        THEN ALTER TABLE personeller ALTER COLUMN foto_yolu TYPE TEXT; END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='envanter' AND column_name='fotograf_yolu' AND data_type='character varying')
+        THEN ALTER TABLE envanter ALTER COLUMN fotograf_yolu TYPE TEXT; END IF;
+      EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'foto column migration: %', SQLERRM;
       END $$
     `)
     // islemler tablosuna work_report_id ekle (rapor harcamalarını islemler'e sync edince kaynak takibi)
@@ -768,6 +789,7 @@ export async function saveOperatorEntry(data: {
   userId: number
   machineId: string
   machineName: string
+  dbMachineId?: number | null
   machineHours?: string
   startTime?: string
   endTime?: string
@@ -785,6 +807,9 @@ export async function saveOperatorEntry(data: {
   elmasMiktar?: string
   elmasDegisimYok?: boolean
   bentonitMiktar?: string
+  kullanılanMalzeme?: string
+  malzemeIhtiyaci?: boolean
+  servisIhtiyaci?: boolean
   image1?: string | null
   image2?: string | null
   notes?: string
@@ -794,8 +819,8 @@ export async function saveOperatorEntry(data: {
     const dateStr = (data.reportDate || "").slice(0, 10)
     const pileDepthsJson = JSON.stringify(data.pileDepths ?? [])
     await client.query(`
-      INSERT INTO operator_entries (site_id, report_date, user_id, machine_id, machine_name, machine_hours, start_time, end_time, motor_saat_binis, motor_saat_inis, pile_depths, used_fuel, work_done, note, daily_pile_count, total_production, empty_borehole, pre_borehole, concrete_poured, elmas_miktar, elmas_degisim_yok, bentonit_miktar, image1, image2, notes)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+      INSERT INTO operator_entries (site_id, report_date, user_id, machine_id, machine_name, machine_hours, start_time, end_time, motor_saat_binis, motor_saat_inis, pile_depths, used_fuel, work_done, note, daily_pile_count, total_production, empty_borehole, pre_borehole, concrete_poured, elmas_miktar, elmas_degisim_yok, bentonit_miktar, kullanilan_malzeme, malzeme_ihtiyaci, servis_ihtiyaci, db_machine_id, image1, image2, notes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
       ON CONFLICT (site_id, report_date, user_id, machine_id)
       DO UPDATE SET
         machine_name = EXCLUDED.machine_name, machine_hours = EXCLUDED.machine_hours,
@@ -804,6 +829,8 @@ export async function saveOperatorEntry(data: {
         daily_pile_count = EXCLUDED.daily_pile_count, total_production = EXCLUDED.total_production,
         empty_borehole = EXCLUDED.empty_borehole, pre_borehole = EXCLUDED.pre_borehole, concrete_poured = EXCLUDED.concrete_poured,
         elmas_miktar = EXCLUDED.elmas_miktar, elmas_degisim_yok = EXCLUDED.elmas_degisim_yok, bentonit_miktar = EXCLUDED.bentonit_miktar,
+        kullanilan_malzeme = EXCLUDED.kullanilan_malzeme, malzeme_ihtiyaci = EXCLUDED.malzeme_ihtiyaci, servis_ihtiyaci = EXCLUDED.servis_ihtiyaci,
+        db_machine_id = EXCLUDED.db_machine_id,
         image1 = EXCLUDED.image1, image2 = EXCLUDED.image2, notes = EXCLUDED.notes
     `, [
       data.siteId,
@@ -828,6 +855,10 @@ export async function saveOperatorEntry(data: {
       data.elmasMiktar ?? null,
       data.elmasDegisimYok === true,
       data.bentonitMiktar ?? null,
+      data.kullanılanMalzeme ?? null,
+      data.malzemeIhtiyaci === true,
+      data.servisIhtiyaci === true,
+      data.dbMachineId ?? null,
       data.image1 && String(data.image1).startsWith("data:") ? data.image1 : null,
       data.image2 && String(data.image2).startsWith("data:") ? data.image2 : null,
       data.notes ?? "",
@@ -1498,21 +1529,28 @@ export async function deleteWorkReport(id: number) {
 }
 
 // ---------- İdari modül: Personel ----------
-export async function getPersoneller(options: { siteId?: number | null; gorev?: string | null; limit?: number; offset?: number; search?: string } = {}) {
+export async function getPersoneller(options: { siteId?: number | null; gorev?: string | null; limit?: number; offset?: number; search?: string; arsiv?: boolean } = {}) {
   const client = await pool.connect()
   try {
-    const { siteId, gorev, limit, offset, search } = options
-    const params: (number | string)[] = []
+    const { siteId, gorev, limit, offset, search, arsiv } = options
+    const params: (number | string | boolean)[] = []
     let i = 1
     const atamalarSubq = `(SELECT json_agg(json_build_object('id', pa.id, 'site_id', pa.site_id, 'site_name', s.name, 'baslangic_tarihi', pa.baslangic_tarihi, 'bitis_tarihi', pa.bitis_tarihi)) FROM personel_atama pa LEFT JOIN sites s ON pa.site_id = s.id WHERE pa.personel_id = p.id) AS atamalar`
 
+    // Aktif/arşiv filtresi
+    const arsivFilter = arsiv === true
+      ? `AND (p.isten_cikis_tarihi IS NOT NULL AND p.isten_cikis_tarihi <= CURRENT_DATE)`
+      : arsiv === false
+        ? `AND (p.isten_cikis_tarihi IS NULL OR p.isten_cikis_tarihi > CURRENT_DATE)`
+        : ``
+
     if (siteId != null && siteId > 0) {
-      const query = `SELECT p.*, ${atamalarSubq} FROM personeller p WHERE EXISTS (SELECT 1 FROM personel_atama pa WHERE pa.personel_id = p.id AND pa.site_id = $1 AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= CURRENT_DATE)) ORDER BY p.soyad, p.ad`
+      const query = `SELECT p.*, ${atamalarSubq} FROM personeller p WHERE EXISTS (SELECT 1 FROM personel_atama pa WHERE pa.personel_id = p.id AND pa.site_id = $1 AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= CURRENT_DATE)) ${arsivFilter} ORDER BY p.soyad, p.ad`
       const result = await client.query(query, [siteId])
       return result.rows
     }
 
-    let query = `SELECT p.*, ${atamalarSubq} FROM personeller p WHERE 1=1`
+    let query = `SELECT p.*, ${atamalarSubq} FROM personeller p WHERE 1=1 ${arsivFilter}`
     if (gorev && String(gorev).trim()) {
       query += ` AND p.gorev = $${i++}`
       params.push(String(gorev).trim())
@@ -1539,17 +1577,24 @@ export async function getPersoneller(options: { siteId?: number | null; gorev?: 
   }
 }
 
-export async function getPersonellerCount(options: { siteId?: number | null; gorev?: string | null; search?: string } = {}): Promise<number> {
+export async function getPersonellerCount(options: { siteId?: number | null; gorev?: string | null; search?: string; arsiv?: boolean } = {}): Promise<number> {
   const client = await pool.connect()
   try {
-    const { siteId, gorev, search } = options
+    const { siteId, gorev, search, arsiv } = options
     const params: (number | string)[] = []
     let i = 1
+
+    const arsivFilter = arsiv === true
+      ? `AND (p.isten_cikis_tarihi IS NOT NULL AND p.isten_cikis_tarihi <= CURRENT_DATE)`
+      : arsiv === false
+        ? `AND (p.isten_cikis_tarihi IS NULL OR p.isten_cikis_tarihi > CURRENT_DATE)`
+        : ``
+
     if (siteId != null && siteId > 0) {
-      const r = await client.query(`SELECT COUNT(*) FROM personeller p WHERE EXISTS (SELECT 1 FROM personel_atama pa WHERE pa.personel_id = p.id AND pa.site_id = $1 AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= CURRENT_DATE))`, [siteId])
+      const r = await client.query(`SELECT COUNT(*) FROM personeller p WHERE EXISTS (SELECT 1 FROM personel_atama pa WHERE pa.personel_id = p.id AND pa.site_id = $1 AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= CURRENT_DATE)) ${arsivFilter}`, [siteId])
       return parseInt(r.rows[0].count, 10)
     }
-    let query = `SELECT COUNT(*) FROM personeller p WHERE 1=1`
+    let query = `SELECT COUNT(*) FROM personeller p WHERE 1=1 ${arsivFilter}`
     if (gorev && String(gorev).trim()) {
       query += ` AND p.gorev = $${i++}`
       params.push(String(gorev).trim())
@@ -1562,6 +1607,31 @@ export async function getPersonellerCount(options: { siteId?: number | null; gor
     }
     const r = params.length ? await client.query(query, params) : await client.query(query)
     return parseInt(r.rows[0].count, 10)
+  } finally {
+    client.release()
+  }
+}
+
+export async function upsertPersonelAtama(personelId: number, siteId: number, baslangicTarihi?: string) {
+  const client = await pool.connect()
+  try {
+    const today = baslangicTarihi || new Date().toISOString().slice(0, 10)
+    // Close any existing active atama for this personel at other sites
+    await client.query(
+      `UPDATE personel_atama SET bitis_tarihi = $1 WHERE personel_id = $2 AND site_id != $3 AND (bitis_tarihi IS NULL OR bitis_tarihi > $1)`,
+      [today, personelId, siteId]
+    )
+    // Upsert active atama for this site
+    const exists = await client.query(
+      `SELECT id FROM personel_atama WHERE personel_id = $1 AND site_id = $2 AND (bitis_tarihi IS NULL OR bitis_tarihi >= CURRENT_DATE) LIMIT 1`,
+      [personelId, siteId]
+    )
+    if (exists.rowCount === 0) {
+      await client.query(
+        `INSERT INTO personel_atama (personel_id, site_id, baslangic_tarihi) VALUES ($1, $2, $3)`,
+        [personelId, siteId, today]
+      )
+    }
   } finally {
     client.release()
   }
@@ -2107,12 +2177,13 @@ export async function createEnvanter(data: {
   fiyat?: number | null
   yer?: string | null
   site_id?: number | null
+  durum?: string | null
 }) {
   const client = await pool.connect()
   try {
     const r = await client.query(`
-      INSERT INTO envanter (kod, malzeme_adi, aciklama, adet, fotograf_yolu, fiyat, yer, site_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO envanter (kod, malzeme_adi, aciklama, adet, fotograf_yolu, fiyat, yer, site_id, durum)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING id
     `, [
       data.kod.trim(),
@@ -2123,6 +2194,7 @@ export async function createEnvanter(data: {
       data.fiyat ?? null,
       data.yer ?? null,
       data.site_id ?? null,
+      data.durum ?? 'aktif',
     ])
     return r.rows[0].id
   } finally {
@@ -2139,10 +2211,11 @@ export async function updateEnvanter(id: number, data: Partial<{
   fiyat: number | null
   yer: string | null
   site_id: number | null
+  durum: string | null
 }>) {
   const client = await pool.connect()
   try {
-    const fields = ['kod', 'malzeme_adi', 'aciklama', 'adet', 'fotograf_yolu', 'fiyat', 'yer', 'site_id']
+    const fields = ['kod', 'malzeme_adi', 'aciklama', 'adet', 'fotograf_yolu', 'fiyat', 'yer', 'site_id', 'durum']
     const updates: string[] = []
     const values: unknown[] = []
     let i = 1
@@ -2381,6 +2454,63 @@ export async function upsertMachineOperators(machineId: number, personelIds: num
         [machineId, pId]
       )
     }
+  } finally {
+    client.release()
+  }
+}
+
+/** Operatörün user_id üzerinden o şantiyedeki makinelerini bulur */
+export async function getOperatorMachinesForSite(userId: number, siteId: number): Promise<{ id: number; name: string; machine_type: string; marka: string | null; model: string | null; plaka_no: string | null }[]> {
+  const client = await pool.connect()
+  try {
+    // First: find personel linked to this user
+    const personelRes = await client.query(`SELECT id FROM personeller WHERE user_id = $1 LIMIT 1`, [userId])
+    const personelId = personelRes.rows[0]?.id
+
+    if (personelId) {
+      // Find machines at this site where this personel is assigned as operator
+      const r = await client.query(`
+        SELECT m.id, m.name, m.machine_type, m.marka, m.model, m.plaka_no
+        FROM machines m
+        INNER JOIN machine_operator_atama moa ON moa.machine_id = m.id
+          AND moa.personel_id = $1
+          AND (moa.bitis_tarihi IS NULL OR moa.bitis_tarihi >= CURRENT_DATE)
+        WHERE m.current_site_id = $2 AND m.status = 'aktif'
+        ORDER BY m.name
+      `, [personelId, siteId])
+      if (r.rows.length > 0) return r.rows
+    }
+
+    // Fallback: all active machines at this site
+    const fallback = await client.query(`
+      SELECT id, name, machine_type, marka, model, plaka_no
+      FROM machines
+      WHERE current_site_id = $1 AND status = 'aktif'
+      ORDER BY name
+    `, [siteId])
+    return fallback.rows
+  } finally {
+    client.release()
+  }
+}
+
+/** Şantiyedeki tüm aktif makineleri döner (site dialog ve form için) */
+export async function getMachinesForSite(siteId: number): Promise<{ id: number; name: string; machine_type: string; marka: string | null; model: string | null; operators: { personel_id: number; ad: string; soyad: string }[] }[]> {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(`
+      SELECT m.id, m.name, m.machine_type, m.marka, m.model,
+        COALESCE((
+          SELECT json_agg(json_build_object('personel_id', p.id, 'ad', p.ad, 'soyad', p.soyad))
+          FROM machine_operator_atama moa
+          INNER JOIN personeller p ON p.id = moa.personel_id
+          WHERE moa.machine_id = m.id AND (moa.bitis_tarihi IS NULL OR moa.bitis_tarihi >= CURRENT_DATE)
+        ), '[]') AS operators
+      FROM machines m
+      WHERE m.current_site_id = $1 AND m.status = 'aktif'
+      ORDER BY m.name
+    `, [siteId])
+    return r.rows
   } finally {
     client.release()
   }

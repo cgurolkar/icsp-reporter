@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
       fiyat: body.fiyat != null ? Number(body.fiyat) : null,
       yer: body.yer ?? null,
       site_id: body.site_id ?? null,
+      durum: body.durum ?? 'aktif',
     })
     return NextResponse.json({ id })
   } catch (error) {

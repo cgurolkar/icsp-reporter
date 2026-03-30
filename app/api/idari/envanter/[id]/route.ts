@@ -45,6 +45,7 @@ export async function PUT(
       fiyat: body.fiyat != null ? Number(body.fiyat) : undefined,
       yer: body.yer,
       site_id: body.site_id,
+      durum: body.durum,
     })
     return NextResponse.json({ ok: true })
   } catch (error) {

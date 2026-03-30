@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getSessionFromRequest } from "@/lib/auth"
 import { canAccessIdari, canManageIdariCentral } from "@/lib/auth"
-import { initializeDatabase, getPersoneller, getPersonellerCount, createPersonel } from "@/lib/database"
+import { initializeDatabase, getPersoneller, getPersonellerCount, createPersonel, upsertPersonelAtama } from "@/lib/database"
 
 const PersonelSchema = z.object({
   ad: z.string().min(1).max(100).trim(),
@@ -22,7 +22,8 @@ const PersonelSchema = z.object({
   banka_adi: z.string().max(255).optional().nullable(),
   gunluk_yevmiye: z.number({ coerce: true }).nonnegative().optional().nullable(),
   aylik_maas: z.number({ coerce: true }).nonnegative().optional().nullable(),
-  foto_yolu: z.string().max(500).optional().nullable(),
+  foto_yolu: z.string().optional().nullable(),
+  site_id: z.number({ coerce: true }).int().positive().optional().nullable(),
 })
 
 export async function GET(request: NextRequest) {
@@ -42,10 +43,14 @@ export async function GET(request: NextRequest) {
     const limit = limitParam ? parseInt(limitParam, 10) : undefined
     const offset = offsetParam ? parseInt(offsetParam, 10) : undefined
 
+    const arsivParam = searchParams.get("arsiv")
+    const arsiv = arsivParam === "true" ? true : arsivParam === "false" ? false : false // default aktif
+
     const opts = {
       siteId: siteId && !Number.isNaN(siteId) ? siteId : undefined,
       gorev,
       search,
+      arsiv,
       limit: limit && !Number.isNaN(limit) ? limit : undefined,
       offset: offset && !Number.isNaN(offset) ? offset : undefined,
     }
@@ -90,6 +95,9 @@ export async function POST(request: NextRequest) {
       aylik_maas: data.aylik_maas ?? null,
       foto_yolu: data.foto_yolu ?? null,
     })
+    if (data.site_id) {
+      await upsertPersonelAtama(id, data.site_id, data.ise_giris_tarihi ?? undefined)
+    }
     return NextResponse.json({ id })
   } catch (error) {
     console.error("Idari personel POST error:", error)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import {
   Box,
@@ -24,8 +24,30 @@ import {
   IconButton,
   TablePagination,
   Chip,
+  Tabs,
+  Tab,
+  ToggleButtonGroup,
+  ToggleButton,
+  Card,
+  CardContent,
+  CardActions,
+  Avatar,
+  Tooltip,
+  Divider,
 } from "@mui/material"
-import { Add, Edit, Visibility, Download, Upload, Delete, BeachAccess } from "@mui/icons-material"
+import {
+  Add,
+  Edit,
+  Visibility,
+  Download,
+  Upload,
+  Delete,
+  BeachAccess,
+  ViewList,
+  GridView,
+  Person,
+  AddPhotoAlternate,
+} from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
 
 const GOREVLER = [
@@ -34,14 +56,13 @@ const GOREVLER = [
 ]
 
 const IZIN_TIPLERI = ["Yıllık", "Mazeret", "Sağlık", "Ücretsiz", "Diğer"]
+const CALISTIGI_BOLUM_OPTIONS = ["Şantiye", "Merkez Ofis", "Depo", "Diğer"]
 
 interface SiteItem {
   id: number
   name: string
   code: string
 }
-
-const CALISTIGI_BOLUM_OPTIONS = ["Şantiye", "Merkez Ofis", "Depo", "Diğer"]
 
 interface AtamaRow {
   id: number
@@ -63,6 +84,7 @@ interface PersonelRow {
   calistigi_bolum?: string | null
   gunluk_yevmiye?: number | null
   aylik_maas?: number | null
+  foto_yolu?: string | null
   atamalar?: AtamaRow[] | null
 }
 
@@ -70,6 +92,30 @@ function activeGorevYeri(row: PersonelRow): string {
   if (!row.atamalar || row.atamalar.length === 0) return "—"
   const active = row.atamalar.find((a) => !a.bitis_tarihi || new Date(a.bitis_tarihi) >= new Date())
   return active?.site_name ?? "—"
+}
+
+function activeSiteId(row: PersonelRow): number | null {
+  if (!row.atamalar || row.atamalar.length === 0) return null
+  const active = row.atamalar.find((a) => !a.bitis_tarihi || new Date(a.bitis_tarihi) >= new Date())
+  return active?.site_id ?? null
+}
+
+// Personal photo / avatar component
+function PersonelAvatar({ foto_yolu, ad, soyad, size = 40 }: { foto_yolu?: string | null; ad: string; soyad: string; size?: number }) {
+  if (foto_yolu) {
+    return (
+      <Avatar
+        src={foto_yolu}
+        sx={{ width: size, height: size }}
+        alt={`${ad} ${soyad}`}
+      />
+    )
+  }
+  return (
+    <Avatar sx={{ width: size, height: size, bgcolor: "var(--icsp-lacivert)", fontSize: size * 0.4 }}>
+      {ad[0]?.toUpperCase()}{soyad[0]?.toUpperCase()}
+    </Avatar>
+  )
 }
 
 export default function IdariPersonelPage() {
@@ -88,6 +134,8 @@ export default function IdariPersonelPage() {
   const [deleting, setDeleting] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [importing, setImporting] = useState(false)
+  const [tabValue, setTabValue] = useState<"aktif" | "arsiv">("aktif")
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list")
 
   // İzin dialog state
   const [izinDialogOpen, setIzinDialogOpen] = useState(false)
@@ -119,7 +167,11 @@ export default function IdariPersonelPage() {
     banka_adi: "",
     gunluk_yevmiye: "",
     aylik_maas: "",
+    site_id: "",
+    foto_base64: "" as string,
   })
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
   const canManage = role === "admin" || role === "manager"
@@ -137,6 +189,7 @@ export default function IdariPersonelPage() {
     if (siteId) params.set("siteId", siteId)
     if (gorev) params.set("gorev", gorev)
     if (search.trim()) params.set("search", search.trim())
+    params.set("arsiv", tabValue === "arsiv" ? "true" : "false")
     params.set("limit", String(PAGE_SIZE))
     params.set("offset", String(p * PAGE_SIZE))
     fetch(`/api/idari/personel?${params}`)
@@ -150,8 +203,19 @@ export default function IdariPersonelPage() {
   }
 
   useEffect(() => { loadSites() }, [])
-  useEffect(() => { setPage(0); loadList(0) }, [siteId, gorev, search])
+  useEffect(() => { setPage(0); loadList(0) }, [siteId, gorev, search, tabValue])
   useEffect(() => { loadList(page) }, [page])
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      setForm((f) => ({ ...f, foto_base64: (ev.target?.result as string) || "" }))
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ""
+  }
 
   const openAdd = () => {
     setEditingId(null)
@@ -160,6 +224,8 @@ export default function IdariPersonelPage() {
       calistigi_bolum: "", dogum_tarihi: "", kan_grubu: "", acil_iletisim: "",
       acil_telefon: "", ise_giris_tarihi: "", isten_cikis_tarihi: "",
       sigorta_durumu: "", iban: "", banka_adi: "", gunluk_yevmiye: "", aylik_maas: "",
+      site_id: "",
+      foto_base64: "",
     })
     setDialogOpen(true)
   }
@@ -184,6 +250,8 @@ export default function IdariPersonelPage() {
       banka_adi: "",
       gunluk_yevmiye: row.gunluk_yevmiye != null ? String(row.gunluk_yevmiye) : "",
       aylik_maas: row.aylik_maas != null ? String(row.aylik_maas) : "",
+      site_id: activeSiteId(row) != null ? String(activeSiteId(row)) : "",
+      foto_base64: row.foto_yolu ?? "",
     })
     setDialogOpen(true)
   }
@@ -262,6 +330,8 @@ export default function IdariPersonelPage() {
       banka_adi: form.banka_adi || null,
       gunluk_yevmiye: form.gunluk_yevmiye ? parseFloat(form.gunluk_yevmiye) : null,
       aylik_maas: form.aylik_maas ? parseFloat(form.aylik_maas) : null,
+      foto_yolu: form.foto_base64 || null,
+      site_id: form.site_id ? parseInt(form.site_id, 10) : null,
     }
     const url = editingId != null ? `/api/idari/personel/${editingId}` : "/api/idari/personel"
     const method = editingId != null ? "PUT" : "POST"
@@ -275,13 +345,60 @@ export default function IdariPersonelPage() {
     }
   }
 
+  const renderActions = (row: PersonelRow) => (
+    <>
+      <IconButton size="small" component={Link} href={`/idari/personel/${row.id}`} title="Detay">
+        <Visibility fontSize="small" />
+      </IconButton>
+      {canManage && (
+        <>
+          <IconButton size="small" onClick={() => openEdit(row)} title="Düzenle">
+            <Edit fontSize="small" />
+          </IconButton>
+          <IconButton size="small" onClick={() => openIzin(row)} title="İzin Ekle" sx={{ color: "info.main" }}>
+            <BeachAccess fontSize="small" />
+          </IconButton>
+          <IconButton size="small" onClick={() => setConfirmDeleteId(row.id)} title="Sil" sx={{ color: "error.main" }}>
+            <Delete fontSize="small" />
+          </IconButton>
+        </>
+      )}
+    </>
+  )
+
   return (
     <Box>
-      <Typography variant="h6" sx={{ color: "var(--icsp-lacivert)", fontWeight: 600, mb: 2 }}>
-        Personel
-      </Typography>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+        <Typography variant="h6" sx={{ color: "var(--icsp-lacivert)", fontWeight: 600 }}>
+          Personel
+        </Typography>
+        <ToggleButtonGroup
+          value={viewMode}
+          exclusive
+          onChange={(_, v) => { if (v) setViewMode(v) }}
+          size="small"
+        >
+          <ToggleButton value="list" title="Liste">
+            <ViewList fontSize="small" />
+          </ToggleButton>
+          <ToggleButton value="grid" title="Grid">
+            <GridView fontSize="small" />
+          </ToggleButton>
+        </ToggleButtonGroup>
+      </Box>
+
+      {/* Aktif / Arşiv Tabs */}
+      <Tabs
+        value={tabValue}
+        onChange={(_, v) => { setTabValue(v); setPage(0) }}
+        sx={{ mb: 2, borderBottom: 1, borderColor: "divider" }}
+      >
+        <Tab label="Aktif Personel" value="aktif" />
+        <Tab label="Arşiv (Ayrılanlar)" value="arsiv" />
+      </Tabs>
 
       <Paper sx={{ p: 2, mb: 2 }}>
+        {/* Filters row */}
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, alignItems: "center", mb: 2 }}>
           <TextField
             size="small" label="Ara" placeholder="Ad, soyad veya görev..."
@@ -340,15 +457,16 @@ export default function IdariPersonelPage() {
 
         {loading ? (
           <Typography color="text.secondary">Yükleniyor...</Typography>
-        ) : (
+        ) : viewMode === "list" ? (
+          /* ——— LIST VIEW ——— */
           <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
             <Table size="small" sx={{ minWidth: 600 }}>
               <TableHead>
                 <TableRow>
+                  <TableCell sx={{ width: 48 }}></TableCell>
                   <TableCell><strong>Ad Soyad</strong></TableCell>
                   <TableCell><strong>Görev</strong></TableCell>
                   <TableCell><strong>TC / Pasaport</strong></TableCell>
-                  <TableCell><strong>Çalıştığı bölüm</strong></TableCell>
                   <TableCell><strong>Görev Yeri</strong></TableCell>
                   <TableCell align="right"><strong>Günlük / Aylık</strong></TableCell>
                   <TableCell align="right">İşlem</TableCell>
@@ -362,10 +480,12 @@ export default function IdariPersonelPage() {
                 ) : (
                   list.map((row) => (
                     <TableRow key={row.id}>
+                      <TableCell sx={{ py: 0.5 }}>
+                        <PersonelAvatar foto_yolu={row.foto_yolu} ad={row.ad} soyad={row.soyad} size={32} />
+                      </TableCell>
                       <TableCell>{row.ad} {row.soyad}</TableCell>
                       <TableCell>{row.gorev}</TableCell>
                       <TableCell>{row.tc_kimlik ? `TC: ${row.tc_kimlik}` : row.pasaport_no ? `Pasaport: ${row.pasaport_no}` : "—"}</TableCell>
-                      <TableCell>{row.calistigi_bolum ?? "—"}</TableCell>
                       <TableCell>
                         <Typography variant="body2" color={activeGorevYeri(row) !== "—" ? "primary" : "text.secondary"}>
                           {activeGorevYeri(row)}
@@ -375,22 +495,7 @@ export default function IdariPersonelPage() {
                         {row.gunluk_yevmiye != null ? row.gunluk_yevmiye : row.aylik_maas != null ? row.aylik_maas : "—"}
                       </TableCell>
                       <TableCell align="right">
-                        <IconButton size="small" component={Link} href={`/idari/personel/${row.id}`} title="Detay">
-                          <Visibility fontSize="small" />
-                        </IconButton>
-                        {canManage && (
-                          <>
-                            <IconButton size="small" onClick={() => openEdit(row)} title="Düzenle">
-                              <Edit fontSize="small" />
-                            </IconButton>
-                            <IconButton size="small" onClick={() => openIzin(row)} title="İzin Ekle" sx={{ color: "info.main" }}>
-                              <BeachAccess fontSize="small" />
-                            </IconButton>
-                            <IconButton size="small" onClick={() => setConfirmDeleteId(row.id)} title="Sil" sx={{ color: "error.main" }}>
-                              <Delete fontSize="small" />
-                            </IconButton>
-                          </>
-                        )}
+                        {renderActions(row)}
                       </TableCell>
                     </TableRow>
                   ))
@@ -406,21 +511,122 @@ export default function IdariPersonelPage() {
               />
             )}
           </Box>
+        ) : (
+          /* ——— GRID VIEW ——— */
+          <>
+            {list.length === 0 ? (
+              <Typography color="text.secondary" sx={{ py: 3, textAlign: "center" }}>Kayıt yok</Typography>
+            ) : (
+              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(3, 1fr)", md: "repeat(4, 1fr)" }, gap: 2 }}>
+                {list.map((row) => (
+                  <Card key={row.id} variant="outlined" sx={{ borderRadius: 2, display: "flex", flexDirection: "column" }}>
+                    {/* Photo */}
+                    <Box sx={{ display: "flex", justifyContent: "center", pt: 2, pb: 1 }}>
+                      <PersonelAvatar foto_yolu={row.foto_yolu} ad={row.ad} soyad={row.soyad} size={72} />
+                    </Box>
+                    <CardContent sx={{ pt: 0.5, pb: 0.5, flexGrow: 1, textAlign: "center" }}>
+                      <Typography variant="subtitle2" fontWeight={700} sx={{ lineHeight: 1.3 }}>
+                        {row.ad} {row.soyad}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {row.gorev}
+                      </Typography>
+                      {activeGorevYeri(row) !== "—" && (
+                        <Chip
+                          label={activeGorevYeri(row)}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          sx={{ mt: 0.5, fontSize: 10 }}
+                        />
+                      )}
+                    </CardContent>
+                    <Divider />
+                    <CardActions sx={{ justifyContent: "center", py: 0.5, gap: 0 }}>
+                      {renderActions(row)}
+                    </CardActions>
+                  </Card>
+                ))}
+              </Box>
+            )}
+            {total > PAGE_SIZE && (
+              <TablePagination
+                component="div" count={total} page={page}
+                onPageChange={(_, p) => setPage(p)} rowsPerPage={PAGE_SIZE}
+                rowsPerPageOptions={[PAGE_SIZE]}
+                labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+              />
+            )}
+          </>
         )}
+
         {!loading && (
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1, pb: 1 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1, pt: 1 }}>
             <Chip label={`Toplam: ${total}`} size="small" variant="outlined" />
           </Box>
         )}
       </Paper>
 
-      {/* Personel Ekle / Düzenle */}
+      {/* ——— Personel Ekle / Düzenle Dialog ——— */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingId != null ? "Personel düzenle" : "Yeni personel"}</DialogTitle>
         <DialogContent>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+            {/* Photo upload */}
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: "block" }}>Fotoğraf</Typography>
+              <Box
+                onClick={() => fileInputRef.current?.click()}
+                sx={{
+                  width: "100%", height: 120, border: "2px dashed #ccc", borderRadius: 2,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  cursor: "pointer", bgcolor: "#fafafa", overflow: "hidden", position: "relative",
+                  "&:hover": { borderColor: "var(--icsp-lacivert)" },
+                }}
+              >
+                {form.foto_base64 ? (
+                  <Box
+                    component="img"
+                    src={form.foto_base64}
+                    alt="Önizleme"
+                    sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                ) : (
+                  <Box sx={{ textAlign: "center", color: "text.secondary" }}>
+                    <AddPhotoAlternate sx={{ fontSize: 36, mb: 0.5 }} />
+                    <Typography variant="caption" display="block">Fotoğraf ekle</Typography>
+                  </Box>
+                )}
+              </Box>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={handlePhotoSelect}
+              />
+              {form.foto_base64 && (
+                <Button size="small" color="error" onClick={() => setForm((f) => ({ ...f, foto_base64: "" }))} sx={{ mt: 0.5 }}>
+                  Fotoğrafı kaldır
+                </Button>
+              )}
+            </Box>
+
             <TextField label="Ad" value={form.ad} onChange={(e) => setForm((f) => ({ ...f, ad: e.target.value }))} required fullWidth />
             <TextField label="Soyad" value={form.soyad} onChange={(e) => setForm((f) => ({ ...f, soyad: e.target.value }))} required fullWidth />
+            <FormControl fullWidth required>
+              <InputLabel>Görev Yeri (Şantiye)</InputLabel>
+              <Select
+                value={form.site_id}
+                label="Görev Yeri (Şantiye)"
+                onChange={(e) => setForm((f) => ({ ...f, site_id: e.target.value }))}
+              >
+                <MenuItem value="">Seçin</MenuItem>
+                {sites.map((s) => (
+                  <MenuItem key={s.id} value={String(s.id)}>{s.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <FormControl fullWidth>
               <InputLabel>Görev</InputLabel>
               <Select value={form.gorev} label="Görev" onChange={(e) => setForm((f) => ({ ...f, gorev: e.target.value }))}>
@@ -452,9 +658,18 @@ export default function IdariPersonelPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>İptal</Button>
-          <Button variant="contained" onClick={handleSave} disabled={!form.ad.trim() || !form.soyad.trim()} sx={{ background: "var(--icsp-lacivert)" }}>
-            {editingId != null ? "Güncelle" : "Ekle"}
-          </Button>
+          <Tooltip title={!form.site_id ? "Görev yeri (şantiye) seçimi zorunludur" : ""}>
+            <span>
+              <Button
+                variant="contained"
+                onClick={handleSave}
+                disabled={!form.ad.trim() || !form.soyad.trim() || !form.site_id}
+                sx={{ background: "var(--icsp-lacivert)" }}
+              >
+                {editingId != null ? "Güncelle" : "Ekle"}
+              </Button>
+            </span>
+          </Tooltip>
         </DialogActions>
       </Dialog>
 

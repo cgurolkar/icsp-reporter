@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSessionFromRequest } from "@/lib/auth"
 import { canAccessIdari, canManageIdariCentral } from "@/lib/auth"
-import { initializeDatabase, getPersonelById, updatePersonel, deletePersonel } from "@/lib/database"
+import { initializeDatabase, getPersonelById, updatePersonel, deletePersonel, upsertPersonelAtama } from "@/lib/database"
 
 export async function GET(
   _request: NextRequest,
@@ -59,6 +59,9 @@ export async function PUT(
       aylik_maas: body.aylik_maas != null ? Number(body.aylik_maas) : undefined,
       foto_yolu: body.foto_yolu,
     })
+    if (body.site_id) {
+      await upsertPersonelAtama(id, Number(body.site_id), body.ise_giris_tarihi ?? undefined)
+    }
     return NextResponse.json({ ok: true })
   } catch (error) {
     console.error("Idari personel PUT error:", error)
