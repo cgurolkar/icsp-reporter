@@ -6,7 +6,6 @@ export function generatePDFMainReport(
     computedRemainingPiles?: string
     computedDailyPileCount?: string
     concretePouredSum?: number
-    /** Operatör girişleri (şantiye + tarih bazlı); rapora bu bölüm eklenir */
     operatorEntries?: Array<{
       machine_name?: string; machine_hours?: string; used_fuel?: string; work_done?: string; note?: string; username?: string;
       daily_pile_count?: string; total_production?: string; empty_borehole?: string; pre_borehole?: string; concrete_poured?: string;
@@ -28,7 +27,7 @@ export function generatePDFMainReport(
   const isArray = Array.isArray(formData.productionSummary)
   const totalProduction = isArray
     ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseFloat(m.totalProduction) || 0), 0)
-    : formData.productionSummary.totalProduction
+    : formData.productionSummary?.totalProduction
   const concreteSum = opts?.concretePouredSum ?? (isArray
     ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.concretePoured) || 0), 0)
     : parseInt(formData.productionSummary?.concretePoured ?? "", 10) || 0)
@@ -41,268 +40,527 @@ export function generatePDFMainReport(
     : parseInt(formData.productionSummary?.dailyPileCount ?? "", 10) || 0
   const dailyPileCount = opts?.computedDailyPileCount?.trim()
     ? opts.computedDailyPileCount
-    : (dailyPileCountFromForm > 0 ? String(dailyPileCountFromForm) : (concreteSum > 0 ? String(concreteSum) : ""))
+    : (dailyPileCountFromForm > 0 ? String(dailyPileCountFromForm) : (concreteSum > 0 ? String(concreteSum) : "—"))
   const totalCompletedPiles = isArray
     ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.totalCompletedPiles) || 0), 0)
-    : formData.productionSummary.totalCompletedPiles
+    : (formData.productionSummary?.totalCompletedPiles || 0)
   const remainingPiles = (opts?.computedRemainingPiles != null && opts.computedRemainingPiles !== "")
     ? opts.computedRemainingPiles
     : (isArray
         ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.remainingPiles) || 0), 0)
-        : formData.productionSummary.remainingPiles)
+        : formData.productionSummary?.remainingPiles)
   const steelLoweredPiles = isArray
     ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.steelLoweredPiles) || 0), 0)
-    : formData.productionSummary.steelLoweredPiles
+    : (formData.productionSummary?.steelLoweredPiles || 0)
   const concretePoured = isArray
     ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.concretePoured) || 0), 0)
-    : formData.productionSummary.concretePoured
-  return `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Günlük Çalışma Raporu - ${formData.basicInfo.date}</title>
-        <style>
-          @page { size: A4 portrait; margin: 15mm; }
-          body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 12px; line-height: 1.2; }
-          .page { width: 100%; min-height: 100vh; page-break-after: always; background: white; }
-          table { border-collapse: collapse; width: 100%; margin: 10px 0; }
-          th, td { border: 2px solid #000; padding: 6px; text-align: left; vertical-align: middle; }
-          th { background-color: #f0f0f0; font-weight: bold; text-align: center; }
-          .header { background-color: #f0f0f0; padding: 15px; text-align: center; border: 2px solid #000; margin-bottom: 15px; }
-          .section-title { font-size: 14px; font-weight: bold; padding: 8px; background-color: #f0f0f0; border: 1px solid #000; margin: 15px 0 5px 0; }
-          .info-box { border: 1px solid #000; padding: 8px; text-align: center; min-height: 35px; display: flex; flex-direction: column; justify-content: center; }
-          .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 15px; }
-          @media print { body { -webkit-print-color-adjust: exact; } .page { page-break-after: always; } }
-        </style>
-      </head>
-      <body>
-        <div class="page">
-          <div class="header">
-            <h1 style="margin: 0; font-size: 18px;">GÜNLÜK ÇALIŞMA RAPORU</h1>
-            <div style="display: flex; justify-content: space-between; margin-top: 10px;">
-              <span style="font-weight: bold;">TARİH: ${formData.basicInfo.date}</span>
-              <span style="font-weight: bold;">${formData.basicInfo.project}</span>
-            </div>
+    : (formData.productionSummary?.concretePoured || 0)
+
+  // Kazık ilerleme yüzdesi
+  const remainingNum = parseInt(String(remainingPiles), 10) || 0
+  const completedNum = parseInt(String(totalCompletedPiles), 10) || 0
+  const totalProjectPiles = completedNum + remainingNum
+  const progressPct = totalProjectPiles > 0 ? Math.min(100, Math.round((completedNum / totalProjectPiles) * 100)) : 0
+
+  // Tarih formatlama
+  const dateStr = formData.basicInfo?.date ?? ""
+  let formattedDate = dateStr
+  try {
+    const d = new Date(dateStr + "T12:00:00Z")
+    formattedDate = d.toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric", weekday: "long" })
+  } catch {}
+
+  const v = (val: any, fallback = "—") => (val != null && val !== "" && val !== 0 && val !== "0" ? String(val) : fallback)
+
+  return `<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Günlük Çalışma Raporu — ${dateStr}</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm 14mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #1e293b; background: #fff; line-height: 1.4; }
+
+    /* HEADER */
+    .header { background: linear-gradient(135deg, #1a237e 0%, #283593 100%); color: #fff; padding: 14px 18px; border-radius: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+    .header-left .title { font-size: 17px; font-weight: 700; letter-spacing: 0.5px; }
+    .header-left .subtitle { font-size: 11px; opacity: 0.8; margin-top: 2px; }
+    .header-right { text-align: right; }
+    .header-right .date { font-size: 13px; font-weight: 600; }
+    .header-right .project { font-size: 11px; opacity: 0.85; margin-top: 3px; }
+
+    /* SECTION */
+    .section { margin-bottom: 10px; }
+    .section-header { display: flex; align-items: center; gap: 6px; background: #1a237e; color: #fff; padding: 5px 10px; border-radius: 4px 4px 0 0; font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; }
+    .section-body { border: 1px solid #c7d2e8; border-top: none; border-radius: 0 0 4px 4px; background: #fff; padding: 8px; }
+
+    /* STAT CARDS */
+    .stat-grid { display: grid; gap: 6px; }
+    .stat-grid-4 { grid-template-columns: repeat(4, 1fr); }
+    .stat-grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .stat-grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .stat-card { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; text-align: center; background: #f8fafc; }
+    .stat-card.highlight { border-color: #1a237e; background: #eef2ff; }
+    .stat-card.green { border-color: #16a34a; background: #f0fdf4; }
+    .stat-card.orange { border-color: #d97706; background: #fffbeb; }
+    .stat-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; font-weight: 600; margin-bottom: 3px; }
+    .stat-value { font-size: 18px; font-weight: 800; color: #1a237e; line-height: 1; }
+    .stat-card.green .stat-value { color: #16a34a; }
+    .stat-card.orange .stat-value { color: #d97706; }
+    .stat-unit { font-size: 9px; color: #94a3b8; margin-top: 2px; }
+
+    /* TABLES */
+    table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+    th { background: #e8eaf6; color: #1a237e; font-weight: 700; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; padding: 5px 7px; text-align: center; border: 1px solid #c7d2e8; }
+    td { padding: 5px 7px; border: 1px solid #e2e8f0; vertical-align: middle; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    .td-center { text-align: center; font-weight: 600; }
+    .td-total { background: #e8eaf6 !important; font-weight: 700; text-align: center; color: #1a237e; }
+
+    /* PROGRESS BAR */
+    .progress-wrap { margin: 6px 0 0; }
+    .progress-label { display: flex; justify-content: space-between; font-size: 9px; color: #64748b; margin-bottom: 3px; }
+    .progress-bar { height: 8px; background: #e2e8f0; border-radius: 99px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #16a34a, #22c55e); border-radius: 99px; transition: width 0.3s; }
+
+    /* TWO COLUMN */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    /* NOTES */
+    .notes-box { border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px; min-height: 36px; background: #fafbff; white-space: pre-wrap; color: #334155; font-size: 10.5px; line-height: 1.5; }
+    .notes-box.orange { border-color: #fde68a; background: #fffbeb; }
+
+    /* IMAGES */
+    .img-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .img-row img { max-width: 240px; max-height: 160px; object-fit: contain; border: 1px solid #e2e8f0; border-radius: 4px; }
+
+    /* MACHINE TAG */
+    .machine-tag { display: inline-block; background: #1a237e; color: #fff; padding: 2px 8px; border-radius: 99px; font-size: 9px; font-weight: 700; letter-spacing: 0.3px; }
+    .machine-tag.secondary { background: #475569; }
+
+    /* FOOTER */
+    .footer { margin-top: 14px; padding-top: 8px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; font-size: 9px; color: #94a3b8; }
+
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .page { page-break-after: always; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-left">
+      <div class="title">GÜNLÜK ÇALIŞMA RAPORU</div>
+      <div class="subtitle">Daily Work Report</div>
+    </div>
+    <div class="header-right">
+      <div class="date">${formattedDate}</div>
+      <div class="project">${formData.basicInfo?.project ?? ""}</div>
+    </div>
+  </div>
+
+  <!-- MAKİNE + ÜRETİM ÖZET STATS -->
+  <div class="stat-grid stat-grid-4" style="margin-bottom:10px;">
+    <div class="stat-card highlight">
+      <div class="stat-label">Günlük Kazık</div>
+      <div class="stat-value">${v(dailyPileCount)}</div>
+      <div class="stat-unit">adet</div>
+    </div>
+    <div class="stat-card highlight">
+      <div class="stat-label">Toplam İmalat</div>
+      <div class="stat-value">${v(totalProduction)}</div>
+      <div class="stat-unit">metre</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Tamamlanan</div>
+      <div class="stat-value">${v(totalCompletedPiles)}</div>
+      <div class="stat-unit">kazık</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Kalan Kazık</div>
+      <div class="stat-value">${v(remainingPiles)}</div>
+      <div class="stat-unit">adet</div>
+    </div>
+  </div>
+
+  ${totalProjectPiles > 0 ? `
+  <!-- PROJE İLERLEME ÇUBUĞU -->
+  <div class="section" style="margin-bottom:10px;">
+    <div class="progress-wrap" style="padding:8px 10px;border:1px solid #c7d2e8;border-radius:4px;background:#f8fafc;">
+      <div class="progress-label">
+        <span style="font-weight:600;color:#1a237e;">Proje İlerlemesi</span>
+        <span style="font-weight:700;color:#16a34a;">${progressPct}% tamamlandı</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" style="width:${progressPct}%;"></div>
+      </div>
+      <div class="progress-label" style="margin-top:3px;">
+        <span>${completedNum} kazık tamamlandı</span>
+        <span>${remainingNum} kazık kaldı / ${totalProjectPiles} toplam</span>
+      </div>
+    </div>
+  </div>
+  ` : ""}
+
+  <div class="two-col">
+    <!-- SOL KOLON -->
+    <div>
+      <!-- MAKİNE BİLGİLERİ -->
+      <div class="section">
+        <div class="section-header">🔧 Makine Bilgileri</div>
+        <div class="section-body">
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;">
+            <span class="machine-tag">${formData.machineSelection?.selectedMachine?.name ?? "Seçilmedi"}</span>
+            ${(additionalMachines || []).map((m: any) => `<span class="machine-tag secondary">${m.name}</span>`).join("")}
           </div>
-          <div class="section-title">MAKİNE BİLGİLERİ</div>
           <table>
-            <thead><tr><th>MAKİNE TÜRÜ</th><th>MAKİNE ADI</th></tr></thead>
+            <thead><tr><th>Makine</th><th>Saat</th><th>İmalat</th><th>Delinen</th><th>Beton</th></tr></thead>
             <tbody>
-              <tr><td style="text-align: center; font-weight: bold;">Ana Makine</td><td style="text-align: center; font-weight: bold;">${formData.machineSelection?.selectedMachine?.name || "Seçilmedi"}</td></tr>
-              ${(additionalMachines || []).map((machine: any) => `<tr><td style="text-align: center; font-weight: bold;">Ek Makine</td><td style="text-align: center; font-weight: bold;">${machine.name}</td></tr>`).join("")}
-            </tbody>
-          </table>
-          <div class="section-title">MAKİNE İSTATİSTİKLERİ</div>
-          <table>
-            <thead><tr><th>MAKİNE</th><th>MAKİNE SAAT</th><th>TOPLAM İMALAT</th><th>KAZIK ADEDİ</th><th>DELİNEN</th><th>BETON</th></tr></thead>
-            <tbody>
-              ${(machines || []).map((machine: any) => `
-                <tr>
-                  <td style="text-align: center; font-weight: bold;">${machine.machineName ?? ""}</td>
-                  <td style="text-align: center; font-weight: bold;">${machine.machineHours ?? ""}</td>
-                  <td style="text-align: center; font-weight: bold;">${machine.totalProduction ?? ""}</td>
-                  <td style="text-align: center; font-weight: bold;">${machine.pileCount ?? ""}</td>
-                  <td style="text-align: center; font-weight: bold;">${machine.drilledPile ?? ""}</td>
-                  <td style="text-align: center; font-weight: bold;">${machine.concretePile ?? ""}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
-          ${operatorEntries.length > 0 ? `
-          <div class="section-title">OPERATÖR MAKİNE GİRİŞLERİ</div>
-          <table>
-            <thead><tr><th>MAKİNE</th><th>BİNİŞ</th><th>İNİŞ</th><th>MAZOT (L)</th><th>KAZIK (Ad.)</th><th>İMALAT (m)</th><th>ELMAS</th><th>BENTONİT</th><th>YAPILAN İMALAT</th><th>NOT</th></tr></thead>
-            <tbody>
-              ${operatorEntries.map((oe: any) => {
-                const pd = oe.pile_depths
-                const pileDepths = Array.isArray(pd) ? pd : (typeof pd === "string" ? (() => { try { return JSON.parse(pd); } catch { return []; } })() : [])
-                const elmasText = oe.elmas_degisim_yok ? "yok" : (oe.elmas_miktar ?? "")
-                return `
-                <tr>
-                  <td style="text-align: center; font-weight: bold;">${oe.machine_name ?? ""}</td>
-                  <td style="text-align: center;">${oe.start_time ?? ""}</td>
-                  <td style="text-align: center;">${oe.end_time ?? ""}</td>
-                  <td style="text-align: center;">${oe.used_fuel ?? ""}</td>
-                  <td style="text-align: center;">${oe.daily_pile_count ?? oe.concrete_poured ?? ""}</td>
-                  <td style="text-align: center;">${oe.total_production ?? ""}</td>
-                  <td style="text-align: center;">${elmasText}</td>
-                  <td style="text-align: center;">${oe.bentonit_miktar ?? ""}</td>
-                  <td style="text-align: left;">${oe.work_done ?? ""}</td>
-                  <td style="text-align: left;">${oe.note ?? ""}</td>
-                </tr>
-                ${pileDepths.length > 0 ? `
-                <tr><td colspan="10" style="padding: 0; border: none; vertical-align: top;">
-                  <table style="margin: 0 0 4px 8px; width: auto; min-width: 280px;">
-                    <thead><tr><th>No</th><th>Derinlik (m)</th><th>Ön foraj</th><th>Boş foraj</th></tr></thead>
-                    <tbody>
-                      ${pileDepths.map((r: any, i: number) => `<tr><td>${i + 1}</td><td>${r.depth ?? ""}</td><td>${r.onForaj ? "Evet" : "Hayır"}</td><td>${r.bosForaj ? "Evet" : "Hayır"}</td></tr>`).join("")}
-                    </tbody>
-                  </table>
-                </td></tr>
-                ` : ""}
-              `}).join("")}
-            </tbody>
-          </table>
-          ${operatorEntries.some((oe: any) => (oe.notes && String(oe.notes).trim()) || (oe.image1 || oe.image2)) ? `
-          <div class="section-title">OPERATÖR FOTOĞRAF VE NOTLAR</div>
-          ${operatorEntries.map((oe: any) => {
-            const hasContent = (oe.notes && String(oe.notes).trim()) || oe.image1 || oe.image2
-            if (!hasContent) return ""
-            return `<div style="margin-bottom: 12px; border: 1px solid #ccc; padding: 8px;">
-              <strong>${oe.machine_name ?? ""}</strong>
-              ${oe.notes && String(oe.notes).trim() ? `<div style="white-space: pre-wrap; margin: 8px 0;">${oe.notes}</div>` : ""}
-              ${(oe.image1 || oe.image2) ? `<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">${oe.image1 ? `<img src="${oe.image1}" alt="Op 1" style="max-width: 200px; max-height: 150px; object-fit: contain; border: 1px solid #000;" />` : ""}${oe.image2 ? `<img src="${oe.image2}" alt="Op 2" style="max-width: 200px; max-height: 150px; object-fit: contain; border: 1px solid #000;" />` : ""}</div>` : ""}
-            </div>`
-          }).join("")}
-          ` : ""}
-          ` : ""}
-          <div class="section-title">TEMEL BİLGİLER</div>
-          <div class="info-grid">
-            <div class="info-box"><div style="font-size: 10px; font-weight: bold; margin-bottom: 2px;">MAKİNE SAAT</div><div style="font-size: 14px; font-weight: bold;">${currentMachine?.machineHours ?? ""}</div></div>
-            <div class="info-box"><div style="font-size: 10px; font-weight: bold; margin-bottom: 2px;">TOPLAM İMALAT (M)</div><div style="font-size: 14px; font-weight: bold;">${totalProduction}</div></div>
-            <div class="info-box"><div style="font-size: 10px; font-weight: bold; margin-bottom: 2px;">YAPILAN KAZIK ADEDİ</div><div style="font-size: 14px; font-weight: bold;">${totalPileCount}</div></div>
-            <div class="info-box"><div style="font-size: 10px; font-weight: bold; margin-bottom: 2px;">KAZIK DELİNEN</div><div style="font-size: 14px; font-weight: bold;">${currentMachine?.drilledPile ?? currentProductionSummary?.totalPileCount ?? ""}</div></div>
-          </div>
-          <div class="section-title">ÜRETİM ÖZETİ</div>
-          <table>
-            <tbody>
-              <tr><td style="font-weight: bold; background-color: #f0f0f0;">TOPLAM İMALAT (M)</td><td style="text-align: center; font-weight: bold;">${totalProduction}</td></tr>
-              <tr><td style="font-weight: bold; background-color: #f0f0f0;">TOPLAM KAZIK SAYISI</td><td style="text-align: center; font-weight: bold;">${totalPileCount}</td></tr>
-              <tr><td style="font-weight: bold; background-color: #f0f0f0;">GÜNLÜK YAPILAN KAZIK</td><td style="text-align: center; font-weight: bold;">${dailyPileCount}</td></tr>
-              <tr><td style="font-weight: bold; background-color: #f0f0f0;">TOPLAM YAPILAN KAZIK SAYISI</td><td style="text-align: center; font-weight: bold;">${totalCompletedPiles}</td></tr>
-              <tr><td style="font-weight: bold; background-color: #f0f0f0;">KALAN KAZIK SAYISI</td><td style="text-align: center; font-weight: bold;">${remainingPiles}</td></tr>
-              <tr><td style="font-weight: bold; background-color: #f0f0f0;">DEMİR İNDİRİLEN KAZIK</td><td style="text-align: center; font-weight: bold;">${steelLoweredPiles}</td></tr>
-              <tr><td style="font-weight: bold; background-color: #f0f0f0;">BETON DÖKÜLEN KAZIK</td><td style="text-align: center; font-weight: bold;">${concretePoured}</td></tr>
-            </tbody>
-          </table>
-          <div class="section-title">PERSONEL</div>
-          <table>
-            <thead><tr><th>MÜH</th><th>FORMEN</th><th>OPERATOR</th><th>YAĞCI</th><th>KAYNAKÇI</th><th>DİĞER</th><th>TOPLAM</th></tr></thead>
-            <tbody>
+              ${(machines || []).map((m: any) => `
               <tr>
-                <td style="text-align: center; font-weight: bold;">${formData.personnel?.engineer ?? ""}</td>
-                <td style="text-align: center; font-weight: bold;">${formData.personnel?.foreman ?? ""}</td>
-                <td style="text-align: center; font-weight: bold;">${formData.personnel?.operator ?? ""}</td>
-                <td style="text-align: center; font-weight: bold;">${formData.personnel?.oiler ?? ""}</td>
-                <td style="text-align: center; font-weight: bold;">${formData.personnel?.welder ?? ""}</td>
-                <td style="text-align: center; font-weight: bold;">${formData.personnel?.other ?? ""}</td>
-                <td style="text-align: center; font-weight: bold; background-color: #f0f0f0;">${formData.personnel?.total ?? ""}</td>
-              </tr>
+                <td style="font-weight:600;">${m.machineName ?? ""}</td>
+                <td class="td-center">${v(m.machineHours)}</td>
+                <td class="td-center">${v(m.totalProduction)}</td>
+                <td class="td-center">${v(m.drilledPile)}</td>
+                <td class="td-center">${v(m.concretePile)}</td>
+              </tr>`).join("")}
             </tbody>
           </table>
-          <div class="section-title">ARAÇ - GEREÇ</div>
-          <table>
-            <thead><tr><th>VİNÇ</th><th>LOADER</th><th>KAMYON</th><th>PICK UP</th><th>BİNEK</th><th>SERVİS</th><th>TOPLAM</th></tr></thead>
-            <tbody>
-              <tr>
-                <td style="text-align: center; font-weight: bold;">${formData.vehicles?.crane ?? ""}</td>
-                <td style="text-align: center; font-weight: bold;">${formData.vehicles?.loader ?? ""}</td>
-                <td style="text-align: center; font-weight: bold;">${formData.vehicles?.truck ?? ""}</td>
-                <td style="text-align: center; font-weight: bold;">${formData.vehicles?.pickup ?? ""}</td>
-                <td style="text-align: center; font-weight: bold;">${formData.vehicles?.car ?? ""}</td>
-                <td style="text-align: center; font-weight: bold;">${formData.vehicles?.service ?? ""}</td>
-                <td style="text-align: center; font-weight: bold; background-color: #f0f0f0;">${formData.vehicles?.total ?? ""}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div class="section-title">MAKİNE VE ARAÇLAR İÇİN KULLANILAN MAZOT</div>
-          <table>
-            <thead><tr><th>MAKİNE</th><th>DEVİR</th><th>GELEN</th><th>KALAN</th><th>KULLANILAN</th></tr></thead>
-            <tbody>
-              ${(fuelMachines || []).map((machine: any) => `
-                <tr>
-                  <td style="text-align: center; font-weight: bold;">${machine.name ?? ""}</td>
-                  <td style="text-align: center; font-weight: bold;">${machine.shift ?? ""}</td>
-                  <td style="text-align: center; font-weight: bold;">${machine.incoming ?? ""}</td>
-                  <td style="text-align: center; font-weight: bold;">${machine.remaining ?? ""}</td>
-                  <td style="text-align: center; font-weight: bold;">${machine.used ?? ""}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
-          <div class="section-title">KAZIK DETAYLARI</div>
-          <table>
-            <thead><tr><th>KAZIK</th><th>DELİNEN</th><th>NOTLAR</th><th>BETON</th></tr></thead>
-            <tbody>
-              ${(pileDetailsList || []).filter((pile: any) => pile.drilled || pile.notes).map((pile: any) => `
-                <tr>
-                  <td style="text-align: center; font-weight: bold;">${pile.pileNumber}</td>
-                  <td style="text-align: center;">${pile.drilled}</td>
-                  <td>${pile.notes}</td>
-                  <td style="text-align: center;">${pile.concretePoured ? "Evet" : "—"}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
-          ${(formData.dailyInfo?.notes || formData.dailyInfo?.image1 || formData.dailyInfo?.image2 || (formData.dailyInfo?.nextDayPlannedWork && String(formData.dailyInfo.nextDayPlannedWork).trim())) ? `
-          <div class="section-title">GÜNLÜK BİLGİLER</div>
-          ${formData.dailyInfo?.notes ? `<div style="border: 1px solid #000; min-height: 40px; padding: 8px; background: white; white-space: pre-wrap; margin-bottom: 10px;">${formData.dailyInfo.notes}</div>` : ""}
-          ${(formData.dailyInfo?.nextDayPlannedWork && String(formData.dailyInfo.nextDayPlannedWork).trim()) ? `<div style="margin-top: 10px;"><strong>Bir sonraki gün için planlanan imalat ve yapılacak işler:</strong><ul style="margin: 8px 0 0 20px; padding: 0;">${String(formData.dailyInfo.nextDayPlannedWork).split(/\r?\n/).filter((line) => line.trim()).map((line) => `<li style="margin-bottom: 4px;">${line.trim()}</li>`).join("")}</ul></div>` : ""}
-          ${(formData.dailyInfo?.image1 || formData.dailyInfo?.image2) ? `<div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
-            ${formData.dailyInfo?.image1 ? `<img src="${formData.dailyInfo.image1}" alt="Günlük 1" style="max-width: 280px; max-height: 180px; object-fit: contain; border: 1px solid #000;" />` : ""}
-            ${formData.dailyInfo?.image2 ? `<img src="${formData.dailyInfo.image2}" alt="Günlük 2" style="max-width: 280px; max-height: 180px; object-fit: contain; border: 1px solid #000;" />` : ""}
-          </div>` : ""}
-          ` : ""}
-          ${formData.notes ? `<div class="section-title">BAKIM / MALZEME / NOTLAR</div><div style="border: 1px solid #000; min-height: 60px; padding: 8px; background: white; white-space: pre-wrap;">${formData.notes}</div>` : ""}
         </div>
-      </body>
-    </html>
-  `
+      </div>
+
+      <!-- ÜRETİM ÖZETİ -->
+      <div class="section">
+        <div class="section-header">📊 Üretim Özeti</div>
+        <div class="section-body">
+          <table>
+            <tbody>
+              <tr><td style="color:#475569;font-weight:600;">Toplam İmalat</td><td class="td-center" style="color:#1a237e;font-weight:700;">${v(totalProduction)} m</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Toplam Kazık</td><td class="td-center" style="font-weight:700;">${v(totalPileCount)} adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Günlük Yapılan</td><td class="td-center" style="color:#16a34a;font-weight:700;">${v(dailyPileCount)} adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Tamamlanan (Kümülatif)</td><td class="td-center" style="font-weight:700;">${v(totalCompletedPiles)} adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Kalan Kazık</td><td class="td-center" style="color:#d97706;font-weight:700;">${v(remainingPiles)} adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Demir İndirilen</td><td class="td-center" style="font-weight:700;">${v(steelLoweredPiles)} adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Beton Dökülen</td><td class="td-center" style="font-weight:700;">${v(concretePoured)} adet</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SAĞ KOLON -->
+    <div>
+      <!-- PERSONEL -->
+      <div class="section">
+        <div class="section-header">👷 Personel</div>
+        <div class="section-body">
+          <div class="stat-grid stat-grid-4" style="margin-bottom:6px;">
+            <div class="stat-card"><div class="stat-label">Müh.</div><div class="stat-value" style="font-size:16px;">${v(formData.personnel?.engineer, "0")}</div></div>
+            <div class="stat-card"><div class="stat-label">Formen</div><div class="stat-value" style="font-size:16px;">${v(formData.personnel?.foreman, "0")}</div></div>
+            <div class="stat-card"><div class="stat-label">Operatör</div><div class="stat-value" style="font-size:16px;">${v(formData.personnel?.operator, "0")}</div></div>
+            <div class="stat-card highlight"><div class="stat-label">Toplam</div><div class="stat-value" style="font-size:16px;">${v(formData.personnel?.total, "0")}</div></div>
+          </div>
+          <div class="stat-grid stat-grid-3">
+            <div class="stat-card"><div class="stat-label">Yağcı</div><div class="stat-value" style="font-size:14px;">${v(formData.personnel?.oiler, "0")}</div></div>
+            <div class="stat-card"><div class="stat-label">Kaynakçı</div><div class="stat-value" style="font-size:14px;">${v(formData.personnel?.welder, "0")}</div></div>
+            <div class="stat-card"><div class="stat-label">Diğer</div><div class="stat-value" style="font-size:14px;">${v(formData.personnel?.other, "0")}</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ARAÇ GEREÇ -->
+      <div class="section">
+        <div class="section-header">🚛 Araç — Gereç</div>
+        <div class="section-body">
+          <table>
+            <thead><tr><th>Vinç</th><th>Loader</th><th>Kamyon</th><th>Pick-up</th><th>Binek</th><th>Servis</th><th>Toplam</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="td-center">${v(formData.vehicles?.crane, "0")}</td>
+                <td class="td-center">${v(formData.vehicles?.loader, "0")}</td>
+                <td class="td-center">${v(formData.vehicles?.truck, "0")}</td>
+                <td class="td-center">${v(formData.vehicles?.pickup, "0")}</td>
+                <td class="td-center">${v(formData.vehicles?.car, "0")}</td>
+                <td class="td-center">${v(formData.vehicles?.service, "0")}</td>
+                <td class="td-total">${v(formData.vehicles?.total, "0")}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- YAKIT -->
+      ${fuelMachines.length > 0 ? `
+      <div class="section">
+        <div class="section-header">⛽ Yakıt</div>
+        <div class="section-body">
+          <table>
+            <thead><tr><th>Makine</th><th>Devir</th><th>Gelen</th><th>Kalan</th><th>Kullanılan</th></tr></thead>
+            <tbody>
+              ${fuelMachines.map((m: any) => `
+              <tr>
+                <td style="font-weight:600;">${m.name ?? ""}</td>
+                <td class="td-center">${v(m.shift)}</td>
+                <td class="td-center">${v(m.incoming)}</td>
+                <td class="td-center">${v(m.remaining)}</td>
+                <td class="td-center" style="font-weight:700;color:#1a237e;">${v(m.used)}</td>
+              </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      ` : ""}
+    </div>
+  </div>
+
+  <!-- OPERATÖR GİRİŞLERİ -->
+  ${operatorEntries.length > 0 ? `
+  <div class="section">
+    <div class="section-header">👤 Operatör Makine Girişleri</div>
+    <div class="section-body">
+      <table>
+        <thead><tr><th>Makine</th><th>Biniş</th><th>İniş</th><th>Mazot (L)</th><th>Kazık (Ad.)</th><th>İmalat (m)</th><th>Elmas</th><th>Bentonit</th><th>Yapılan İş</th><th>Not</th></tr></thead>
+        <tbody>
+          ${operatorEntries.map((oe: any) => {
+            const pd = oe.pile_depths
+            const pileDepths = Array.isArray(pd) ? pd : (typeof pd === "string" ? (() => { try { return JSON.parse(pd) } catch { return [] } })() : [])
+            const elmasText = oe.elmas_degisim_yok ? "Yok" : (oe.elmas_miktar ?? "—")
+            return `
+            <tr>
+              <td style="font-weight:600;">${oe.machine_name ?? ""}</td>
+              <td class="td-center">${oe.start_time ?? "—"}</td>
+              <td class="td-center">${oe.end_time ?? "—"}</td>
+              <td class="td-center">${v(oe.used_fuel)}</td>
+              <td class="td-center" style="color:#16a34a;font-weight:700;">${v(oe.daily_pile_count ?? oe.concrete_poured)}</td>
+              <td class="td-center">${v(oe.total_production)}</td>
+              <td class="td-center">${elmasText}</td>
+              <td class="td-center">${v(oe.bentonit_miktar)}</td>
+              <td>${oe.work_done ?? ""}</td>
+              <td>${oe.note ?? ""}</td>
+            </tr>
+            ${pileDepths.length > 0 ? `
+            <tr><td colspan="10" style="padding:4px 6px;background:#f8fafc;">
+              <table style="width:auto;min-width:300px;">
+                <thead><tr><th>No</th><th>Derinlik (m)</th><th>Ön Foraj</th><th>Boş Foraj</th></tr></thead>
+                <tbody>
+                  ${pileDepths.map((r: any, i: number) => `<tr><td class="td-center">${i + 1}</td><td class="td-center">${r.depth ?? ""}</td><td class="td-center">${r.onForaj ? "✓" : "—"}</td><td class="td-center">${r.bosForaj ? "✓" : "—"}</td></tr>`).join("")}
+                </tbody>
+              </table>
+            </td></tr>
+            ` : ""}
+          `}).join("")}
+        </tbody>
+      </table>
+      ${operatorEntries.some((oe: any) => oe.image1 || oe.image2 || (oe.notes && String(oe.notes).trim())) ? `
+      <div style="margin-top:8px;">
+        ${operatorEntries.map((oe: any) => {
+          const hasContent = (oe.notes && String(oe.notes).trim()) || oe.image1 || oe.image2
+          if (!hasContent) return ""
+          return `<div style="margin-bottom:8px;">
+            <div style="font-weight:700;color:#1a237e;margin-bottom:4px;">${oe.machine_name ?? ""}</div>
+            ${oe.notes && String(oe.notes).trim() ? `<div class="notes-box" style="margin-bottom:6px;">${oe.notes}</div>` : ""}
+            ${oe.image1 || oe.image2 ? `<div class="img-row">
+              ${oe.image1 ? `<img src="${oe.image1}" alt="Op 1" />` : ""}
+              ${oe.image2 ? `<img src="${oe.image2}" alt="Op 2" />` : ""}
+            </div>` : ""}
+          </div>`
+        }).join("")}
+      </div>
+      ` : ""}
+    </div>
+  </div>
+  ` : ""}
+
+  <!-- KAZIK DETAYLARI -->
+  ${(pileDetailsList || []).filter((p: any) => p.drilled || p.notes).length > 0 ? `
+  <div class="section">
+    <div class="section-header">🪝 Kazık Detayları</div>
+    <div class="section-body">
+      <table>
+        <thead><tr><th>Kazık No</th><th>Delinen (m)</th><th>Beton</th><th>Notlar</th></tr></thead>
+        <tbody>
+          ${(pileDetailsList || []).filter((p: any) => p.drilled || p.notes).map((p: any) => `
+          <tr>
+            <td class="td-center" style="font-weight:700;">${p.pileNumber}</td>
+            <td class="td-center">${p.drilled}</td>
+            <td class="td-center">${p.concretePoured ? `<span style="color:#16a34a;font-weight:700;">✓ Evet</span>` : "—"}</td>
+            <td>${p.notes}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  ` : ""}
+
+  <!-- GÜNLÜK BİLGİLER -->
+  ${(formData.dailyInfo?.notes || formData.dailyInfo?.image1 || formData.dailyInfo?.image2 || (formData.dailyInfo?.nextDayPlannedWork && String(formData.dailyInfo.nextDayPlannedWork).trim())) ? `
+  <div class="section">
+    <div class="section-header">📝 Günlük Bilgiler</div>
+    <div class="section-body">
+      ${formData.dailyInfo?.notes ? `
+      <div style="margin-bottom:8px;">
+        <div style="font-size:9.5px;font-weight:700;color:#475569;text-transform:uppercase;margin-bottom:4px;">Günlük Notlar</div>
+        <div class="notes-box">${formData.dailyInfo.notes}</div>
+      </div>` : ""}
+      ${(formData.dailyInfo?.nextDayPlannedWork && String(formData.dailyInfo.nextDayPlannedWork).trim()) ? `
+      <div style="margin-bottom:8px;">
+        <div style="font-size:9.5px;font-weight:700;color:#475569;text-transform:uppercase;margin-bottom:4px;">Yarın Planlanıyor</div>
+        <div class="notes-box orange">
+          <ul style="padding-left:14px;margin:0;">
+            ${String(formData.dailyInfo.nextDayPlannedWork).split(/\r?\n/).filter((l: string) => l.trim()).map((l: string) => `<li style="margin-bottom:2px;">${l.trim()}</li>`).join("")}
+          </ul>
+        </div>
+      </div>` : ""}
+      ${(formData.dailyInfo?.image1 || formData.dailyInfo?.image2) ? `
+      <div class="img-row">
+        ${formData.dailyInfo.image1 ? `<img src="${formData.dailyInfo.image1}" alt="Sahadan 1" />` : ""}
+        ${formData.dailyInfo.image2 ? `<img src="${formData.dailyInfo.image2}" alt="Sahadan 2" />` : ""}
+      </div>` : ""}
+    </div>
+  </div>
+  ` : ""}
+
+  <!-- BAKIM / NOTLAR -->
+  ${formData.notes ? `
+  <div class="section">
+    <div class="section-header">🔩 Bakım / Malzeme / Notlar</div>
+    <div class="section-body">
+      <div class="notes-box">${formData.notes}</div>
+    </div>
+  </div>
+  ` : ""}
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <span>ICSP Reporter — Günlük Çalışma Raporu</span>
+    <span>${dateStr} · ${formData.basicInfo?.project ?? ""}</span>
+  </div>
+
+</div>
+</body>
+</html>`
 }
 
 const expenseCategoryLabel: Record<string, string> = {
   santiye: "Şantiye",
-  makine: "Makine (Kullanılan kazık makinesi)",
+  makine: "Makine",
   personel: "Personel",
   yakit: "Yakıt",
   diger: "Diğer",
 }
 
 export function generatePDFExpensesPage(formData: any) {
-  const expenses = formData.expenses ?? []
+  const expenses = (formData.expenses ?? []).filter((e: any) => e?.description || e?.amount)
   const basicInfo = formData.basicInfo ?? {}
-  return `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Harcamalar - ${basicInfo.date ?? ""}</title>
-        <style>
-          @page { size: A4 portrait; margin: 15mm; }
-          body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 12px; line-height: 1.2; }
-          table { border-collapse: collapse; width: 100%; margin: 10px 0; }
-          th, td { border: 2px solid #000; padding: 6px; text-align: left; vertical-align: middle; }
-          th { background-color: #f0f0f0; font-weight: bold; text-align: center; }
-          .header { background-color: #f0f0f0; padding: 15px; text-align: center; border: 2px solid #000; margin-bottom: 15px; }
-          @media print { body { -webkit-print-color-adjust: exact; } }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1 style="margin: 0; font-size: 18px;">HARCAMALAR</h1>
-          <div style="display: flex; justify-content: space-between; margin-top: 10px;">
-            <span style="font-weight: bold;">TARİH: ${basicInfo.date ?? ""}</span>
-            <span style="font-weight: bold;">${basicInfo.project ?? ""}</span>
-          </div>
-        </div>
-        <table>
-          <thead>
-            <tr><th style="width: 8%;">#</th><th style="width: 22%;">HARCAMA TÜRÜ</th><th style="width: 45%;">AÇIKLAMA</th><th style="width: 25%;">TUTAR (IQD)</th></tr>
-          </thead>
-          <tbody>
-            ${Array.from({ length: Math.max(15, expenses.length) }, (_, index) => {
-              const expense = expenses[index]
-              const cat = expense?.category && expenseCategoryLabel[expense.category] ? expenseCategoryLabel[expense.category] : expenseCategoryLabel.diger
-              return `<tr><td style="text-align: center; font-weight: bold;">${index + 1}.</td><td>${cat}</td><td>${expense?.description ?? ""}</td><td style="text-align: right; font-weight: bold;">${expense?.amount ? expense.amount.toLocaleString() : ""}</td></tr>`
-            }).join("")}
-            <tr style="background-color: #f0f0f0;">
-              <td colspan="3" style="text-align: center; font-weight: bold;">TOPLAM:</td>
-              <td style="text-align: right; font-weight: bold;">${expenses.reduce((sum: number, exp: any) => sum + (exp?.amount ?? 0), 0).toLocaleString()} IQD</td>
-            </tr>
-          </tbody>
-        </table>
-      </body>
-    </html>
-  `
+  const total = expenses.reduce((s: number, e: any) => s + (e?.amount ?? 0), 0)
+
+  // Kategori bazında toplamlar
+  const catTotals: Record<string, number> = {}
+  expenses.forEach((e: any) => {
+    const cat = e?.category ?? "diger"
+    catTotals[cat] = (catTotals[cat] || 0) + (e?.amount ?? 0)
+  })
+
+  const dateStr = basicInfo.date ?? ""
+  let formattedDate = dateStr
+  try {
+    const d = new Date(dateStr + "T12:00:00Z")
+    formattedDate = d.toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" })
+  } catch {}
+
+  return `<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Harcamalar — ${dateStr}</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm 14mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #1e293b; background: #fff; line-height: 1.4; }
+    .header { background: linear-gradient(135deg, #1a237e 0%, #283593 100%); color: #fff; padding: 14px 18px; border-radius: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+    .header-left .title { font-size: 17px; font-weight: 700; }
+    .header-left .subtitle { font-size: 11px; opacity: 0.8; margin-top: 2px; }
+    .header-right { text-align: right; font-size: 12px; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+    th { background: #e8eaf6; color: #1a237e; font-weight: 700; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; padding: 6px 8px; text-align: center; border: 1px solid #c7d2e8; }
+    td { padding: 5px 8px; border: 1px solid #e2e8f0; vertical-align: middle; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    .total-row td { background: #e8eaf6 !important; font-weight: 700; font-size: 12px; color: #1a237e; }
+    .amount { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .cat-badge { display: inline-block; padding: 1px 7px; border-radius: 99px; font-size: 9px; font-weight: 700; }
+    .cat-santiye { background: #dbeafe; color: #1d4ed8; }
+    .cat-makine { background: #fce7f3; color: #9d174d; }
+    .cat-personel { background: #d1fae5; color: #065f46; }
+    .cat-yakit { background: #fef3c7; color: #92400e; }
+    .cat-diger { background: #f1f5f9; color: #475569; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 6px; margin-bottom: 10px; }
+    .summary-card { border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 9px; text-align: center; background: #f8fafc; }
+    .summary-label { font-size: 9px; color: #64748b; font-weight: 600; text-transform: uppercase; margin-bottom: 2px; }
+    .summary-value { font-size: 13px; font-weight: 700; color: #1a237e; }
+    .footer { margin-top: 14px; padding-top: 8px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 9px; color: #94a3b8; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-left">
+      <div class="title">HARCAMALAR</div>
+      <div class="subtitle">Expenses</div>
+    </div>
+    <div class="header-right">
+      <div>${formattedDate}</div>
+      <div style="opacity:0.85;font-weight:400;margin-top:2px;">${basicInfo.project ?? ""}</div>
+    </div>
+  </div>
+
+  ${Object.keys(catTotals).length > 0 ? `
+  <div class="summary-grid">
+    ${Object.entries(catTotals).map(([cat, amt]) => `
+    <div class="summary-card">
+      <div class="summary-label">${expenseCategoryLabel[cat] ?? cat}</div>
+      <div class="summary-value">${(amt as number).toLocaleString("tr-TR")}</div>
+    </div>`).join("")}
+    <div class="summary-card" style="border-color:#1a237e;background:#eef2ff;">
+      <div class="summary-label">Toplam</div>
+      <div class="summary-value">${total.toLocaleString("tr-TR")}</div>
+    </div>
+  </div>
+  ` : ""}
+
+  <table>
+    <thead>
+      <tr><th style="width:6%;">#</th><th style="width:16%;">Kategori</th><th>Açıklama</th><th style="width:22%;text-align:right;">Tutar (IQD)</th></tr>
+    </thead>
+    <tbody>
+      ${expenses.length > 0 ? expenses.map((e: any, i: number) => {
+        const cat = e?.category ?? "diger"
+        const label = expenseCategoryLabel[cat] ?? "Diğer"
+        const badgeClass = `cat-${cat}`
+        return `<tr>
+          <td style="text-align:center;color:#94a3b8;font-weight:600;">${i + 1}</td>
+          <td><span class="cat-badge ${badgeClass}">${label}</span></td>
+          <td>${e?.description ?? ""}</td>
+          <td class="amount">${e?.amount ? Number(e.amount).toLocaleString("tr-TR") : "—"}</td>
+        </tr>`
+      }).join("") : `<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:20px;">Harcama kaydedilmemiş</td></tr>`}
+      ${expenses.length > 0 ? `
+      <tr class="total-row">
+        <td colspan="3" style="text-align:right;">TOPLAM</td>
+        <td class="amount">${total.toLocaleString("tr-TR")} IQD</td>
+      </tr>` : ""}
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <span>ICSP Reporter — Harcama Raporu</span>
+    <span>${dateStr}</span>
+  </div>
+
+</body>
+</html>`
 }

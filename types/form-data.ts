@@ -118,10 +118,22 @@ export interface IronStep {
   remaining: string; // calculated: onSite + preparedToday - lowered
 }
 
+export interface PuantajEntry {
+  personel_id: number
+  ad: string
+  soyad: string
+  gorev: string
+  carpan: number        // 1 = tam gün, 0.5 = yarım, 0 = gelmedi
+  durum_kod: string     // G, İ, R
+  mesai_saat: number
+  notlar: string
+}
+
 export interface FormData {
   machineSelection: MachineSelection;
   basicInfo: BasicInfo;
   personnel: Personnel;
+  puantaj: PuantajEntry[];
   vehicles: Vehicles;
   fuel: Fuel;
   expenses: Expense[];
@@ -140,6 +152,7 @@ export const AVAILABLE_MACHINES: Machine[] = [
 ]
 
 export const initialFormData: FormData = {
+  puantaj: [],
   machineSelection: {
     selectedMachine: null,
     additionalMachines: [],

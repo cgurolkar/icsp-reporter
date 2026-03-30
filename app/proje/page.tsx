@@ -77,10 +77,7 @@ function ProjeHomePage() {
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 600 }}>Şantiye Adı</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Yetkili Kişi</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>İşveren</TableCell>
                   <TableCell sx={{ fontWeight: 600 }} align="right">Kazık Sayısı</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Bölge / Şehir</TableCell>
                   <TableCell sx={{ fontWeight: 600 }} align="center">İşlem</TableCell>
                 </TableRow>
               </TableHead>
@@ -96,12 +93,7 @@ function ProjeHomePage() {
                         </Typography>
                       )}
                     </TableCell>
-                    <TableCell>{site.authorized_person || "—"}</TableCell>
-                    <TableCell>{site.employer || "—"}</TableCell>
                     <TableCell align="right">{site.total_piles != null ? site.total_piles : "—"}</TableCell>
-                    <TableCell>
-                      {[site.region, site.city].filter(Boolean).join(" / ") || "—"}
-                    </TableCell>
                     <TableCell align="center" sx={{ whiteSpace: "nowrap" }}>
                       <Link href={`/reports?siteId=${site.id}`} style={{ textDecoration: "none" }}>
                         <Button size="small" variant="outlined" sx={{ mr: 0.5, borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}>

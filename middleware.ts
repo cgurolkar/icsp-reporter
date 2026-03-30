@@ -9,8 +9,6 @@ const PROJE_HOME = "/proje"
 const OPERATOR_HOME = "/operator-form"
 
 function isPublicPath(pathname: string): boolean {
-  if (pathname === "/") return true
-  // /idari public path'ten kaldırıldı — giriş gerektirmeli
   if (pathname === LOGIN_PATH) return true
   if (pathname.startsWith("/api/auth/login")) return true
   return false
@@ -23,8 +21,18 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  const session = await getSessionFromRequest(request)
+
+  // Kök path: giriş yapmışsa rolüne göre yönlendir, yapmamışsa login
+  if (pathname === "/") {
+    if (session) {
+      const dest = session.role === "operator" ? OPERATOR_HOME : PROJE_HOME
+      return NextResponse.redirect(new URL(dest, request.url))
+    }
+    return NextResponse.redirect(new URL(LOGIN_PATH, request.url))
+  }
+
   if (isPublicPath(pathname)) {
-    const session = await getSessionFromRequest(request)
     if (session && pathname === LOGIN_PATH) {
       const dest = session.role === "operator" ? OPERATOR_HOME : PROJE_HOME
       return NextResponse.redirect(new URL(dest, request.url))
@@ -32,7 +40,6 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  const session = await getSessionFromRequest(request)
   if (!session) {
     const loginUrl = new URL(LOGIN_PATH, request.url)
     loginUrl.searchParams.set("next", pathname)

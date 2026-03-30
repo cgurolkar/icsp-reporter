@@ -8,12 +8,13 @@ import { ThemeProvider } from "@mui/material/styles"
 import CssBaseline from "@mui/material/CssBaseline"
 import { theme } from "@/lib/theme"
 import { useAuth } from "@/contexts/auth-context"
-import { Home, People, Assignment, AttachMoney, Description, BarChart, Inventory2 } from "@mui/icons-material"
+import { Home, People, Assignment, AttachMoney, Description, BarChart, Inventory2, Construction } from "@mui/icons-material"
 
 const navItems = [
   { href: "/idari", label: "Dashboard", icon: BarChart },
   { href: "/idari/personel", label: "Personel", icon: People },
   { href: "/idari/envanter", label: "Envanter", icon: Inventory2 },
+  { href: "/idari/makineler", label: "Makineler", icon: Construction },
   { href: "/idari/puantaj", label: "Puantaj", icon: Assignment },
   { href: "/idari/puantaj-onay", label: "Puantaj onay", icon: Assignment },
   { href: "/idari/harcamalar", label: "Harcamalar", icon: AttachMoney },
@@ -65,7 +66,13 @@ export default function IdariLayout({ children }: { children: React.ReactNode })
             İdari Yönetim
           </Typography>
           <Box sx={{ display: "flex", gap: 0.5, flexWrap: { xs: "nowrap", sm: "wrap" }, overflowX: { xs: "auto", sm: "visible" }, WebkitOverflowScrolling: "touch", pb: { xs: 0.5, sm: 0 } }}>
-            {navItems.filter((item) => item.href !== "/idari/puantaj-onay" || role === "admin" || role === "manager").map(({ href, label, icon: Icon }) => (
+            {navItems.filter((item) => {
+              const isUserRole = role === "user" || role === "personel"
+              const USER_ALLOWED = ["/idari", "/idari/personel", "/idari/envanter", "/idari/makineler", "/idari/harcamalar"]
+              if (isUserRole) return USER_ALLOWED.includes(item.href)
+              if (item.href === "/idari/puantaj-onay") return role === "admin" || role === "manager"
+              return true
+            }).map(({ href, label, icon: Icon }) => (
               <Button
                 key={href}
                 component={Link}

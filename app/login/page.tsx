@@ -22,7 +22,10 @@ function LoginForm() {
     fetch("/api/auth/me", { credentials: "include" })
       .then((res) => res.json())
       .then((data) => {
-        if (data.user) router.replace(next)
+        if (data.user) {
+          const dest = data.user.role === "operator" ? "/operator-form" : next
+          router.replace(dest)
+        }
       })
       .catch(() => {})
   }, [router, next])
@@ -49,7 +52,9 @@ function LoginForm() {
         return
       }
       setLoading(false)
-      window.location.href = next
+      const role = data?.user?.role
+      const dest = role === "operator" ? "/operator-form" : next
+      window.location.href = dest
     } catch (err) {
       const isAbort = err instanceof Error && err.name === "AbortError"
       setError(isAbort ? "Zaman aşımı. Sunucuya ulaşılamıyor." : "Bağlantı hatası.")

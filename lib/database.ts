@@ -453,6 +453,75 @@ async function _doInitializeDatabase() {
       )
     `)
 
+    // envanter_hareket tablosu
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS envanter_hareket (
+        id SERIAL PRIMARY KEY,
+        envanter_id INTEGER NOT NULL REFERENCES envanter(id) ON DELETE CASCADE,
+        hareket_tipi VARCHAR(10) NOT NULL CHECK (hareket_tipi IN ('gelen','giden')),
+        kaynak_yer VARCHAR(255),
+        hedef_yer VARCHAR(255),
+        site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL,
+        tarih DATE NOT NULL,
+        adet INTEGER NOT NULL DEFAULT 1,
+        notlar TEXT,
+        olusturan_id INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    // envanter tablosuna durum alanı ekle (migration)
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='envanter' AND column_name='durum')
+        THEN ALTER TABLE envanter ADD COLUMN durum VARCHAR(30) DEFAULT 'aktif'; END IF;
+      EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'envanter durum: %', SQLERRM; END $$
+    `)
+
+    // Makine defteri tablosu
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS machines (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        machine_type VARCHAR(100) NOT NULL DEFAULT 'Kazık Makinesi',
+        marka VARCHAR(100),
+        model VARCHAR(100),
+        plaka_no VARCHAR(50),
+        seri_no VARCHAR(100),
+        status VARCHAR(30) NOT NULL DEFAULT 'aktif' CHECK (status IN ('aktif','bakimda','hurda','depoda')),
+        current_site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL,
+        notlar TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    // machine_operator_atama: hangi operatörler hangi makinede çalışıyor
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS machine_operator_atama (
+        id SERIAL PRIMARY KEY,
+        machine_id INTEGER NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+        personel_id INTEGER NOT NULL REFERENCES personeller(id) ON DELETE CASCADE,
+        baslangic_tarihi DATE NOT NULL DEFAULT CURRENT_DATE,
+        bitis_tarihi DATE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(machine_id, personel_id, baslangic_tarihi)
+      )
+    `)
+
+    // personel_izin tablosu
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS personel_izin (
+        id SERIAL PRIMARY KEY,
+        personel_id INTEGER NOT NULL REFERENCES personeller(id) ON DELETE CASCADE,
+        izin_tipi VARCHAR(50) NOT NULL DEFAULT 'Yıllık',
+        baslangic_tarihi DATE NOT NULL,
+        bitis_tarihi DATE NOT NULL,
+        gun_sayisi INTEGER GENERATED ALWAYS AS (bitis_tarihi - baslangic_tarihi + 1) STORED,
+        notlar TEXT,
+        olusturan_id INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
     await seedIdariInitialData(client)
 
     // ---------- Performans indeksleri ----------
@@ -465,11 +534,17 @@ async function _doInitializeDatabase() {
       CREATE INDEX IF NOT EXISTS idx_puantaj_site_tarih ON puantaj(site_id, tarih);
       CREATE INDEX IF NOT EXISTS idx_puantaj_personel ON puantaj(personel_id);
       CREATE INDEX IF NOT EXISTS idx_puantaj_durum ON puantaj(durum);
+      CREATE INDEX IF NOT EXISTS idx_envanter_hareket_envanter ON envanter_hareket(envanter_id);
+      CREATE INDEX IF NOT EXISTS idx_envanter_hareket_site ON envanter_hareket(site_id);
       CREATE INDEX IF NOT EXISTS idx_islemler_site_tarih ON islemler(site_id, islem_tarihi);
       CREATE INDEX IF NOT EXISTS idx_islemler_kategori ON islemler(kategori_id);
       CREATE INDEX IF NOT EXISTS idx_personel_atama_personel ON personel_atama(personel_id);
       CREATE INDEX IF NOT EXISTS idx_personel_atama_site ON personel_atama(site_id);
       CREATE INDEX IF NOT EXISTS idx_users_site_id ON users(site_id);
+      CREATE INDEX IF NOT EXISTS idx_personel_izin_personel ON personel_izin(personel_id);
+      CREATE INDEX IF NOT EXISTS idx_machines_site ON machines(current_site_id);
+      CREATE INDEX IF NOT EXISTS idx_machine_operator_machine ON machine_operator_atama(machine_id);
+      CREATE INDEX IF NOT EXISTS idx_machine_operator_personel ON machine_operator_atama(personel_id);
     `)
 
     console.log('Database tables created successfully')
@@ -1821,6 +1896,60 @@ export async function createIslem(data: {
   }
 }
 
+// ---------- Envanter Hareket ----------
+export async function getEnvanterHareketler(envanterI: number) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `SELECT eh.*, s.name AS site_name, u.username AS olusturan
+       FROM envanter_hareket eh
+       LEFT JOIN sites s ON s.id = eh.site_id
+       LEFT JOIN users u ON u.id = eh.olusturan_id
+       WHERE eh.envanter_id = $1
+       ORDER BY eh.tarih DESC, eh.created_at DESC`,
+      [envanterI]
+    )
+    return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function createEnvanterHareket(data: {
+  envanter_id: number
+  hareket_tipi: 'gelen' | 'giden'
+  kaynak_yer?: string | null
+  hedef_yer?: string | null
+  site_id?: number | null
+  tarih: string
+  adet: number
+  notlar?: string | null
+  olusturan_id?: number | null
+}) {
+  const client = await pool.connect()
+  try {
+    // envanter'in mevcut yerini ve adetini güncelle
+    const ev = await client.query(`SELECT adet, yer, site_id FROM envanter WHERE id = $1`, [data.envanter_id])
+    if (!ev.rows[0]) throw new Error('Envanter bulunamadı')
+    const currentAdet = parseInt(ev.rows[0].adet ?? '0', 10)
+    const newAdet = data.hareket_tipi === 'gelen' ? currentAdet + data.adet : Math.max(0, currentAdet - data.adet)
+    const newYer = data.hareket_tipi === 'gelen' ? (data.hedef_yer ?? ev.rows[0].yer) : (data.hedef_yer ?? ev.rows[0].yer)
+    await client.query(
+      `UPDATE envanter SET adet=$1, yer=$2, site_id=$3, updated_at=NOW() WHERE id=$4`,
+      [newAdet, newYer, data.site_id ?? ev.rows[0].site_id, data.envanter_id]
+    )
+    const r = await client.query(
+      `INSERT INTO envanter_hareket (envanter_id, hareket_tipi, kaynak_yer, hedef_yer, site_id, tarih, adet, notlar, olusturan_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+      [data.envanter_id, data.hareket_tipi, data.kaynak_yer ?? null, data.hedef_yer ?? null,
+       data.site_id ?? null, data.tarih, data.adet, data.notlar ?? null, data.olusturan_id ?? null]
+    )
+    return r.rows[0]?.id
+  } finally {
+    client.release()
+  }
+}
+
 // ---------- İdari modül: Personel belgeleri ----------
 export async function getPersonelBelgeleri(personelId: number) {
   const client = await pool.connect()
@@ -2135,6 +2264,144 @@ export async function syncExpensesToIslemler(
         [siteId, katId, Number(exp.amount), date, exp.description ?? '', userId, reportId]
       )
     }
+  } finally {
+    client.release()
+  }
+}
+
+// ---------- Makine Defteri ----------
+
+export interface MachineRow {
+  id: number
+  name: string
+  machine_type: string
+  marka: string | null
+  model: string | null
+  plaka_no: string | null
+  seri_no: string | null
+  status: string
+  current_site_id: number | null
+  site_name: string | null
+  notlar: string | null
+  operators: { personel_id: number; ad: string; soyad: string; gorev: string; baslangic_tarihi: string; bitis_tarihi: string | null }[]
+}
+
+export async function getMachines(opts: { siteId?: number | null; status?: string | null } = {}): Promise<MachineRow[]> {
+  const client = await pool.connect()
+  try {
+    const conditions: string[] = []
+    const params: unknown[] = []
+    let i = 1
+    if (opts.siteId != null) { conditions.push(`m.current_site_id = $${i++}`); params.push(opts.siteId) }
+    if (opts.status) { conditions.push(`m.status = $${i++}`); params.push(opts.status) }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+    const r = await client.query(
+      `SELECT m.*, s.name AS site_name,
+        COALESCE(
+          json_agg(json_build_object('personel_id', p.id, 'ad', p.ad, 'soyad', p.soyad, 'gorev', p.gorev,
+            'baslangic_tarihi', moa.baslangic_tarihi, 'bitis_tarihi', moa.bitis_tarihi))
+          FILTER (WHERE p.id IS NOT NULL), '[]'
+        ) AS operators
+       FROM machines m
+       LEFT JOIN sites s ON m.current_site_id = s.id
+       LEFT JOIN machine_operator_atama moa ON moa.machine_id = m.id AND (moa.bitis_tarihi IS NULL OR moa.bitis_tarihi >= CURRENT_DATE)
+       LEFT JOIN personeller p ON moa.personel_id = p.id
+       ${where}
+       GROUP BY m.id, s.name
+       ORDER BY s.name NULLS LAST, m.name`,
+      params
+    )
+    return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function createMachine(data: {
+  name: string; machine_type: string; marka?: string | null; model?: string | null;
+  plaka_no?: string | null; seri_no?: string | null; status?: string; current_site_id?: number | null; notlar?: string | null
+}): Promise<number> {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `INSERT INTO machines (name, machine_type, marka, model, plaka_no, seri_no, status, current_site_id, notlar)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+      [data.name, data.machine_type, data.marka ?? null, data.model ?? null, data.plaka_no ?? null,
+       data.seri_no ?? null, data.status ?? 'aktif', data.current_site_id ?? null, data.notlar ?? null]
+    )
+    return r.rows[0].id
+  } finally {
+    client.release()
+  }
+}
+
+export async function updateMachine(id: number, data: Partial<{
+  name: string; machine_type: string; marka: string | null; model: string | null;
+  plaka_no: string | null; seri_no: string | null; status: string; current_site_id: number | null; notlar: string | null
+}>): Promise<void> {
+  const client = await pool.connect()
+  try {
+    const sets: string[] = []
+    const vals: unknown[] = []
+    let i = 1
+    const addField = (col: string, val: unknown) => { sets.push(`${col} = $${i++}`); vals.push(val) }
+    if (data.name !== undefined) addField('name', data.name)
+    if (data.machine_type !== undefined) addField('machine_type', data.machine_type)
+    if (data.marka !== undefined) addField('marka', data.marka)
+    if (data.model !== undefined) addField('model', data.model)
+    if (data.plaka_no !== undefined) addField('plaka_no', data.plaka_no)
+    if (data.seri_no !== undefined) addField('seri_no', data.seri_no)
+    if (data.status !== undefined) addField('status', data.status)
+    if ('current_site_id' in data) addField('current_site_id', data.current_site_id)
+    if (data.notlar !== undefined) addField('notlar', data.notlar)
+    if (sets.length === 0) return
+    sets.push(`updated_at = NOW()`)
+    vals.push(id)
+    await client.query(`UPDATE machines SET ${sets.join(', ')} WHERE id = $${i}`, vals)
+  } finally {
+    client.release()
+  }
+}
+
+export async function upsertMachineOperators(machineId: number, personelIds: number[]): Promise<void> {
+  const client = await pool.connect()
+  try {
+    // Aktif atamaları kapat (bitis_tarihi = bugün)
+    await client.query(
+      `UPDATE machine_operator_atama SET bitis_tarihi = CURRENT_DATE
+       WHERE machine_id = $1 AND bitis_tarihi IS NULL AND personel_id != ALL($2::int[])`,
+      [machineId, personelIds.length > 0 ? personelIds : [0]]
+    )
+    // Yeni atamaları ekle
+    for (const pId of personelIds) {
+      await client.query(
+        `INSERT INTO machine_operator_atama (machine_id, personel_id, baslangic_tarihi)
+         VALUES ($1, $2, CURRENT_DATE)
+         ON CONFLICT (machine_id, personel_id, baslangic_tarihi) DO NOTHING`,
+        [machineId, pId]
+      )
+    }
+  } finally {
+    client.release()
+  }
+}
+
+export async function createPersonelIzin(data: {
+  personel_id: number
+  izin_tipi: string
+  baslangic_tarihi: string
+  bitis_tarihi: string
+  notlar?: string | null
+  olusturan_id?: number | null
+}): Promise<number> {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `INSERT INTO personel_izin (personel_id, izin_tipi, baslangic_tarihi, bitis_tarihi, notlar, olusturan_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [data.personel_id, data.izin_tipi, data.baslangic_tarihi, data.bitis_tarihi, data.notlar ?? null, data.olusturan_id ?? null]
+    )
+    return r.rows[0].id
   } finally {
     client.release()
   }

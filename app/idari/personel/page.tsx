@@ -25,10 +25,15 @@ import {
   TablePagination,
   Chip,
 } from "@mui/material"
-import { Add, Edit, Visibility, Download, Upload, Delete } from "@mui/icons-material"
+import { Add, Edit, Visibility, Download, Upload, Delete, BeachAccess } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
 
-const GOREVLER = ["İşçi", "Kalfa", "Usta", "Mühendis", "Operatör", "Proje Müdürü", "Şantiye Şefi"]
+const GOREVLER = [
+  "İşçi", "Satın Alma", "Formen", "Operatör", "Mühendis",
+  "Yağcı", "Şantiye Şefi", "Proje Müdürü",
+]
+
+const IZIN_TIPLERI = ["Yıllık", "Mazeret", "Sağlık", "Ücretsiz", "Diğer"]
 
 interface SiteItem {
   id: number
@@ -37,6 +42,14 @@ interface SiteItem {
 }
 
 const CALISTIGI_BOLUM_OPTIONS = ["Şantiye", "Merkez Ofis", "Depo", "Diğer"]
+
+interface AtamaRow {
+  id: number
+  site_id: number
+  site_name: string
+  baslangic_tarihi: string
+  bitis_tarihi: string | null
+}
 
 interface PersonelRow {
   id: number
@@ -50,6 +63,13 @@ interface PersonelRow {
   calistigi_bolum?: string | null
   gunluk_yevmiye?: number | null
   aylik_maas?: number | null
+  atamalar?: AtamaRow[] | null
+}
+
+function activeGorevYeri(row: PersonelRow): string {
+  if (!row.atamalar || row.atamalar.length === 0) return "—"
+  const active = row.atamalar.find((a) => !a.bitis_tarihi || new Date(a.bitis_tarihi) >= new Date())
+  return active?.site_name ?? "—"
 }
 
 export default function IdariPersonelPage() {
@@ -68,6 +88,19 @@ export default function IdariPersonelPage() {
   const [deleting, setDeleting] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [importing, setImporting] = useState(false)
+
+  // İzin dialog state
+  const [izinDialogOpen, setIzinDialogOpen] = useState(false)
+  const [izinPersonelId, setIzinPersonelId] = useState<number | null>(null)
+  const [izinPersonelAd, setIzinPersonelAd] = useState("")
+  const [izinSaving, setIzinSaving] = useState(false)
+  const [izinForm, setIzinForm] = useState({
+    izin_tipi: "Yıllık",
+    baslangic_tarihi: "",
+    bitis_tarihi: "",
+    notlar: "",
+  })
+
   const [form, setForm] = useState({
     ad: "",
     soyad: "",
@@ -109,7 +142,6 @@ export default function IdariPersonelPage() {
     fetch(`/api/idari/personel?${params}`)
       .then((r) => (r.ok ? r.json() : { data: [], total: 0 }))
       .then((res: { data: PersonelRow[]; total: number } | PersonelRow[]) => {
-        // Backward compat: eski format düz array olabilir
         if (Array.isArray(res)) { setList(res); setTotal(res.length) }
         else { setList(res.data ?? []); setTotal(res.total ?? 0) }
       })
@@ -124,23 +156,10 @@ export default function IdariPersonelPage() {
   const openAdd = () => {
     setEditingId(null)
     setForm({
-      ad: "",
-      soyad: "",
-      gorev: "İşçi",
-      tc_kimlik: "",
-      pasaport_no: "",
-      calistigi_bolum: "",
-      dogum_tarihi: "",
-      kan_grubu: "",
-      acil_iletisim: "",
-      acil_telefon: "",
-      ise_giris_tarihi: "",
-      isten_cikis_tarihi: "",
-      sigorta_durumu: "",
-      iban: "",
-      banka_adi: "",
-      gunluk_yevmiye: "",
-      aylik_maas: "",
+      ad: "", soyad: "", gorev: "İşçi", tc_kimlik: "", pasaport_no: "",
+      calistigi_bolum: "", dogum_tarihi: "", kan_grubu: "", acil_iletisim: "",
+      acil_telefon: "", ise_giris_tarihi: "", isten_cikis_tarihi: "",
+      sigorta_durumu: "", iban: "", banka_adi: "", gunluk_yevmiye: "", aylik_maas: "",
     })
     setDialogOpen(true)
   }
@@ -169,6 +188,41 @@ export default function IdariPersonelPage() {
     setDialogOpen(true)
   }
 
+  const openIzin = (row: PersonelRow) => {
+    setIzinPersonelId(row.id)
+    setIzinPersonelAd(`${row.ad} ${row.soyad}`)
+    setIzinForm({ izin_tipi: "Yıllık", baslangic_tarihi: "", bitis_tarihi: "", notlar: "" })
+    setIzinDialogOpen(true)
+  }
+
+  const handleIzinSave = async () => {
+    if (!izinPersonelId || !izinForm.baslangic_tarihi || !izinForm.bitis_tarihi) return
+    setIzinSaving(true)
+    try {
+      const res = await fetch("/api/idari/personel/izin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personel_id: izinPersonelId,
+          izin_tipi: izinForm.izin_tipi,
+          baslangic_tarihi: izinForm.baslangic_tarihi,
+          bitis_tarihi: izinForm.bitis_tarihi,
+          notlar: izinForm.notlar || null,
+        }),
+      })
+      if (res.ok) {
+        setIzinDialogOpen(false)
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || "İzin kaydedilemedi.")
+      }
+    } catch {
+      alert("Bağlantı hatası.")
+    } finally {
+      setIzinSaving(false)
+    }
+  }
+
   const handleDelete = async () => {
     if (confirmDeleteId == null) return
     setDeleting(true)
@@ -190,68 +244,34 @@ export default function IdariPersonelPage() {
 
   const handleSave = async () => {
     if (!form.ad.trim() || !form.soyad.trim()) return
-    if (editingId != null) {
-      const res = await fetch(`/api/idari/personel/${editingId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ad: form.ad.trim(),
-          soyad: form.soyad.trim(),
-          gorev: form.gorev,
-          tc_kimlik: form.tc_kimlik || null,
-          pasaport_no: form.pasaport_no || null,
-          calistigi_bolum: form.calistigi_bolum || null,
-          dogum_tarihi: form.dogum_tarihi || null,
-          kan_grubu: form.kan_grubu || null,
-          acil_iletisim: form.acil_iletisim || null,
-          acil_telefon: form.acil_telefon || null,
-          ise_giris_tarihi: form.ise_giris_tarihi || null,
-          isten_cikis_tarihi: form.isten_cikis_tarihi || null,
-          sigorta_durumu: form.sigorta_durumu || null,
-          iban: form.iban || null,
-          banka_adi: form.banka_adi || null,
-          gunluk_yevmiye: form.gunluk_yevmiye ? parseFloat(form.gunluk_yevmiye) : null,
-          aylik_maas: form.aylik_maas ? parseFloat(form.aylik_maas) : null,
-        }),
-      })
-      if (res.ok) {
-        setDialogOpen(false)
-        loadList()
-      } else {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || "Güncellenemedi.")
-      }
+    const payload = {
+      ad: form.ad.trim(),
+      soyad: form.soyad.trim(),
+      gorev: form.gorev,
+      tc_kimlik: form.tc_kimlik || null,
+      pasaport_no: form.pasaport_no || null,
+      calistigi_bolum: form.calistigi_bolum || null,
+      dogum_tarihi: form.dogum_tarihi || null,
+      kan_grubu: form.kan_grubu || null,
+      acil_iletisim: form.acil_iletisim || null,
+      acil_telefon: form.acil_telefon || null,
+      ise_giris_tarihi: form.ise_giris_tarihi || null,
+      isten_cikis_tarihi: form.isten_cikis_tarihi || null,
+      sigorta_durumu: form.sigorta_durumu || null,
+      iban: form.iban || null,
+      banka_adi: form.banka_adi || null,
+      gunluk_yevmiye: form.gunluk_yevmiye ? parseFloat(form.gunluk_yevmiye) : null,
+      aylik_maas: form.aylik_maas ? parseFloat(form.aylik_maas) : null,
+    }
+    const url = editingId != null ? `/api/idari/personel/${editingId}` : "/api/idari/personel"
+    const method = editingId != null ? "PUT" : "POST"
+    const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+    if (res.ok) {
+      setDialogOpen(false)
+      loadList()
     } else {
-      const res = await fetch("/api/idari/personel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ad: form.ad.trim(),
-          soyad: form.soyad.trim(),
-          gorev: form.gorev,
-          tc_kimlik: form.tc_kimlik || null,
-          pasaport_no: form.pasaport_no || null,
-          calistigi_bolum: form.calistigi_bolum || null,
-          dogum_tarihi: form.dogum_tarihi || null,
-          kan_grubu: form.kan_grubu || null,
-          acil_iletisim: form.acil_iletisim || null,
-          acil_telefon: form.acil_telefon || null,
-          ise_giris_tarihi: form.ise_giris_tarihi || null,
-          isten_cikis_tarihi: form.isten_cikis_tarihi || null,
-          sigorta_durumu: form.sigorta_durumu || null,
-          iban: form.iban || null,
-          banka_adi: form.banka_adi || null,
-          gunluk_yevmiye: form.gunluk_yevmiye ? parseFloat(form.gunluk_yevmiye) : null,
-          aylik_maas: form.aylik_maas ? parseFloat(form.aylik_maas) : null,
-        }),
-      })
-      if (res.ok) {
-        setDialogOpen(false)
-        loadList()
-      } else {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || "Eklenemedi.")
-      }
+      const err = await res.json().catch(() => ({}))
+      alert(err.error || (editingId != null ? "Güncellenemedi." : "Eklenemedi."))
     }
   }
 
@@ -264,12 +284,8 @@ export default function IdariPersonelPage() {
       <Paper sx={{ p: 2, mb: 2 }}>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, alignItems: "center", mb: 2 }}>
           <TextField
-            size="small"
-            label="Ara"
-            placeholder="Ad, soyad veya görev..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            sx={{ minWidth: 200 }}
+            size="small" label="Ara" placeholder="Ad, soyad veya görev..."
+            value={search} onChange={(e) => setSearch(e.target.value)} sx={{ minWidth: 200 }}
           />
           <FormControl size="small" sx={{ minWidth: 200 }}>
             <InputLabel>Şantiye</InputLabel>
@@ -326,65 +342,69 @@ export default function IdariPersonelPage() {
           <Typography color="text.secondary">Yükleniyor...</Typography>
         ) : (
           <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          <Table size="small" sx={{ minWidth: 600 }}>
-            <TableHead>
-              <TableRow>
-                <TableCell><strong>Ad Soyad</strong></TableCell>
-                <TableCell><strong>Görev</strong></TableCell>
-                <TableCell><strong>TC / Pasaport</strong></TableCell>
-            <TableCell><strong>Çalıştığı bölüm</strong></TableCell>
-                <TableCell><strong>İşe giriş / çıkış</strong></TableCell>
-                <TableCell align="right"><strong>Günlük / Aylık</strong></TableCell>
-                <TableCell align="right">İşlem</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {list.length === 0 ? (
+            <Table size="small" sx={{ minWidth: 600 }}>
+              <TableHead>
                 <TableRow>
-                  <TableCell colSpan={8} align="center" sx={{ py: 3 }}>Kayıt yok</TableCell>
+                  <TableCell><strong>Ad Soyad</strong></TableCell>
+                  <TableCell><strong>Görev</strong></TableCell>
+                  <TableCell><strong>TC / Pasaport</strong></TableCell>
+                  <TableCell><strong>Çalıştığı bölüm</strong></TableCell>
+                  <TableCell><strong>Görev Yeri</strong></TableCell>
+                  <TableCell align="right"><strong>Günlük / Aylık</strong></TableCell>
+                  <TableCell align="right">İşlem</TableCell>
                 </TableRow>
-              ) : (
-                list.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell>{row.ad} {row.soyad}</TableCell>
-                    <TableCell>{row.gorev}</TableCell>
-                    <TableCell>{row.tc_kimlik ? `TC: ${row.tc_kimlik}` : row.pasaport_no ? `Pasaport: ${row.pasaport_no}` : "—"}</TableCell>
-                    <TableCell>{row.calistigi_bolum ?? "—"}</TableCell>
-                    <TableCell>{row.ise_giris_tarihi ? String(row.ise_giris_tarihi).slice(0, 10) : "—"}{row.isten_cikis_tarihi ? ` → ${String(row.isten_cikis_tarihi).slice(0, 10)}` : ""}</TableCell>
-                    <TableCell align="right">
-                      {row.gunluk_yevmiye != null ? row.gunluk_yevmiye : row.aylik_maas != null ? row.aylik_maas : "—"}
-                    </TableCell>
-                    <TableCell align="right">
-                      <IconButton size="small" component={Link} href={`/idari/personel/${row.id}`} title="Detay">
-                        <Visibility fontSize="small" />
-                      </IconButton>
-                      {canManage && (
-                        <>
-                          <IconButton size="small" onClick={() => openEdit(row)} title="Düzenle">
-                            <Edit fontSize="small" />
-                          </IconButton>
-                          <IconButton size="small" onClick={() => setConfirmDeleteId(row.id)} title="Sil" sx={{ color: "error.main" }}>
-                            <Delete fontSize="small" />
-                          </IconButton>
-                        </>
-                      )}
-                    </TableCell>
+              </TableHead>
+              <TableBody>
+                {list.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} align="center" sx={{ py: 3 }}>Kayıt yok</TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-          {total > PAGE_SIZE && (
-            <TablePagination
-              component="div"
-              count={total}
-              page={page}
-              onPageChange={(_, p) => setPage(p)}
-              rowsPerPage={PAGE_SIZE}
-              rowsPerPageOptions={[PAGE_SIZE]}
-              labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
-            />
-          )}
+                ) : (
+                  list.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell>{row.ad} {row.soyad}</TableCell>
+                      <TableCell>{row.gorev}</TableCell>
+                      <TableCell>{row.tc_kimlik ? `TC: ${row.tc_kimlik}` : row.pasaport_no ? `Pasaport: ${row.pasaport_no}` : "—"}</TableCell>
+                      <TableCell>{row.calistigi_bolum ?? "—"}</TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color={activeGorevYeri(row) !== "—" ? "primary" : "text.secondary"}>
+                          {activeGorevYeri(row)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        {row.gunluk_yevmiye != null ? row.gunluk_yevmiye : row.aylik_maas != null ? row.aylik_maas : "—"}
+                      </TableCell>
+                      <TableCell align="right">
+                        <IconButton size="small" component={Link} href={`/idari/personel/${row.id}`} title="Detay">
+                          <Visibility fontSize="small" />
+                        </IconButton>
+                        {canManage && (
+                          <>
+                            <IconButton size="small" onClick={() => openEdit(row)} title="Düzenle">
+                              <Edit fontSize="small" />
+                            </IconButton>
+                            <IconButton size="small" onClick={() => openIzin(row)} title="İzin Ekle" sx={{ color: "info.main" }}>
+                              <BeachAccess fontSize="small" />
+                            </IconButton>
+                            <IconButton size="small" onClick={() => setConfirmDeleteId(row.id)} title="Sil" sx={{ color: "error.main" }}>
+                              <Delete fontSize="small" />
+                            </IconButton>
+                          </>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+            {total > PAGE_SIZE && (
+              <TablePagination
+                component="div" count={total} page={page}
+                onPageChange={(_, p) => setPage(p)} rowsPerPage={PAGE_SIZE}
+                rowsPerPageOptions={[PAGE_SIZE]}
+                labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+              />
+            )}
           </Box>
         )}
         {!loading && (
@@ -394,6 +414,7 @@ export default function IdariPersonelPage() {
         )}
       </Paper>
 
+      {/* Personel Ekle / Düzenle */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingId != null ? "Personel düzenle" : "Yeni personel"}</DialogTitle>
         <DialogContent>
@@ -433,6 +454,53 @@ export default function IdariPersonelPage() {
           <Button onClick={() => setDialogOpen(false)}>İptal</Button>
           <Button variant="contained" onClick={handleSave} disabled={!form.ad.trim() || !form.soyad.trim()} sx={{ background: "var(--icsp-lacivert)" }}>
             {editingId != null ? "Güncelle" : "Ekle"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* İzin Ekle Dialog */}
+      <Dialog open={izinDialogOpen} onClose={() => setIzinDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>İzin Ekle — {izinPersonelAd}</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+            <FormControl fullWidth>
+              <InputLabel>İzin Türü</InputLabel>
+              <Select
+                value={izinForm.izin_tipi} label="İzin Türü"
+                onChange={(e) => setIzinForm((f) => ({ ...f, izin_tipi: e.target.value }))}
+              >
+                {IZIN_TIPLERI.map((t) => (
+                  <MenuItem key={t} value={t}>{t}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField
+              label="Başlangıç Tarihi" type="date" fullWidth
+              value={izinForm.baslangic_tarihi}
+              onChange={(e) => setIzinForm((f) => ({ ...f, baslangic_tarihi: e.target.value }))}
+              InputLabelProps={{ shrink: true }} required
+            />
+            <TextField
+              label="Bitiş Tarihi" type="date" fullWidth
+              value={izinForm.bitis_tarihi}
+              onChange={(e) => setIzinForm((f) => ({ ...f, bitis_tarihi: e.target.value }))}
+              InputLabelProps={{ shrink: true }} required
+            />
+            <TextField
+              label="Not" multiline minRows={2} fullWidth
+              value={izinForm.notlar}
+              onChange={(e) => setIzinForm((f) => ({ ...f, notlar: e.target.value }))}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIzinDialogOpen(false)} disabled={izinSaving}>İptal</Button>
+          <Button
+            variant="contained" onClick={handleIzinSave}
+            disabled={izinSaving || !izinForm.baslangic_tarihi || !izinForm.bitis_tarihi}
+            sx={{ background: "var(--icsp-lacivert)" }}
+          >
+            {izinSaving ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </DialogActions>
       </Dialog>

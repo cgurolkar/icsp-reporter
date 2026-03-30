@@ -65,7 +65,12 @@ export default function IdariBelgelerPage() {
     if (role === "user" || role === "personel") {
       if (user?.siteId != null) params.set("siteId", String(user.siteId))
     }
-    fetch(`/api/idari/personel?${params}`).then((r) => (r.ok ? r.json() : [])).then((data: PersonelItem[]) => setPersonelList(data)).catch(() => setPersonelList([]))
+    fetch(`/api/idari/personel?${params}&limit=500`)
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((res: { data?: PersonelItem[] } | PersonelItem[]) => {
+        setPersonelList(Array.isArray(res) ? res : (res.data ?? []))
+      })
+      .catch(() => setPersonelList([]))
     setBelgeTipleri([
       { id: 1, kod: "kimlik", ad: "Kimlik Fotokopisi" },
       { id: 2, kod: "isg", ad: "İSG Eğitim Sertifikası" },

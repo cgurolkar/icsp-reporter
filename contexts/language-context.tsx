@@ -111,7 +111,7 @@ const translations = {
     expense_cat_diger: "Diğer",
     expense_description_placeholder: "Harcama açıklaması...",
     tip_expenses: "Yeni satır eklemek için Enter tuşuna basın veya \"Harcama Ekle\" butonunu kullanın.",
-    daily_notes: "Günlük notlar",
+    daily_notes: "Önemli Olay/Talep/Not",
     daily_images_label: "Resimler (en fazla 2 adet)",
     remove: "Kaldır",
     add_image_1: "Resim 1 ekle",

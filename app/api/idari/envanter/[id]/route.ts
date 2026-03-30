@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSessionFromRequest } from "@/lib/auth"
 import { canAccessIdari, canManageIdariCentral } from "@/lib/auth"
-import { initializeDatabase, getEnvanterById, updateEnvanter, deleteEnvanter } from "@/lib/database"
+import { initializeDatabase, getEnvanterById, updateEnvanter, deleteEnvanter, getEnvanterHareketler } from "@/lib/database"
 
 export async function GET(
   _request: NextRequest,
@@ -16,7 +16,8 @@ export async function GET(
     await initializeDatabase()
     const row = await getEnvanterById(id)
     if (!row) return NextResponse.json({ error: "Envanter bulunamadı." }, { status: 404 })
-    return NextResponse.json(row)
+    const hareketler = await getEnvanterHareketler(id)
+    return NextResponse.json({ ...row, hareketler })
   } catch (error) {
     console.error("Envanter GET by id error:", error)
     return NextResponse.json({ error: "Kayıt alınamadı." }, { status: 500 })

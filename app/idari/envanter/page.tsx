@@ -26,7 +26,7 @@ import {
   useTheme,
   TablePagination,
 } from "@mui/material"
-import { Add, Edit, Search, Inventory2, Download, Upload, Delete } from "@mui/icons-material"
+import { Add, Edit, Search, Inventory2, Download, Upload, Delete, SwapHoriz } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
 
 interface SiteItem {
@@ -66,6 +66,58 @@ export default function IdariEnvanterPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+
+  // Hareket dialog state
+  const [hareketDialogOpen, setHareketDialogOpen] = useState(false)
+  const [hareketEnvanterId, setHareketEnvanterId] = useState<number | null>(null)
+  const [hareketEnvanterAdi, setHareketEnvanterAdi] = useState("")
+  const [hareketSaving, setHareketSaving] = useState(false)
+  const [hareketForm, setHareketForm] = useState({
+    hareket_tipi: "gelen" as "gelen" | "giden",
+    kaynak_yer: "",
+    hedef_yer: "",
+    site_id: "",
+    tarih: new Date().toISOString().slice(0, 10),
+    adet: "1",
+    notlar: "",
+  })
+
+  const SABIT_YERLER = ["Erbil Depo", "Bağdat Depo", "Satın alındı"]
+
+  const openHareket = (row: EnvanterRow) => {
+    setHareketEnvanterId(row.id)
+    setHareketEnvanterAdi(row.malzeme_adi)
+    setHareketForm({ hareket_tipi: "gelen", kaynak_yer: "", hedef_yer: "", site_id: "", tarih: new Date().toISOString().slice(0, 10), adet: "1", notlar: "" })
+    setHareketDialogOpen(true)
+  }
+
+  const handleHareketSave = async () => {
+    if (!hareketEnvanterId) return
+    setHareketSaving(true)
+    const res = await fetch("/api/idari/envanter/hareket", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        envanter_id: hareketEnvanterId,
+        hareket_tipi: hareketForm.hareket_tipi,
+        kaynak_yer: hareketForm.kaynak_yer || null,
+        hedef_yer: hareketForm.hedef_yer || null,
+        site_id: hareketForm.site_id ? parseInt(hareketForm.site_id, 10) : null,
+        tarih: hareketForm.tarih,
+        adet: parseInt(hareketForm.adet, 10) || 1,
+        notlar: hareketForm.notlar || null,
+      }),
+    })
+    setHareketSaving(false)
+    if (res.ok) {
+      setHareketDialogOpen(false)
+      loadList()
+    } else {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error || "Kaydedilemedi.")
+    }
+  }
+
   const [form, setForm] = useState({
     kod: "",
     malzeme_adi: "",
@@ -324,6 +376,9 @@ export default function IdariEnvanterPage() {
                 </CardActionArea>
                 {canManage && (
                   <Box sx={{ px: 2, pb: 1, display: "flex", gap: 0.5 }}>
+                    <IconButton size="small" onClick={() => openHareket(row)} title="Hareket ekle" sx={{ color: "primary.main" }}>
+                      <SwapHoriz fontSize="small" />
+                    </IconButton>
                     <IconButton size="small" onClick={() => openEdit(row)} title="Düzenle">
                       <Edit fontSize="small" />
                     </IconButton>
@@ -373,6 +428,9 @@ export default function IdariEnvanterPage() {
                 </CardActionArea>
                 {canManage && (
                   <Box sx={{ px: 2, pb: 1, pt: 0, display: "flex", gap: 0.5 }}>
+                    <IconButton size="small" onClick={() => openHareket(row)} title="Hareket ekle" sx={{ color: "primary.main" }}>
+                      <SwapHoriz fontSize="small" />
+                    </IconButton>
                     <IconButton size="small" onClick={() => openEdit(row)} title="Düzenle">
                       <Edit fontSize="small" />
                     </IconButton>
@@ -431,6 +489,108 @@ export default function IdariEnvanterPage() {
           <Button onClick={() => setDialogOpen(false)}>İptal</Button>
           <Button variant="contained" onClick={handleSave} disabled={!form.kod.trim() || !form.malzeme_adi.trim()} sx={{ background: "var(--icsp-lacivert)" }}>
             {editingId != null ? "Güncelle" : "Ekle"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Hareket diyaloğu */}
+      <Dialog open={hareketDialogOpen} onClose={() => setHareketDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600}>Hareket Ekle</Typography>
+            <Typography variant="body2" color="text.secondary">{hareketEnvanterAdi}</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+            <FormControl fullWidth required>
+              <InputLabel>Hareket Türü</InputLabel>
+              <Select
+                value={hareketForm.hareket_tipi}
+                label="Hareket Türü"
+                onChange={(e) => setHareketForm((f) => ({ ...f, hareket_tipi: e.target.value as "gelen" | "giden" }))}
+              >
+                <MenuItem value="gelen">⬇️ Gelen (Depo/satın alındı → Şantiye)</MenuItem>
+                <MenuItem value="giden">⬆️ Giden (Şantiye → Depo veya başka şantiye)</MenuItem>
+              </Select>
+            </FormControl>
+
+            <FormControl fullWidth>
+              <InputLabel>Nereden</InputLabel>
+              <Select
+                value={hareketForm.kaynak_yer}
+                label="Nereden"
+                onChange={(e) => setHareketForm((f) => ({ ...f, kaynak_yer: e.target.value }))}
+              >
+                <MenuItem value="">— Seçin —</MenuItem>
+                {hareketForm.hareket_tipi === "gelen" && <MenuItem value="Satın alındı">Satın alındı</MenuItem>}
+                <MenuItem value="Erbil Depo">Erbil Depo</MenuItem>
+                <MenuItem value="Bağdat Depo">Bağdat Depo</MenuItem>
+                {sites.map((s) => <MenuItem key={s.id} value={s.name}>{s.name} (Şantiye)</MenuItem>)}
+              </Select>
+            </FormControl>
+
+            <FormControl fullWidth>
+              <InputLabel>Nereye / Hedef Şantiye</InputLabel>
+              <Select
+                value={hareketForm.hedef_yer}
+                label="Nereye / Hedef Şantiye"
+                onChange={(e) => {
+                  const val = e.target.value
+                  const matchSite = sites.find((s) => s.name === val)
+                  setHareketForm((f) => ({
+                    ...f,
+                    hedef_yer: val,
+                    site_id: matchSite ? String(matchSite.id) : f.site_id,
+                  }))
+                }}
+              >
+                <MenuItem value="">— Seçin —</MenuItem>
+                <MenuItem value="Erbil Depo">Erbil Depo</MenuItem>
+                <MenuItem value="Bağdat Depo">Bağdat Depo</MenuItem>
+                {sites.map((s) => <MenuItem key={s.id} value={s.name}>{s.name} (Şantiye)</MenuItem>)}
+              </Select>
+            </FormControl>
+
+            <Box sx={{ display: "flex", gap: 2 }}>
+              <TextField
+                label="Adet"
+                type="number"
+                value={hareketForm.adet}
+                onChange={(e) => setHareketForm((f) => ({ ...f, adet: e.target.value }))}
+                inputProps={{ min: 1 }}
+                sx={{ width: 120 }}
+              />
+              <TextField
+                label="Tarih"
+                type="date"
+                value={hareketForm.tarih}
+                onChange={(e) => setHareketForm((f) => ({ ...f, tarih: e.target.value.slice(0, 10) }))}
+                InputLabelProps={{ shrink: true }}
+                sx={{ flex: 1 }}
+              />
+            </Box>
+
+            <TextField
+              label="Not"
+              value={hareketForm.notlar}
+              onChange={(e) => setHareketForm((f) => ({ ...f, notlar: e.target.value }))}
+              fullWidth
+              multiline
+              rows={2}
+              placeholder="Fatura no, teslim eden kişi vb."
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setHareketDialogOpen(false)} disabled={hareketSaving}>İptal</Button>
+          <Button
+            variant="contained"
+            onClick={handleHareketSave}
+            disabled={hareketSaving || !hareketForm.tarih || parseInt(hareketForm.adet, 10) < 1}
+            sx={{ background: "var(--icsp-lacivert)" }}
+          >
+            {hareketSaving ? "Kaydediliyor..." : "Kaydet"}
           </Button>
         </DialogActions>
       </Dialog>

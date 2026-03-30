@@ -356,9 +356,9 @@ export default function OperatorFormPage() {
       {/* 3. Fotoğraf ve bilgi/not */}
       <Paper sx={{ p: 2, mb: 2, background: "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)", border: "1px solid #4caf50" }}>
         <Typography variant="subtitle1" sx={{ color: "#2e7d32", fontWeight: 600, mb: 2 }}>
-          Fotoğraf ve Bilgi / Not
+          Fotoğraf ve Önemli Olay/Talep/Not
         </Typography>
-        <TextField fullWidth multiline minRows={3} label="Bilgi / Not" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Ek bilgi veya notlarınız..." sx={{ mb: 2 }} />
+        <TextField fullWidth multiline minRows={3} label="Önemli Olay/Talep/Not" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Ek bilgi veya notlarınız..." sx={{ mb: 2 }} />
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Fotoğraf (en fazla 2 adet, {MAX_IMAGE_SIZE_MB} MB)</Typography>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
           <input ref={input1Ref} type="file" accept={ACCEPT_IMAGE} style={{ display: "none" }} onChange={(e) => handleImageChange(1, e)} />

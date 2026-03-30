@@ -416,7 +416,14 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
         case 1: return <IronStepComponent data={formData.iron} onChange={(d) => updateFormData("iron", d)} />
         case 2: return (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <PersonnelStep data={formData.personnel} onChange={(d) => updateFormData("personnel", d)} />
+            <PersonnelStep
+              data={formData.personnel}
+              onChange={(d) => updateFormData("personnel", d)}
+              puantaj={formData.puantaj ?? []}
+              onPuantajChange={(entries) => updateFormData("puantaj", entries)}
+              siteId={formData.basicInfo.siteId}
+              tarih={formData.basicInfo.date}
+            />
             <VehiclesStep data={formData.vehicles} onChange={(d) => updateFormData("vehicles", d)} />
           </Box>
         )
@@ -538,7 +545,14 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
       case 4:
         return (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <PersonnelStep data={formData.personnel} onChange={(d) => updateFormData("personnel", d)} />
+            <PersonnelStep
+              data={formData.personnel}
+              onChange={(d) => updateFormData("personnel", d)}
+              puantaj={formData.puantaj ?? []}
+              onPuantajChange={(entries) => updateFormData("puantaj", entries)}
+              siteId={formData.basicInfo.siteId}
+              tarih={formData.basicInfo.date}
+            />
             <VehiclesStep data={formData.vehicles} onChange={(d) => updateFormData("vehicles", d)} />
           </Box>
         )

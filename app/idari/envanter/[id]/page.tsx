@@ -14,8 +14,25 @@ import {
   Skeleton,
   useTheme,
   useMediaQuery,
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
 } from "@mui/material"
-import { ArrowBack, Inventory2 } from "@mui/icons-material"
+import { ArrowBack, Inventory2, ArrowDownward, ArrowUpward } from "@mui/icons-material"
+
+interface HareketRow {
+  id: number
+  hareket_tipi: "gelen" | "giden"
+  kaynak_yer?: string | null
+  hedef_yer?: string | null
+  site_name?: string | null
+  tarih: string
+  adet: number
+  notlar?: string | null
+  olusturan?: string | null
+}
 
 interface EnvanterDetail {
   id: number
@@ -23,6 +40,7 @@ interface EnvanterDetail {
   malzeme_adi: string
   aciklama?: string | null
   adet: number
+  durum?: string | null
   fotograf_yolu?: string | null
   fiyat?: number | null
   yer?: string | null
@@ -30,6 +48,14 @@ interface EnvanterDetail {
   site_name?: string | null
   created_at?: string
   updated_at?: string
+  hareketler?: HareketRow[]
+}
+
+const DURUM_RENK: Record<string, "success"|"default"|"warning"|"error"> = {
+  aktif: "success", depoda: "default", yolda: "warning", bakimda: "warning", hurda: "error",
+}
+const DURUM_LABEL: Record<string, string> = {
+  aktif: "Aktif", depoda: "Depoda", yolda: "Yolda", bakimda: "Bakımda", hurda: "Hurda",
 }
 
 export default function IdariEnvanterDetailPage() {
@@ -42,6 +68,7 @@ export default function IdariEnvanterDetailPage() {
 
   useEffect(() => {
     if (Number.isNaN(id)) return
+    setLoading(true)
     fetch(`/api/idari/envanter/${id}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data: EnvanterDetail | null) => setItem(data))
@@ -82,6 +109,9 @@ export default function IdariEnvanterDetailPage() {
     )
   }
 
+  const hareketler = item.hareketler ?? []
+  const durumKod = item.durum ?? "aktif"
+
   return (
     <Box>
       <Button component={Link} href="/idari/envanter" startIcon={<ArrowBack />} sx={{ mb: 2 }}>
@@ -90,69 +120,102 @@ export default function IdariEnvanterDetailPage() {
 
       <Card variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", mb: 2 }}>
         <Box sx={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: "stretch" }}>
-          {item.fotograf_yolu && (
+          {item.fotograf_yolu ? (
             <Box
               component="img"
               src={item.fotograf_yolu}
               alt={item.malzeme_adi}
-              sx={{
-                width: isMobile ? "100%" : 220,
-                height: isMobile ? 200 : 220,
-                objectFit: "cover",
-                bgcolor: "grey.100",
-              }}
+              sx={{ width: isMobile ? "100%" : 220, height: isMobile ? 200 : 220, objectFit: "cover", bgcolor: "grey.100" }}
             />
-          )}
-          {!item.fotograf_yolu && (
+          ) : (
             <Box
-              sx={{
-                width: isMobile ? "100%" : 220,
-                height: isMobile ? 160 : 220,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                bgcolor: "grey.100",
-                color: "grey.400",
-              }}
+              sx={{ width: isMobile ? "100%" : 220, height: isMobile ? 160 : 220, display: "flex", alignItems: "center", justifyContent: "center", bgcolor: "grey.100", color: "grey.400" }}
             >
               <Inventory2 sx={{ fontSize: 64 }} />
             </Box>
           )}
           <CardContent sx={{ flex: 1, p: 3 }}>
-            <Typography variant="overline" color="text.secondary">
-              {item.kod}
-            </Typography>
+            <Typography variant="overline" color="text.secondary">{item.kod}</Typography>
             <Typography variant="h6" sx={{ color: "var(--icsp-lacivert)", fontWeight: 600, mt: 0.5 }}>
               {item.malzeme_adi}
             </Typography>
             {item.aciklama && (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-                {item.aciklama}
-              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>{item.aciklama}</Typography>
             )}
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mt: 2 }}>
               <Chip label={`Adet: ${item.adet}`} color="primary" variant="outlined" />
+              <Chip label={DURUM_LABEL[durumKod] ?? durumKod} color={DURUM_RENK[durumKod] ?? "default"} size="small" />
               {item.yer && <Chip label={item.yer} variant="outlined" />}
-              {item.fiyat != null && (
-                <Chip label={`${Number(item.fiyat).toLocaleString("tr-TR")} ₺`} variant="outlined" />
-              )}
+              {item.fiyat != null && <Chip label={`${Number(item.fiyat).toLocaleString("tr-TR")} ₺`} variant="outlined" />}
               {item.site_name && <Chip label={item.site_name} size="small" variant="outlined" />}
             </Box>
           </CardContent>
         </Box>
       </Card>
 
-      <Paper sx={{ p: 2, borderRadius: 2 }}>
-        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-          Detay
-        </Typography>
+      <Paper sx={{ p: 2, borderRadius: 2, mb: 2 }}>
+        <Typography variant="subtitle2" color="text.secondary" gutterBottom>Detay</Typography>
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2 }}>
           <Box><Typography variant="caption" color="text.secondary">Kod</Typography><Typography variant="body2">{item.kod}</Typography></Box>
+          <Box><Typography variant="caption" color="text.secondary">Durum</Typography><Typography variant="body2">{DURUM_LABEL[durumKod] ?? durumKod}</Typography></Box>
           <Box><Typography variant="caption" color="text.secondary">Yer</Typography><Typography variant="body2">{item.yer ?? "—"}</Typography></Box>
           <Box><Typography variant="caption" color="text.secondary">Adet</Typography><Typography variant="body2">{item.adet}</Typography></Box>
           <Box><Typography variant="caption" color="text.secondary">Fiyat</Typography><Typography variant="body2">{item.fiyat != null ? `${Number(item.fiyat).toLocaleString("tr-TR")} ₺` : "—"}</Typography></Box>
           <Box><Typography variant="caption" color="text.secondary">Şantiye</Typography><Typography variant="body2">{item.site_name ?? "—"}</Typography></Box>
         </Box>
+      </Paper>
+
+      {/* Hareket Geçmişi */}
+      <Paper sx={{ p: 2, borderRadius: 2 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 600, color: "var(--icsp-lacivert)", mb: 2 }}>
+          Hareket Geçmişi
+          <Chip label={hareketler.length} size="small" sx={{ ml: 1 }} />
+        </Typography>
+        {hareketler.length === 0 ? (
+          <Typography color="text.secondary" variant="body2">Henüz hareket kaydı yok.</Typography>
+        ) : (
+          <Box sx={{ overflowX: "auto" }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><strong>Tarih</strong></TableCell>
+                  <TableCell><strong>Tür</strong></TableCell>
+                  <TableCell><strong>Nereden</strong></TableCell>
+                  <TableCell><strong>Nereye</strong></TableCell>
+                  <TableCell align="right"><strong>Adet</strong></TableCell>
+                  <TableCell><strong>Not</strong></TableCell>
+                  <TableCell><strong>Giren</strong></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {hareketler.map((h) => (
+                  <TableRow
+                    key={h.id}
+                    sx={{ backgroundColor: h.hareket_tipi === "gelen" ? "#e8f5e9" : "#fff3e0" }}
+                  >
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>{String(h.tarih).slice(0, 10)}</TableCell>
+                    <TableCell>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                        {h.hareket_tipi === "gelen"
+                          ? <ArrowDownward sx={{ color: "success.main", fontSize: 16 }} />
+                          : <ArrowUpward sx={{ color: "warning.dark", fontSize: 16 }} />
+                        }
+                        <Typography variant="body2" sx={{ fontWeight: 500, color: h.hareket_tipi === "gelen" ? "success.dark" : "warning.dark" }}>
+                          {h.hareket_tipi === "gelen" ? "Gelen" : "Giden"}
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell>{h.kaynak_yer ?? "—"}</TableCell>
+                    <TableCell>{h.hedef_yer ?? h.site_name ?? "—"}</TableCell>
+                    <TableCell align="right">{h.adet}</TableCell>
+                    <TableCell>{h.notlar ?? "—"}</TableCell>
+                    <TableCell>{h.olusturan ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Box>
+        )}
       </Paper>
     </Box>
   )

@@ -155,6 +155,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Puantaj senkronizasyonu: formdan gelen puantaj verilerini idari puantaj tablosuna kaydet
+    if (siteIdForDb && Array.isArray(formData.puantaj) && formData.puantaj.length > 0) {
+      try {
+        const dbPool = (await import("@/lib/database")).default
+        const pc = await dbPool.connect()
+        try {
+          for (const entry of formData.puantaj as Array<{
+            personel_id: number; carpan: number; durum_kod: string; mesai_saat: number; notlar: string
+          }>) {
+            await pc.query(
+              `INSERT INTO puantaj (personel_id, site_id, tarih, carpan, durum_kod, mesai_saat, notlar, durum, olusturan_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,'taslak',$8)
+               ON CONFLICT (personel_id, site_id, tarih)
+               DO UPDATE SET carpan=$4, durum_kod=$5, mesai_saat=$6, notlar=$7, updated_at=NOW()
+               WHERE puantaj.durum <> 'onaylandi'`,
+              [entry.personel_id, siteIdForDb, formData.basicInfo.date,
+               entry.carpan, entry.durum_kod, entry.mesai_saat,
+               entry.notlar || null, session.id]
+            )
+          }
+        } finally {
+          pc.release()
+        }
+      } catch (puantajErr) {
+        console.warn(`Report ${reportId}: puantaj sync failed:`, puantajErr)
+      }
+    }
+
     // SSE: admin dashboard'a anlık bildirim gönder (fire-and-forget)
     try {
       const expTotalForNotif = Array.isArray(formData.expenses)
