@@ -111,13 +111,6 @@ export interface PileDetail {
   concretePoured?: boolean
 }
 
-export interface IronStep {
-  preparedToday: string;
-  onSite: string;
-  lowered: string;
-  remaining: string; // calculated: onSite + preparedToday - lowered
-}
-
 export interface PuantajEntry {
   personel_id: number
   ad: string
@@ -139,7 +132,6 @@ export interface FormData {
   expenses: Expense[];
   productionSummary: MachineProductionSummary[];
   pileDetails: PileDetail[];
-  iron: IronStep;
   dailyInfo: DailyInfo;
   notes: string;
 }
@@ -205,11 +197,5 @@ export const initialFormData: FormData = {
     drilled: "",
     notes: "",
   })),
-  iron: {
-    preparedToday: "",
-    onSite: "",
-    lowered: "",
-    remaining: "",
-  },
   notes: "",
 }

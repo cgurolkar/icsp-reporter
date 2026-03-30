@@ -15,7 +15,6 @@ import FuelStep from "@/components/steps/fuel-step"
 import ExpensesStep from "@/components/steps/expenses-step"
 import DailyInfoStep from "@/components/steps/daily-info-step"
 import ReviewStep from "@/components/steps/review-step"
-import IronStepComponent from "@/components/steps/iron-step"
 import { type FormData, type Machine, initialFormData, AVAILABLE_MACHINES } from "@/types/form-data"
 import Dialog from "@mui/material/Dialog"
 import DialogTitle from "@mui/material/DialogTitle"
@@ -26,7 +25,6 @@ const steps = [
   "machine_selection",
   "basic_info",
   "production_summary",
-  "iron_step",
   "personnel_vehicles",
   "fuel",
   "expenses",
@@ -36,7 +34,6 @@ const steps = [
 
 const stepsRestricted = [
   "info_and_entry",
-  "iron_step",
   "personnel_vehicles",
   "fuel",
   "expenses",
@@ -427,8 +424,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
         )
       }
       switch (step) {
-        case 1: return <IronStepComponent data={formData.iron} onChange={(d) => updateFormData("iron", d)} />
-        case 2: return (
+        case 1: return (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
             <PersonnelStep
               data={formData.personnel}
@@ -441,7 +437,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
             <VehiclesStep data={formData.vehicles} onChange={(d) => updateFormData("vehicles", d)} />
           </Box>
         )
-        case 3: return (
+        case 2: return (
           <FuelStep
             data={formData.fuel}
             onChange={(d) => updateFormData("fuel", d)}
@@ -450,9 +446,9 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
             basicInfoMachines={formData.basicInfo.machines}
           />
         )
-        case 4: return <ExpensesStep data={formData.expenses} onChange={(d) => updateFormData("expenses", d)} />
-        case 5: return <DailyInfoStep data={formData.dailyInfo} onChange={(d) => updateFormData("dailyInfo", d)} />
-        case 6: return <ReviewStep data={formData} onSubmit={handleSubmit} siteSummary={siteSummary ?? undefined} />
+        case 3: return <ExpensesStep data={formData.expenses} onChange={(d) => updateFormData("expenses", d)} />
+        case 4: return <DailyInfoStep data={formData.dailyInfo} onChange={(d) => updateFormData("dailyInfo", d)} />
+        case 5: return <ReviewStep data={formData} onSubmit={handleSubmit} siteSummary={siteSummary ?? undefined} />
         default: return null
       }
     }
@@ -561,8 +557,6 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
         )
       }
       case 3:
-        return <IronStepComponent data={formData.iron} onChange={(d) => updateFormData("iron", d)} />
-      case 4:
         return (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
             <PersonnelStep
@@ -576,7 +570,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
             <VehiclesStep data={formData.vehicles} onChange={(d) => updateFormData("vehicles", d)} />
           </Box>
         )
-      case 5:
+      case 4:
         return (
           <FuelStep
             data={formData.fuel}
@@ -586,11 +580,11 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
             basicInfoMachines={formData.basicInfo.machines}
           />
         )
-      case 6:
+      case 5:
         return <ExpensesStep data={formData.expenses} onChange={(d) => updateFormData("expenses", d)} />
-      case 7:
+      case 6:
         return <DailyInfoStep data={formData.dailyInfo} onChange={(d) => updateFormData("dailyInfo", d)} />
-      case 8:
+      case 7:
         return <ReviewStep data={formData} onSubmit={handleSubmit} siteSummary={siteSummary ?? undefined} />
       default:
         return null
