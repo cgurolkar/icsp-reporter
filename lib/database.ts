@@ -328,6 +328,15 @@ async function _doInitializeDatabase() {
       END $$
     `)
 
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'module_permissions') THEN
+          ALTER TABLE users ADD COLUMN module_permissions JSONB DEFAULT '{}'::jsonb;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'users module_permissions: %', SQLERRM;
+      END $$
+    `)
+
     // ---------- İdari modül tabloları (Faz 1) ----------
     await client.query(`
       CREATE TABLE IF NOT EXISTS personeller (
@@ -1153,12 +1162,54 @@ function getWeekStart(year: number, week: number): Date {
   return firstMonday
 }
 
-// Makine id -> ad (operatör atamasında personel.calistigi_bolum için)
+// Makine id -> ad (eski şema / sabit liste; DB makineleri önceliklidir)
 const MACHINE_ID_TO_NAME: Record<string, string> = {
   'xcmg-sr220': 'XCMG SR220',
   'sany-sr235': 'SANY SR235',
   'sany-sr285': 'SANY SR285',
   'soiltec-sr60': 'SOILMEC SR60',
+}
+
+async function resolveMachineLabelForPersonel(client: { query: (q: string, p?: unknown[]) => Promise<{ rows: { name?: string }[] }> }, machineId: string): Promise<string> {
+  const num = parseInt(machineId, 10)
+  if (!Number.isNaN(num) && num > 0) {
+    const r = await client.query(`SELECT name FROM machines WHERE id = $1`, [num])
+    if (r.rows[0]?.name) return String(r.rows[0].name)
+  }
+  return MACHINE_ID_TO_NAME[machineId] || machineId
+}
+
+/** İdari makineler tablosu: seçilen makineleri şantiyeye bağlar, operatör atamalarını günceller. */
+export async function syncSiteMachineAssignments(
+  siteId: number,
+  assignedMachineIds: string[],
+  assignedMachineOperators: { machineId: string; personelId: number }[],
+): Promise<void> {
+  const numericIds = [...new Set(assignedMachineIds.map((x) => parseInt(String(x), 10)).filter((n) => !Number.isNaN(n) && n > 0))]
+  const client = await pool.connect()
+  try {
+    if (numericIds.length === 0) {
+      await client.query(`UPDATE machines SET current_site_id = NULL, updated_at = NOW() WHERE current_site_id = $1`, [siteId])
+    } else {
+      await client.query(
+        `UPDATE machines SET current_site_id = NULL, updated_at = NOW() WHERE current_site_id = $1 AND NOT (id = ANY($2::int[]))`,
+        [siteId, numericIds],
+      )
+      await client.query(
+        `UPDATE machines SET current_site_id = $1, updated_at = NOW() WHERE id = ANY($2::int[])`,
+        [siteId, numericIds],
+      )
+    }
+  } finally {
+    client.release()
+  }
+  for (const mid of numericIds) {
+    const pids = assignedMachineOperators
+      .filter((o) => String(o.machineId) === String(mid))
+      .map((o) => o.personelId)
+      .filter((id) => id > 0)
+    await upsertMachineOperators(mid, pids)
+  }
 }
 
 // ----- Şantiyeler (sites) -----
@@ -1335,10 +1386,11 @@ export async function createSite(data: {
       ]
     )
     const newSite = result.rows[0]
+    await syncSiteMachineAssignments(newSite.id, data.assignedMachineIds || [], ops)
     const today = new Date().toISOString().slice(0, 10)
     const seenCreate = new Set<number>()
     for (const { machineId, personelId } of ops) {
-      const machineName = MACHINE_ID_TO_NAME[machineId] || machineId
+      const machineName = await resolveMachineLabelForPersonel(client, machineId)
       await client.query(`UPDATE personeller SET calistigi_bolum = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [machineName, personelId])
       if (!seenCreate.has(personelId)) {
         seenCreate.add(personelId)
@@ -1409,10 +1461,13 @@ export async function updateSite(id: number, data: {
       values
     )
     const ops = data.assignedMachineOperators || []
+    if (data.assignedMachineIds !== undefined) {
+      await syncSiteMachineAssignments(id, data.assignedMachineIds, ops)
+    }
     const today = new Date().toISOString().slice(0, 10)
     const seenPersonelIds = new Set<number>()
     for (const { machineId, personelId } of ops) {
-      const machineName = MACHINE_ID_TO_NAME[machineId] || machineId
+      const machineName = await resolveMachineLabelForPersonel(client, machineId)
       await client.query(`UPDATE personeller SET calistigi_bolum = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [machineName, personelId])
       // personel_atama sync: eğer bu şantiyede aktif atama yoksa yeni kayıt oluştur
       if (!seenPersonelIds.has(personelId)) {

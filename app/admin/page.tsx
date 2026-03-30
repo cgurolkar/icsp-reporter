@@ -37,6 +37,9 @@ import {
   MenuItem,
   FormControlLabel,
   Checkbox,
+  Radio,
+  RadioGroup,
+  FormLabel,
 } from "@mui/material"
 import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility, Notifications, NotificationsActive, Close } from "@mui/icons-material"
 import Badge from "@mui/material/Badge"
@@ -49,7 +52,6 @@ import CssBaseline from "@mui/material/CssBaseline"
 import { theme } from "@/lib/theme"
 import { LanguageProvider, useLanguage } from "@/contexts/language-context"
 import LanguageSelector from "@/components/language-selector"
-import { AVAILABLE_MACHINES } from "@/types/form-data"
 
 interface TabPanelProps {
   children?: React.ReactNode
@@ -70,6 +72,44 @@ function TabPanel(props: TabPanelProps) {
       {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
     </div>
   )
+}
+
+const USER_MODULE_DEFS: { key: string; label: string }[] = [
+  { key: "personel", label: "Personel" },
+  { key: "envanter", label: "Envanter" },
+  { key: "harcamalar", label: "Harcamalar" },
+  { key: "puantaj", label: "Puantaj" },
+  { key: "bilgi_giris", label: "Bilgi girişi (rapor)" },
+  { key: "yonetici_panel", label: "Yönetici paneli" },
+  { key: "makineler", label: "Makineler" },
+]
+
+type ModPermLevel = "off" | "view" | "write"
+
+function defaultDbUserModulePerms(): Record<string, ModPermLevel> {
+  return Object.fromEntries(USER_MODULE_DEFS.map((d) => [d.key, "off" as ModPermLevel]))
+}
+
+function roleLabelTr(role: string): string {
+  const m: Record<string, string> = {
+    admin: "Yönetici",
+    manager: "Manager",
+    user: "İdari / Kullanıcı",
+    personel: "Personel",
+    operator: "Operatör",
+  }
+  return m[role] || role
+}
+
+function normalizeModulePerms(raw: unknown): Record<string, ModPermLevel> {
+  const base = defaultDbUserModulePerms()
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const k of Object.keys(base)) {
+      const v = (raw as Record<string, unknown>)[k]
+      if (v === "view" || v === "write" || v === "off") base[k] = v
+    }
+  }
+  return base
 }
 
 function AdminPanel() {
@@ -101,13 +141,27 @@ function AdminPanel() {
   const [dbUsers, setDbUsers] = useState<any[]>([])
   const [dbProjects, setDbProjects] = useState<any[]>([])
   const [userProjects, setUserProjects] = useState<{[key: number]: number[]}>({})
-  const [addDbUserDialogOpen, setAddDbUserDialogOpen] = useState(false)
-  const [addDbUserForm, setAddDbUserForm] = useState({ username: "", password: "", role: "user" as string, siteId: "" as string | number })
+  const [dbUserDialogOpen, setDbUserDialogOpen] = useState(false)
+  const [dbUserEditingId, setDbUserEditingId] = useState<number | null>(null)
+  const [dbUserForm, setDbUserForm] = useState({
+    username: "",
+    password: "",
+    email: "",
+    role: "user" as string,
+    siteId: "" as string | number,
+    personelMode: "none" as "none" | "list" | "new",
+    personelId: "" as string | number,
+    newPersonelAd: "",
+    newPersonelSoyad: "",
+    newPersonelGorev: "İşçi",
+    modulePerms: defaultDbUserModulePerms(),
+  })
 
   // Şantiye yönetimi
   const [dbSites, setDbSites] = useState<{ id: number; name: string; code: string; email_list: string[]; report_count?: number; total_piles?: number | null; region?: string | null; city?: string | null; country?: string | null; authorized_person?: string | null; employer?: string | null; assigned_machine_operators?: { machineId: string; personelId: number }[] }[]>([])
   const [personelList, setPersonelList] = useState<{ id: number; ad: string; soyad: string; gorev: string }[]>([])
   const [siteDialogOpen, setSiteDialogOpen] = useState(false)
+  const [idariMachineOptions, setIdariMachineOptions] = useState<{ id: number; name: string; machine_type: string; current_site_id: number | null }[]>([])
   const [siteDialogData, setSiteDialogData] = useState<{ id?: number; name: string; code: string; country: string; timezone: string; emailList: string[]; totalPiles: string; authorizedPerson: string; employer: string; projectStartDate: string; isOngoing: boolean; initialPilesDone: string; assignedMachineIds: string[]; assignedOperatorIds: number[]; assignedMachineOperators: { machineId: string; personelId: number }[] }>({
     name: "",
     code: "",
@@ -162,8 +216,8 @@ function AdminPanel() {
   }, [dashboardSiteId])
 
   useEffect(() => {
-    if (tabValue === 3) {
-      loadSites()
+    if (tabValue === 2 || tabValue === 3) {
+      if (tabValue === 3) loadSites()
       fetch("/api/idari/personel?limit=500")
         .then((r) => (r.ok ? r.json() : { data: [] }))
         .then((res: { data?: { id: number; ad: string; soyad: string; gorev: string }[] } | { id: number; ad: string; soyad: string; gorev: string }[]) => {
@@ -172,6 +226,16 @@ function AdminPanel() {
         .catch(() => setPersonelList([]))
     }
   }, [tabValue])
+
+  useEffect(() => {
+    if (!siteDialogOpen) return
+    fetch("/api/idari/makineler")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: { id: number; name: string; machine_type: string; current_site_id: number | null }[]) => {
+        setIdariMachineOptions(Array.isArray(list) ? list : [])
+      })
+      .catch(() => setIdariMachineOptions([]))
+  }, [siteDialogOpen])
   useEffect(() => {
     if (tabValue === 4) loadReportList()
   }, [tabValue])
@@ -489,24 +553,39 @@ function AdminPanel() {
     }
   }
 
-  // Kullanıcı yönetimi fonksiyonları
-  const handleUserRoleChange = async (userId: number, newRole: string) => {
-    try {
-      const response = await fetch(`/api/users/${userId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role: newRole })
+  const openDbUserDialog = (user?: Record<string, unknown>) => {
+    if (user?.id != null) {
+      setDbUserEditingId(Number(user.id))
+      setDbUserForm({
+        username: String(user.username ?? ""),
+        password: "",
+        email: String(user.email ?? ""),
+        role: String(user.role ?? "user"),
+        siteId: user.site_id != null ? Number(user.site_id) : "",
+        personelMode: "none",
+        personelId: "",
+        newPersonelAd: "",
+        newPersonelSoyad: "",
+        newPersonelGorev: "İşçi",
+        modulePerms: normalizeModulePerms(user.module_permissions),
       })
-      
-      if (response.ok) {
-        // Kullanıcı listesini güncelle
-        setDbUsers(prev => prev.map(user => 
-          user.id === userId ? { ...user, role: newRole } : user
-        ))
-      }
-    } catch (error) {
-      console.error("Error updating user role:", error)
+    } else {
+      setDbUserEditingId(null)
+      setDbUserForm({
+        username: "",
+        password: "",
+        email: "",
+        role: "user",
+        siteId: "",
+        personelMode: "none",
+        personelId: "",
+        newPersonelAd: "",
+        newPersonelSoyad: "",
+        newPersonelGorev: "İşçi",
+        modulePerms: defaultDbUserModulePerms(),
+      })
     }
+    setDbUserDialogOpen(true)
   }
 
   const handleUserProjectAssign = async (userId: number, projectIds: number[]) => {
@@ -957,74 +1036,45 @@ function AdminPanel() {
         <TabPanel value={tabValue} index={2}>
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
             <Typography variant="h6" sx={{ color: "#1a237e" }}>Kullanıcı Yönetimi</Typography>
-            <Button variant="contained" startIcon={<Add />} onClick={() => { setAddDbUserForm({ username: "", password: "", role: "user", siteId: "" }); setAddDbUserDialogOpen(true) }} sx={{ background: "var(--icsp-lacivert)" }}>
+            <Button variant="contained" startIcon={<Add />} onClick={() => openDbUserDialog()} sx={{ background: "var(--icsp-lacivert)" }}>
               Kullanıcı Ekle
             </Button>
           </Box>
           <List>
             {dbUsers.map((user) => (
               <ListItem key={user.id} divider>
-                <ListItemText 
-                  primary={user.username} 
+                <ListItemText
+                  primary={user.username}
                   secondary={
                     <>
-                      Email: {user.email || "N/A"}
-                      {(user as any).site_name && (
-                        <> | Şantiye: <strong>{(user as any).site_name}</strong> ({(user as any).site_code})</>
-                      )}
+                      {(user as { email?: string }).email ? `${(user as { email?: string }).email} · ` : ""}
+                      Şantiye: {(user as { site_name?: string }).site_name ? <strong>{(user as { site_name?: string }).site_name}</strong> : "—"}
+                      {" · "}
+                      Kullanıcı tipi: {roleLabelTr(String(user.role))}
                     </>
                   }
                 />
-                <ListItemSecondaryAction sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-                  <FormControl size="small" sx={{ minWidth: 160 }}>
-                    <InputLabel>Rol</InputLabel>
-                    <Select
-                      value={user.role}
-                      label="Rol"
-                      onChange={async (e) => {
-                        const newRole = e.target.value as string
-                        await handleUserRoleChange(user.id, newRole)
-                      }}
-                    >
-                      <MenuItem value="admin">Yönetici</MenuItem>
-                      <MenuItem value="manager">Manager</MenuItem>
-                      <MenuItem value="user">Kullanıcı</MenuItem>
-                      <MenuItem value="personel">Personel</MenuItem>
-                      <MenuItem value="operator">Operatör</MenuItem>
-                    </Select>
-                  </FormControl>
-                  <FormControl size="small" sx={{ minWidth: 180 }}>
-                    <InputLabel>Sorumlu şantiye</InputLabel>
-                    <Select
-                      value={(user as any).site_id ?? ""}
-                      label="Sorumlu şantiye"
-                      onChange={async (e) => {
-                        const v = e.target.value
-                        const siteId = v === "" ? null : Number(v)
-                        try {
-                          const res = await fetch(`/api/users/${user.id}`, {
-                            method: "PUT",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ siteId }),
-                          })
-                          if (res.ok) {
-                            setDbUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, site_id: siteId, site_name: dbSites.find((s) => s.id === siteId)?.name, site_code: dbSites.find((s) => s.id === siteId)?.code } : u)))
-                          }
-                        } catch (err) {
-                          console.error(err)
-                        }
-                      }}
-                    >
-                      <MenuItem value="">—</MenuItem>
-                      {dbSites.map((s) => (
-                        <MenuItem key={s.id} value={s.id}>{s.name} ({s.code})</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <IconButton onClick={() => handleEdit("user", user.id, user.username)} sx={{ color: "#616161" }}>
+                <ListItemSecondaryAction sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                  <IconButton onClick={() => openDbUserDialog(user as Record<string, unknown>)} sx={{ color: "#616161" }} title="Düzenle">
                     <Edit />
                   </IconButton>
-                  <IconButton onClick={() => handleDelete("user", user.id)} sx={{ color: "#616161" }}>
+                  <IconButton
+                    onClick={async () => {
+                      if (!confirm("Bu veritabanı kullanıcısını silmek istediğinize emin misiniz?")) return
+                      try {
+                        const res = await fetch(`/api/users/${user.id}`, { method: "DELETE" })
+                        if (res.ok) await loadUsersAndProjects()
+                        else {
+                          const data = await res.json().catch(() => ({}))
+                          alert(data.error || "Silinemedi.")
+                        }
+                      } catch {
+                        alert("İstek gönderilemedi.")
+                      }
+                    }}
+                    sx={{ color: "#616161" }}
+                    title="Sil"
+                  >
                     <Delete />
                   </IconButton>
                 </ListItemSecondaryAction>
@@ -1091,25 +1141,43 @@ function AdminPanel() {
                   <IconButton
                 sx={{ color: "#1a237e" }}
                 onClick={() => {
-                  const ops = Array.isArray((site as any).assigned_machine_operators) ? (site as any).assigned_machine_operators : []
-                  setSiteDialogData({
-                    id: site.id,
-                    name: site.name,
-                    code: site.code,
-                    country: (site as any).country != null ? String((site as any).country) : "",
-                    timezone: (site as any).timezone != null ? String((site as any).timezone) : "",
-                    emailList: site.email_list || [],
-                    totalPiles: site.total_piles != null ? String(site.total_piles) : "",
-                    authorizedPerson: (site as any).authorized_person != null ? String((site as any).authorized_person) : "",
-                    employer: (site as any).employer != null ? String((site as any).employer) : "",
-                    projectStartDate: (site as any).project_start_date ? String((site as any).project_start_date).slice(0, 10) : "",
-                    isOngoing: (site as any).is_ongoing === true,
-                    initialPilesDone: (site as any).initial_piles_done != null ? String((site as any).initial_piles_done) : "",
-                    assignedMachineIds: Array.isArray((site as any).assigned_machine_ids) ? (site as any).assigned_machine_ids : [],
-                    assignedOperatorIds: Array.isArray((site as any).assigned_operator_ids) ? (site as any).assigned_operator_ids.map((x: unknown) => Number(x)).filter((n: number) => !Number.isNaN(n)) : [],
-                    assignedMachineOperators: ops.map((o: any) => ({ machineId: String(o.machineId ?? o.machine_id ?? ""), personelId: Number(o.personelId ?? o.personel_id ?? 0) })).filter((o: { machineId: string; personelId: number }) => o.machineId && o.personelId > 0),
-                  })
-                  setSiteDialogOpen(true)
+                  const run = async () => {
+                    const ops = Array.isArray((site as any).assigned_machine_operators) ? (site as any).assigned_machine_operators : []
+                    let assignedIds = Array.isArray((site as any).assigned_machine_ids)
+                      ? (site as any).assigned_machine_ids.map((x: unknown) => String(x))
+                      : []
+                    try {
+                      const r = await fetch(`/api/idari/makineler?siteId=${site.id}`)
+                      if (r.ok) {
+                        const list = await r.json()
+                        if (Array.isArray(list)) {
+                          const fromDb = list
+                            .filter((m: { machine_type: string }) => m.machine_type === "Kazık Makinesi")
+                            .map((m: { id: number }) => String(m.id))
+                          assignedIds = [...new Set([...assignedIds, ...fromDb])]
+                        }
+                      }
+                    } catch { /* ignore */ }
+                    setSiteDialogData({
+                      id: site.id,
+                      name: site.name,
+                      code: site.code,
+                      country: (site as any).country != null ? String((site as any).country) : "",
+                      timezone: (site as any).timezone != null ? String((site as any).timezone) : "",
+                      emailList: site.email_list || [],
+                      totalPiles: site.total_piles != null ? String(site.total_piles) : "",
+                      authorizedPerson: (site as any).authorized_person != null ? String((site as any).authorized_person) : "",
+                      employer: (site as any).employer != null ? String((site as any).employer) : "",
+                      projectStartDate: (site as any).project_start_date ? String((site as any).project_start_date).slice(0, 10) : "",
+                      isOngoing: (site as any).is_ongoing === true,
+                      initialPilesDone: (site as any).initial_piles_done != null ? String((site as any).initial_piles_done) : "",
+                      assignedMachineIds: assignedIds,
+                      assignedOperatorIds: Array.isArray((site as any).assigned_operator_ids) ? (site as any).assigned_operator_ids.map((x: unknown) => Number(x)).filter((n: number) => !Number.isNaN(n)) : [],
+                      assignedMachineOperators: ops.map((o: any) => ({ machineId: String(o.machineId ?? o.machine_id ?? ""), personelId: Number(o.personelId ?? o.personel_id ?? 0) })).filter((o: { machineId: string; personelId: number }) => o.machineId && o.personelId > 0),
+                    })
+                    setSiteDialogOpen(true)
+                  }
+                  void run()
                 }}
                   >
                     <Edit />
@@ -1294,6 +1362,9 @@ function AdminPanel() {
             <TextField margin="dense" fullWidth label="İşveren" value={siteDialogData.employer} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, employer: e.target.value }))} placeholder="İşveren / firma" variant="outlined" size="small" />
 
             <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>Makineler ve operatörler</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+              Liste İdari → Makineler’de tanımlı kazık makinelerinden gelir. En az bir makine seçimi zorunludur.
+            </Typography>
             <FormControl fullWidth margin="dense" size="small" variant="outlined">
               <InputLabel>Bu şantiyedeki makineler</InputLabel>
               <Select
@@ -1305,15 +1376,22 @@ function AdminPanel() {
                   setSiteDialogData((prev) => ({
                     ...prev,
                     assignedMachineIds: next,
-                    // Mevcut operatör atamalarını koru, çıkarılan makineleri sil
                     assignedMachineOperators: prev.assignedMachineOperators.filter((o) => next.includes(o.machineId)),
                   }))
                 }}
-                renderValue={(sel) => (sel as string[]).map((id) => AVAILABLE_MACHINES.find((m) => m.id === id)?.name ?? id).join(", ") || "Seçin"}
+                renderValue={(sel) =>
+                  (sel as string[])
+                    .map((id) => idariMachineOptions.find((m) => String(m.id) === id)?.name ?? id)
+                    .join(", ") || "Seçin"}
               >
-                {AVAILABLE_MACHINES.map((m) => (
-                  <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>
-                ))}
+                {idariMachineOptions
+                  .filter((m) => m.machine_type === "Kazık Makinesi")
+                  .map((m) => (
+                    <MenuItem key={m.id} value={String(m.id)}>
+                      {m.name}
+                      {m.current_site_id != null && m.current_site_id !== siteDialogData.id ? " (başka şantiyede — seçerseniz bu şantiyeye alınır)" : ""}
+                    </MenuItem>
+                  ))}
               </Select>
             </FormControl>
             {siteDialogData.assignedMachineIds.length > 0 && (
@@ -1324,7 +1402,7 @@ function AdminPanel() {
                     .map((o) => o.personelId)
                   return (
                   <Box key={machineId} sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-                    <Typography variant="body2" sx={{ minWidth: 140 }}>{AVAILABLE_MACHINES.find((m) => m.id === machineId)?.name ?? machineId}</Typography>
+                    <Typography variant="body2" sx={{ minWidth: 140 }}>{idariMachineOptions.find((m) => String(m.id) === machineId)?.name ?? machineId}</Typography>
                     <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
                       <InputLabel>Operatörler (birden fazla seçilebilir)</InputLabel>
                       <Select
@@ -1429,6 +1507,13 @@ function AdminPanel() {
                   alert("Şantiye adı ve kod zorunludur.")
                   return
                 }
+                const kazikIds = siteDialogData.assignedMachineIds.filter((id) =>
+                  idariMachineOptions.some((m) => String(m.id) === id && m.machine_type === "Kazık Makinesi"),
+                )
+                if (kazikIds.length === 0) {
+                  alert("En az bir kazık makinesi seçmelisiniz (İdari → Makineler’de tanımlı olmalı).")
+                  return
+                }
                 const payload = {
                   name: siteDialogData.name.trim(),
                   code: siteDialogData.code.trim(),
@@ -1441,9 +1526,9 @@ function AdminPanel() {
                   projectStartDate: siteDialogData.projectStartDate.trim() || null,
                   isOngoing: siteDialogData.isOngoing,
                   initialPilesDone: siteDialogData.isOngoing && siteDialogData.initialPilesDone.trim() ? parseInt(siteDialogData.initialPilesDone, 10) || null : null,
-                  assignedMachineIds: siteDialogData.assignedMachineIds || [],
+                  assignedMachineIds: kazikIds,
                   assignedOperatorIds: siteDialogData.assignedOperatorIds || [],
-                  assignedMachineOperators: (siteDialogData.assignedMachineOperators || []).filter((o) => o.personelId > 0),
+                  assignedMachineOperators: (siteDialogData.assignedMachineOperators || []).filter((o) => o.personelId > 0 && kazikIds.includes(o.machineId)),
                 }
                 try {
                   if (siteDialogData.id) {
@@ -1570,88 +1655,226 @@ function AdminPanel() {
           </DialogActions>
         </Dialog>
 
-        <Dialog open={addDbUserDialogOpen} onClose={() => setAddDbUserDialogOpen(false)} maxWidth="sm" fullWidth>
-          <DialogTitle sx={{ color: "var(--icsp-lacivert)", fontWeight: 600 }}>Yeni kullanıcı</DialogTitle>
+        <Dialog open={dbUserDialogOpen} onClose={() => setDbUserDialogOpen(false)} maxWidth="md" fullWidth>
+          <DialogTitle sx={{ color: "var(--icsp-lacivert)", fontWeight: 600 }}>
+            {dbUserEditingId != null ? "Kullanıcıyı düzenle" : "Yeni kullanıcı"}
+          </DialogTitle>
           <DialogContent sx={{ pt: 1 }}>
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>Kullanıcı bilgileri</Typography>
             <TextField
-              autoFocus
+              autoFocus={dbUserEditingId == null}
               margin="dense"
               fullWidth
-              label="Kullanıcı adı"
-              value={addDbUserForm.username}
-              onChange={(e) => setAddDbUserForm((p) => ({ ...p, username: e.target.value }))}
+              label="Kullanıcı adı (giriş)"
+              value={dbUserForm.username}
+              onChange={(e) => setDbUserForm((p) => ({ ...p, username: e.target.value }))}
               variant="outlined"
               size="small"
-              placeholder="Giriş için kullanılacak ad"
+              disabled={dbUserEditingId != null}
             />
             <TextField
               margin="dense"
               fullWidth
               type="password"
-              label="Şifre"
-              value={addDbUserForm.password}
-              onChange={(e) => setAddDbUserForm((p) => ({ ...p, password: e.target.value }))}
+              label={dbUserEditingId != null ? "Yeni şifre (değiştirmek için doldurun)" : "Şifre"}
+              value={dbUserForm.password}
+              onChange={(e) => setDbUserForm((p) => ({ ...p, password: e.target.value }))}
               variant="outlined"
               size="small"
               placeholder="En az 6 karakter"
             />
+            <TextField
+              margin="dense"
+              fullWidth
+              label="E-posta"
+              value={dbUserForm.email}
+              onChange={(e) => setDbUserForm((p) => ({ ...p, email: e.target.value }))}
+              variant="outlined"
+              size="small"
+            />
             <FormControl fullWidth margin="dense" size="small" variant="outlined">
-              <InputLabel>Rol</InputLabel>
-              <Select value={addDbUserForm.role} label="Rol" onChange={(e) => setAddDbUserForm((p) => ({ ...p, role: e.target.value }))}>
-                <MenuItem value="admin">Admin (tüm yetkiler)</MenuItem>
-                <MenuItem value="manager">Manager (yönetim ve raporlar)</MenuItem>
-                <MenuItem value="user">İdari (şantiye / personel / rapor girişi)</MenuItem>
-                <MenuItem value="operator">Operatör (makine bilgisi girişi)</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl fullWidth margin="dense" size="small" variant="outlined">
-              <InputLabel>Sorumlu olduğu şantiye</InputLabel>
-              <Select value={addDbUserForm.siteId === "" ? "" : addDbUserForm.siteId} label="Sorumlu olduğu şantiye" onChange={(e) => setAddDbUserForm((p) => ({ ...p, siteId: e.target.value === "" ? "" : Number(e.target.value) }))}>
+              <InputLabel>Sorumlu şantiye</InputLabel>
+              <Select
+                value={dbUserForm.siteId === "" ? "" : dbUserForm.siteId}
+                label="Sorumlu şantiye"
+                onChange={(e) => setDbUserForm((p) => ({ ...p, siteId: e.target.value === "" ? "" : Number(e.target.value) }))}
+              >
                 <MenuItem value="">— Yok</MenuItem>
                 {dbSites.map((s) => (
                   <MenuItem key={s.id} value={s.id}>{s.name} ({s.code})</MenuItem>
                 ))}
               </Select>
             </FormControl>
+            <FormControl fullWidth margin="dense" size="small" variant="outlined">
+              <InputLabel>Kullanıcı tipi (oturum rolü)</InputLabel>
+              <Select value={dbUserForm.role} label="Kullanıcı tipi (oturum rolü)" onChange={(e) => setDbUserForm((p) => ({ ...p, role: e.target.value }))}>
+                <MenuItem value="admin">Yönetici</MenuItem>
+                <MenuItem value="manager">Manager</MenuItem>
+                <MenuItem value="user">İdari / Kullanıcı</MenuItem>
+                <MenuItem value="personel">Personel</MenuItem>
+                <MenuItem value="operator">Operatör</MenuItem>
+              </Select>
+            </FormControl>
+
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2, mb: 0.5 }}>Personel eşlemesi</Typography>
+            <FormControl fullWidth margin="dense" size="small" variant="outlined">
+              <InputLabel>Kaynak</InputLabel>
+              <Select
+                value={dbUserForm.personelMode}
+                label="Kaynak"
+                onChange={(e) => setDbUserForm((p) => ({
+                  ...p,
+                  personelMode: e.target.value as "none" | "list" | "new",
+                  personelId: "",
+                }))}
+              >
+                <MenuItem value="none">Personel listesine bağlama</MenuItem>
+                <MenuItem value="list">Mevcut personelden seç</MenuItem>
+                <MenuItem value="new">Yeni personel oluştur ve bağla</MenuItem>
+              </Select>
+            </FormControl>
+            {dbUserForm.personelMode === "list" && (
+              <FormControl fullWidth margin="dense" size="small" variant="outlined">
+                <InputLabel>Personel</InputLabel>
+                <Select
+                  value={dbUserForm.personelId === "" ? "" : dbUserForm.personelId}
+                  label="Personel"
+                  onChange={(e) => setDbUserForm((p) => ({ ...p, personelId: e.target.value === "" ? "" : Number(e.target.value) }))}
+                >
+                  <MenuItem value="">— Seçin</MenuItem>
+                  {personelList.map((p) => (
+                    <MenuItem key={p.id} value={p.id}>{p.ad} {p.soyad} ({p.gorev})</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+            {dbUserForm.personelMode === "new" && (
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mt: 1 }}>
+                <TextField size="small" label="Ad" value={dbUserForm.newPersonelAd} onChange={(e) => setDbUserForm((p) => ({ ...p, newPersonelAd: e.target.value }))} />
+                <TextField size="small" label="Soyad" value={dbUserForm.newPersonelSoyad} onChange={(e) => setDbUserForm((p) => ({ ...p, newPersonelSoyad: e.target.value }))} />
+                <TextField size="small" label="Görev" value={dbUserForm.newPersonelGorev} onChange={(e) => setDbUserForm((p) => ({ ...p, newPersonelGorev: e.target.value }))} />
+                <Typography variant="caption" color="text.secondary">Kayıt sonrası İdari → Personel’den şantiye ataması yapılabilir.</Typography>
+              </Box>
+            )}
+
+            <Typography variant="subtitle2" sx={{ mt: 2, mb: 1, fontWeight: 600 }}>Modül yetkileri (bilgi amaçlı — uygulama rolüyle birlikte kullanın)</Typography>
+            {USER_MODULE_DEFS.map((mod) => (
+              <Box key={mod.key} sx={{ mb: 1.5, pl: 1, borderLeft: "3px solid #e0e0e0" }}>
+                <FormLabel component="legend" sx={{ fontSize: "0.875rem", fontWeight: 600 }}>{mod.label}</FormLabel>
+                <RadioGroup
+                  row
+                  value={dbUserForm.modulePerms[mod.key] ?? "off"}
+                  onChange={(_, v) => setDbUserForm((p) => ({
+                    ...p,
+                    modulePerms: { ...p.modulePerms, [mod.key]: v as ModPermLevel },
+                  }))}
+                >
+                  <FormControlLabel value="off" control={<Radio size="small" />} label="Kapalı" />
+                  <FormControlLabel value="view" control={<Radio size="small" />} label="Görüntüleme" />
+                  <FormControlLabel value="write" control={<Radio size="small" />} label="Yazma" />
+                </RadioGroup>
+              </Box>
+            ))}
           </DialogContent>
           <DialogActions sx={{ px: 3, pb: 2 }}>
-            <Button onClick={() => setAddDbUserDialogOpen(false)}>İptal</Button>
+            <Button onClick={() => setDbUserDialogOpen(false)}>İptal</Button>
             <Button
               variant="contained"
               sx={{ background: "var(--icsp-lacivert)" }}
               onClick={async () => {
-                if (!addDbUserForm.username.trim()) {
+                if (!dbUserForm.username.trim()) {
                   alert("Kullanıcı adı gerekli.")
                   return
                 }
-                if (!addDbUserForm.password.trim()) {
+                if (dbUserEditingId == null && !dbUserForm.password.trim()) {
                   alert("Şifre gerekli.")
                   return
                 }
-                try {
-                  const res = await fetch("/api/users", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      username: addDbUserForm.username.trim(),
-                      password: addDbUserForm.password,
-                      role: addDbUserForm.role,
-                      siteId: addDbUserForm.siteId === "" ? null : addDbUserForm.siteId,
-                    }),
-                  })
-                  const data = await res.json().catch(() => ({}))
-                  if (res.ok) {
-                    setAddDbUserDialogOpen(false)
-                    await loadUsersAndProjects()
-                  } else {
-                    alert(data.error || "Kullanıcı eklenemedi.")
+                let personelIdToLink: number | null = null
+                if (dbUserForm.personelMode === "list" && dbUserForm.personelId !== "") {
+                  personelIdToLink = Number(dbUserForm.personelId)
+                }
+                if (dbUserForm.personelMode === "new") {
+                  if (!dbUserForm.newPersonelAd.trim() || !dbUserForm.newPersonelSoyad.trim()) {
+                    alert("Yeni personel için ad ve soyad gerekli.")
+                    return
                   }
-                } catch (e) {
+                  try {
+                    const pr = await fetch("/api/idari/personel", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        ad: dbUserForm.newPersonelAd.trim(),
+                        soyad: dbUserForm.newPersonelSoyad.trim(),
+                        gorev: dbUserForm.newPersonelGorev.trim() || "İşçi",
+                        site_id: dbUserForm.siteId === "" ? undefined : Number(dbUserForm.siteId),
+                      }),
+                    })
+                    const pd = await pr.json().catch(() => ({}))
+                    if (!pr.ok) {
+                      alert(pd.error || "Personel oluşturulamadı.")
+                      return
+                    }
+                    personelIdToLink = Number(pd.id)
+                  } catch {
+                    alert("Personel isteği başarısız.")
+                    return
+                  }
+                }
+                try {
+                  if (dbUserEditingId != null) {
+                    const body: Record<string, unknown> = {
+                      role: dbUserForm.role,
+                      siteId: dbUserForm.siteId === "" ? null : dbUserForm.siteId,
+                      modulePermissions: dbUserForm.modulePerms,
+                      email: dbUserForm.email.trim() || null,
+                    }
+                    if (dbUserForm.password.trim().length >= 6) body.password = dbUserForm.password
+                    if (dbUserForm.personelMode === "new" && personelIdToLink != null) {
+                      body.personelId = personelIdToLink
+                    } else if (dbUserForm.personelMode === "list" && dbUserForm.personelId !== "") {
+                      body.personelId = Number(dbUserForm.personelId)
+                    }
+                    const res = await fetch(`/api/users/${dbUserEditingId}`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(body),
+                    })
+                    const data = await res.json().catch(() => ({}))
+                    if (res.ok) {
+                      setDbUserDialogOpen(false)
+                      await loadUsersAndProjects()
+                    } else {
+                      alert(data.error || "Güncellenemedi.")
+                    }
+                  } else {
+                    const res = await fetch("/api/users", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        username: dbUserForm.username.trim(),
+                        password: dbUserForm.password,
+                        role: dbUserForm.role,
+                        siteId: dbUserForm.siteId === "" ? null : dbUserForm.siteId,
+                        email: dbUserForm.email.trim() || null,
+                        modulePermissions: dbUserForm.modulePerms,
+                        personelId: personelIdToLink,
+                      }),
+                    })
+                    const data = await res.json().catch(() => ({}))
+                    if (res.ok) {
+                      setDbUserDialogOpen(false)
+                      await loadUsersAndProjects()
+                    } else {
+                      alert(data.error || "Kullanıcı eklenemedi.")
+                    }
+                  }
+                } catch {
                   alert("İstek gönderilemedi.")
                 }
               }}
             >
-              Ekle
+              {dbUserEditingId != null ? "Kaydet" : "Ekle"}
             </Button>
           </DialogActions>
         </Dialog>

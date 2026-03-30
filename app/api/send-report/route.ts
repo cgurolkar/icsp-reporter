@@ -161,9 +161,10 @@ export async function POST(request: NextRequest) {
         const dbPool = (await import("@/lib/database")).default
         const pc = await dbPool.connect()
         try {
-          for (const entry of formData.puantaj as Array<{
+          const toSave = (formData.puantaj as Array<{
             personel_id: number; carpan: number; durum_kod: string; mesai_saat: number; notlar: string
-          }>) {
+          }>).filter((e) => (Number(e.carpan) || 0) > 0)
+          for (const entry of toSave) {
             await pc.query(
               `INSERT INTO puantaj (personel_id, site_id, tarih, carpan, durum_kod, mesai_saat, notlar, durum, olusturan_id)
                VALUES ($1,$2,$3,$4,$5,$6,$7,'taslak',$8)

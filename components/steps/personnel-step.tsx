@@ -6,6 +6,7 @@ import {
   Grid, TextField, Typography, Box, Paper,
   Table, TableHead, TableBody, TableRow, TableCell,
   Select, MenuItem, Chip, Divider, Alert,
+  Checkbox, FormControlLabel,
 } from "@mui/material"
 import { useLanguage } from "@/contexts/language-context"
 import type { Personnel, PuantajEntry } from "@/types/form-data"
@@ -29,6 +30,7 @@ interface PersonelRow {
   ad: string
   soyad: string
   gorev: string
+  puantaj_id?: number | null
   carpan: number
   durum_kod: string
   mesai_saat: number
@@ -67,11 +69,11 @@ export default function PersonnelStep({
               ad: r.ad,
               soyad: r.soyad,
               gorev: r.gorev,
-              carpan: r.carpan ?? 1,
-              durum_kod: r.durum_kod ?? "G",
+              carpan: r.puantaj_id != null ? (Number(r.carpan) || 0) : 0,
+              durum_kod: (r.durum_kod as string) || "G",
               mesai_saat: r.mesai_saat ?? 0,
               notlar: r.notlar ?? "",
-            }))
+            })),
           )
         }
       })
@@ -87,6 +89,14 @@ export default function PersonnelStep({
     const opt = DURUM_OPTIONS.find((o) => o.value === value)
     if (!opt) return
     updateEntry(personelId, { carpan: opt.carpan, durum_kod: opt.durum_kod })
+  }
+
+  const setSantiyedeCalisti = (personelId: number, calisti: boolean) => {
+    if (calisti) {
+      updateEntry(personelId, { carpan: 1, durum_kod: "G" })
+    } else {
+      updateEntry(personelId, { carpan: 0, durum_kod: "G" })
+    }
   }
 
   const handleChange = (field: keyof Personnel) => (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,6 +161,7 @@ export default function PersonnelStep({
           <Table size="small">
             <TableHead>
               <TableRow sx={{ backgroundColor: "#e8eaf6" }}>
+                <TableCell sx={{ width: 56 }}><strong>Şantiyede</strong></TableCell>
                 <TableCell><strong>Ad Soyad</strong></TableCell>
                 <TableCell><strong>Görev</strong></TableCell>
                 <TableCell><strong>Durum</strong></TableCell>
@@ -164,6 +175,19 @@ export default function PersonnelStep({
                   key={entry.personel_id}
                   sx={{ backgroundColor: entry.carpan === 0 ? "#fff8f8" : entry.carpan < 1 ? "#fffde7" : "#f9fff9" }}
                 >
+                  <TableCell>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={entry.carpan > 0}
+                          onChange={(e) => setSantiyedeCalisti(entry.personel_id, e.target.checked)}
+                          size="small"
+                        />
+                      }
+                      label=""
+                      sx={{ mr: 0 }}
+                    />
+                  </TableCell>
                   <TableCell>
                     <Typography variant="body2" fontWeight={500}>{entry.ad} {entry.soyad}</Typography>
                   </TableCell>

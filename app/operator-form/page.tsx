@@ -355,6 +355,24 @@ export default function OperatorFormPage() {
             placeholder="Örn: 3 adet elmas, 40 lt yağ..."
           />
 
+          <Paper variant="outlined" sx={{ p: 1.5, background: "linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%)", borderColor: "#ffc107" }}>
+            <FormControlLabel
+              control={<Checkbox checked={malzemeIhtiyaci} onChange={(e) => setMalzemeIhtiyaci(e.target.checked)} color="warning" />}
+              label={<Typography fontWeight={600}>Malzeme İhtiyacı var mı? (Evet)</Typography>}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", ml: 4, mt: -0.5 }}>
+              Bilgi: Elmas, Yağ, Halat ve benzeri ihtiyaçları işaretleyebilirsiniz.
+            </Typography>
+            <FormControlLabel
+              sx={{ mt: 1 }}
+              control={<Checkbox checked={servisIhtiyaci} onChange={(e) => setServisIhtiyaci(e.target.checked)} color="warning" />}
+              label={<Typography fontWeight={600}>Servis veya Bakım ihtiyacı var mı? (Evet)</Typography>}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", ml: 4, mt: -0.5 }}>
+              Bilgi: Servis, yağ değişimi, bakım, tamir vb.
+            </Typography>
+          </Paper>
+
           <Typography variant="subtitle2" sx={{ mt: 1, fontWeight: 600 }}>Kazık derinlikleri</Typography>
           {pileDepths.map((row, index) => (
             <Box key={index} sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
@@ -383,48 +401,7 @@ export default function OperatorFormPage() {
         </Box>
       </Paper>
 
-      {/* 3. Malzeme / Servis ihtiyacı */}
-      <Paper sx={{ p: 2, mb: 2, background: "linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%)", border: "1px solid #ffc107" }}>
-        <Typography variant="subtitle1" sx={{ color: "#e65100", fontWeight: 600, mb: 1.5 }}>
-          Malzeme ve Servis İhtiyacı
-        </Typography>
-
-        {/* Malzeme ihtiyacı */}
-        <Box sx={{ mb: 2 }}>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={malzemeIhtiyaci}
-                onChange={(e) => setMalzemeIhtiyaci(e.target.checked)}
-                color="warning"
-              />
-            }
-            label={<Typography fontWeight={600}>Malzeme İhtiyacı var mı?</Typography>}
-          />
-          <Typography variant="caption" color="text.secondary" sx={{ display: "block", ml: 4, mt: -0.5 }}>
-            Bilgi amaçlı malzeme türleri: Elmas, Yağ, Halat, Bentonit, Beton, Çimento, Su, Diğer
-          </Typography>
-        </Box>
-
-        {/* Servis ihtiyacı */}
-        <Box>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={servisIhtiyaci}
-                onChange={(e) => setServisIhtiyaci(e.target.checked)}
-                color="warning"
-              />
-            }
-            label={<Typography fontWeight={600}>Servis veya Bakım ihtiyacı var mı?</Typography>}
-          />
-          <Typography variant="caption" color="text.secondary" sx={{ display: "block", ml: 4, mt: -0.5 }}>
-            Bilgi amaçlı servis türleri: Servis, Yağ Değişimi, Bakım, Tamir, Parça Değişimi
-          </Typography>
-        </Box>
-      </Paper>
-
-      {/* 4. Fotoğraf ve not */}
+      {/* 3. Fotoğraf ve not */}
       <Paper sx={{ p: 2, mb: 2, background: "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)", border: "1px solid #4caf50" }}>
         <Typography variant="subtitle1" sx={{ color: "#2e7d32", fontWeight: 600, mb: 2 }}>
           Fotoğraf ve Önemli Olay/Talep/Not

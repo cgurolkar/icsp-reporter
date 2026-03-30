@@ -16,7 +16,7 @@ import ExpensesStep from "@/components/steps/expenses-step"
 import DailyInfoStep from "@/components/steps/daily-info-step"
 import ReviewStep from "@/components/steps/review-step"
 import IronStepComponent from "@/components/steps/iron-step"
-import { type FormData, initialFormData, AVAILABLE_MACHINES } from "@/types/form-data"
+import { type FormData, type Machine, initialFormData, AVAILABLE_MACHINES } from "@/types/form-data"
 import Dialog from "@mui/material/Dialog"
 import DialogTitle from "@mui/material/DialogTitle"
 import DialogContent from "@mui/material/DialogContent"
@@ -76,6 +76,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     pile_depths?: Array<{ depth?: string | number; onForaj?: boolean; bosForaj?: boolean }>
   }
   const [operatorEntriesForDate, setOperatorEntriesForDate] = useState<OperatorEntryRow[]>([])
+  const [reportMachineOptions, setReportMachineOptions] = useState<Machine[]>(AVAILABLE_MACHINES)
   const [draftSnack, setDraftSnack] = useState<{ open: boolean; savedAt?: number }>({ open: false })
   const [draftRestoreSnack, setDraftRestoreSnack] = useState(false)
   const { t } = useLanguage()
@@ -114,23 +115,30 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     }
   }, [initialSiteId, initialSiteName])
 
-  // Şantiye seçilince atanmış makineyi otomatik seç (admin panelde şantiye–makine ataması yapıldıysa)
+  // Şantiye seçilince İdari → Makineler kayıtlarından aktif makineleri al ve seçimi güncelle
   useEffect(() => {
     const siteId = formData.basicInfo?.siteId
-    if (siteId == null || !siteId) return
+    if (siteId == null || !siteId) {
+      setReportMachineOptions(AVAILABLE_MACHINES)
+      return
+    }
     let cancelled = false
-    fetch(`/api/sites/${siteId}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((site: { assigned_machine_ids?: string[] } | null) => {
-        if (cancelled || !site?.assigned_machine_ids?.length) return
-        const ids = site.assigned_machine_ids as string[]
-        const firstId = ids[0]
-        const machine = AVAILABLE_MACHINES.find((m) => m.id === firstId)
-        if (!machine) return
+    fetch(`/api/idari/makineler?siteId=${siteId}&status=aktif`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list: { id: number; name: string; machine_type: string }[]) => {
+        if (cancelled) return
+        const fromDb: Machine[] = Array.isArray(list)
+          ? list.map((m) => ({ id: String(m.id), name: m.name, type: m.machine_type || "Kazık Makinesi" }))
+          : []
+        const options = fromDb.length > 0 ? fromDb : AVAILABLE_MACHINES
+        setReportMachineOptions(options)
+        const ids = options.map((m) => m.id)
         setFormData((prev) => {
           const current = prev.machineSelection.selectedMachine
           if (current && ids.includes(current.id)) return prev
-          const initialMachineData = { machineId: machine.id, machineName: machine.name, machineHours: "", totalProduction: "", pileCount: "", drilledPile: "", concretePile: "", changedDiamondCount: "", note: "" }
+          const machine = options[0]
+          if (!machine) return prev
+          const initialMachineData = { machineId: machine.id, machineName: machine.name, machineHours: "", usedFuel: "", totalProduction: "", pileCount: "", drilledPile: "", concretePile: "", changedDiamondCount: "", note: "" }
           const initialProductionSummary = { machineId: machine.id, machineName: machine.name, totalProduction: "", emptyBorehole: "", preBorehole: "", concretePoured: "", totalPileCount: "", dailyPileCount: "", totalCompletedPiles: "", remainingPiles: "", steelLoweredPiles: "" }
           const needInit = isRestricted && (prev.basicInfo.machines.length === 0 || prev.productionSummary.length === 0)
           return {
@@ -140,15 +148,21 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
               selectedMachine: machine,
               additionalMachines: prev.machineSelection.additionalMachines.filter((m) => ids.includes(m.id)),
             },
-            ...(needInit ? {
-              basicInfo: { ...prev.basicInfo, machines: [initialMachineData] },
-              productionSummary: [initialProductionSummary],
-            } : {}),
+            ...(needInit
+              ? {
+                  basicInfo: { ...prev.basicInfo, machines: [initialMachineData] },
+                  productionSummary: [initialProductionSummary],
+                }
+              : {}),
           }
         })
       })
-      .catch(() => {})
-    return () => { cancelled = true }
+      .catch(() => {
+        if (!cancelled) setReportMachineOptions(AVAILABLE_MACHINES)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [formData.basicInfo?.siteId, isRestricted])
 
   // Kullanıcı/Personel: atanmış operatör isimleri ve dünkü planlanan işler pop-up
@@ -444,7 +458,13 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     }
     switch (step) {
       case 0:
-        return <MachineSelectionStep data={formData.machineSelection} onChange={(d) => updateFormData("machineSelection", d)} />
+        return (
+          <MachineSelectionStep
+            data={formData.machineSelection}
+            onChange={(d) => updateFormData("machineSelection", d)}
+            machines={formData.basicInfo.siteId ? reportMachineOptions : undefined}
+          />
+        )
       case 1:
         return (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>

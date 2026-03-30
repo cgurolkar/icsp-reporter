@@ -10,16 +10,18 @@ import {
 } from "@mui/material"
 import { Construction } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
-import { Machine, MachineSelection } from "@/types/form-data"
-import { AVAILABLE_MACHINES } from "@/types/form-data"
+import { Machine, MachineSelection, AVAILABLE_MACHINES } from "@/types/form-data"
 
 interface MachineSelectionStepProps {
   data: MachineSelection
   onChange: (data: MachineSelection) => void
+  /** Şantiyeye atanmış makineler; boşsa sabit liste kullanılır */
+  machines?: Machine[]
 }
 
-export default function MachineSelectionStep({ data, onChange }: MachineSelectionStepProps) {
+export default function MachineSelectionStep({ data, onChange, machines }: MachineSelectionStepProps) {
   const { t } = useLanguage()
+  const list = machines && machines.length > 0 ? machines : AVAILABLE_MACHINES
 
   const handlePrimaryMachineSelect = (machine: Machine) => {
     onChange({
@@ -39,6 +41,9 @@ export default function MachineSelectionStep({ data, onChange }: MachineSelectio
         <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
           {t("machine_selection_subtitle")}
         </Typography>
+        {machines && machines.length === 0 && (
+          <Alert severity="info" sx={{ mb: 2 }}>Önce bir sonraki adımda şantiye seçin; şantiyedeki makineler yüklendiğinde bu liste güncellenir.</Alert>
+        )}
 
         {/* Ana Makine Seçimi */}
         <Box sx={{ mb: 3 }}>
@@ -47,7 +52,7 @@ export default function MachineSelectionStep({ data, onChange }: MachineSelectio
           </Typography>
           
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {AVAILABLE_MACHINES.map((machine) => (
+            {list.map((machine) => (
               <Button
                 key={machine.id}
                 variant={data.selectedMachine?.id === machine.id ? "contained" : "outlined"}
