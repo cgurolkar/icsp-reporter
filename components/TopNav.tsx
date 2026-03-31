@@ -2,15 +2,22 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useLanguage } from "@/contexts/language-context"
 import { useAuth } from "@/contexts/auth-context"
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>
+}
 
 export default function TopNav() {
   const pathname = usePathname()
   const { t } = useLanguage()
   const { user, logout } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [isInstalled, setIsInstalled] = useState(false)
 
   const role = (user?.role != null ? String(user.role).toLowerCase() : null) || "user"
   const canViewReports = role === "super_admin" || role === "admin" || role === "manager"
@@ -29,6 +36,45 @@ export default function TopNav() {
 
   const isActive = (href: string) =>
     href === "/idari" ? pathname.startsWith("/idari") : pathname === href
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const media = window.matchMedia("(display-mode: standalone)")
+    const updateInstalled = () => setIsInstalled(media.matches)
+    updateInstalled()
+
+    const onBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault()
+      setInstallPrompt(event as BeforeInstallPromptEvent)
+    }
+
+    const onAppInstalled = () => {
+      setIsInstalled(true)
+      setInstallPrompt(null)
+    }
+
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt)
+    window.addEventListener("appinstalled", onAppInstalled)
+    media.addEventListener("change", updateInstalled)
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt)
+      window.removeEventListener("appinstalled", onAppInstalled)
+      media.removeEventListener("change", updateInstalled)
+    }
+  }, [])
+
+  const canShowInstall = !isInstalled && !!installPrompt
+
+  const handleInstallClick = async () => {
+    if (!installPrompt) return
+    await installPrompt.prompt()
+    const choice = await installPrompt.userChoice
+    if (choice.outcome === "accepted") {
+      setInstallPrompt(null)
+    }
+  }
 
   const linkStyle = (href: string): React.CSSProperties => ({
     padding: "10px 14px",
@@ -99,6 +145,26 @@ export default function TopNav() {
             >
               Yönetici Paneli
             </Link>
+          )}
+          {canShowInstall && (
+            <button
+              type="button"
+              onClick={handleInstallClick}
+              className="desktop-only"
+              style={{
+                padding: "6px 12px",
+                background: "transparent",
+                color: "var(--icsp-lacivert)",
+                border: "1px solid var(--icsp-lacivert)",
+                borderRadius: 6,
+                fontWeight: 600,
+                fontSize: "0.88rem",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Uygulamayı Yükle
+            </button>
           )}
           <button
             type="button"
@@ -224,6 +290,30 @@ export default function TopNav() {
             >
               Yönetici Paneli
             </Link>
+          )}
+          {canShowInstall && (
+            <button
+              type="button"
+              onClick={async () => {
+                await handleInstallClick()
+                setMenuOpen(false)
+              }}
+              style={{
+                width: "100%",
+                marginTop: 8,
+                padding: "12px 8px",
+                background: "transparent",
+                color: "var(--icsp-lacivert)",
+                border: "1px solid var(--icsp-lacivert)",
+                borderRadius: 6,
+                fontWeight: 600,
+                fontSize: "0.92rem",
+                cursor: "pointer",
+                textAlign: "center",
+              }}
+            >
+              Uygulamayı Yükle
+            </button>
           )}
           <button
             type="button"
