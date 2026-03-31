@@ -6,6 +6,11 @@ export function generatePDFMainReport(
     computedRemainingPiles?: string
     computedDailyPileCount?: string
     concretePouredSum?: number
+    projectStartDate?: string | null
+    daysElapsed?: number | null
+    showHakedis?: boolean
+    contractUnitPrice?: number | null
+    cumulativeTotalProduction?: number | null
     operatorEntries?: Array<{
       machine_name?: string; machine_hours?: string; used_fuel?: string; work_done?: string; note?: string; username?: string;
       daily_pile_count?: string; total_production?: string; empty_borehole?: string; pre_borehole?: string; concrete_poured?: string;
@@ -71,6 +76,14 @@ export function generatePDFMainReport(
   } catch {}
 
   const v = (val: any, fallback = "—") => (val != null && val !== "" && val !== 0 && val !== "0" ? String(val) : fallback)
+  const projectStartDate = opts?.projectStartDate ? String(opts.projectStartDate).slice(0, 10) : ""
+  const elapsedDays = opts?.daysElapsed != null ? Number(opts.daysElapsed) : null
+  const showHakedis = opts?.showHakedis === true
+  const contractUnitPrice = opts?.contractUnitPrice != null ? Number(opts.contractUnitPrice) : null
+  const cumulativeTotalProduction = opts?.cumulativeTotalProduction != null ? Number(opts.cumulativeTotalProduction) : null
+  const hakedisAmount = showHakedis && contractUnitPrice != null && cumulativeTotalProduction != null
+    ? contractUnitPrice * cumulativeTotalProduction
+    : null
 
   return `<!DOCTYPE html>
 <html lang="tr">
@@ -164,6 +177,13 @@ export function generatePDFMainReport(
   </div>
 
   <!-- MAKİNE + ÜRETİM ÖZET STATS -->
+  <div style="margin-bottom:8px;padding:6px 10px;border:1px solid #c7d2e8;border-radius:6px;background:#f8fafc;display:flex;gap:12px;flex-wrap:wrap;">
+    <div style="font-size:10px;color:#475569;"><strong>İşe başlama tarihi:</strong> ${projectStartDate || "—"}</div>
+    <div style="font-size:10px;color:#475569;"><strong>Geçen gün:</strong> ${elapsedDays != null && elapsedDays >= 0 ? elapsedDays : "—"}</div>
+    ${showHakedis ? `<div style="font-size:10px;color:#1a237e;"><strong>Birim fiyat:</strong> ${contractUnitPrice != null ? `${contractUnitPrice.toLocaleString("tr-TR")} /m` : "—"}</div>` : ""}
+    ${showHakedis ? `<div style="font-size:10px;color:#1a237e;"><strong>Kümülatif metraj:</strong> ${cumulativeTotalProduction != null ? cumulativeTotalProduction.toLocaleString("tr-TR") : "—"} m</div>` : ""}
+    ${showHakedis ? `<div style="font-size:10px;color:#166534;"><strong>Hak edilen:</strong> ${hakedisAmount != null ? `${hakedisAmount.toLocaleString("tr-TR")} IQD` : "—"}</div>` : ""}
+  </div>
   <div class="stat-grid stat-grid-4" style="margin-bottom:10px;">
     <div class="stat-card highlight">
       <div class="stat-label">Günlük Kazık</div>
@@ -323,27 +343,25 @@ export function generatePDFMainReport(
     <div class="section-header">👤 Operatör Makine Girişleri</div>
     <div class="section-body">
       <table>
-        <thead><tr><th>Makine</th><th>Biniş</th><th>İniş</th><th>Mazot (L)</th><th>Kazık (Ad.)</th><th>İmalat (m)</th><th>Elmas</th><th>Bentonit</th><th>Yapılan İş</th><th>Not</th></tr></thead>
+        <thead><tr><th>Makine</th><th>Biniş</th><th>İniş</th><th>Kazık (Ad.)</th><th>İmalat (m)</th><th>Boş Foraj</th><th>Ön Foraj</th><th>Beton</th><th>Not</th></tr></thead>
         <tbody>
           ${operatorEntries.map((oe: any) => {
             const pd = oe.pile_depths
             const pileDepths = Array.isArray(pd) ? pd : (typeof pd === "string" ? (() => { try { return JSON.parse(pd) } catch { return [] } })() : [])
-            const elmasText = oe.elmas_degisim_yok ? "Yok" : (oe.elmas_miktar ?? "—")
             return `
             <tr>
               <td style="font-weight:600;">${oe.machine_name ?? ""}</td>
               <td class="td-center">${oe.start_time ?? "—"}</td>
               <td class="td-center">${oe.end_time ?? "—"}</td>
-              <td class="td-center">${v(oe.used_fuel)}</td>
               <td class="td-center" style="color:#16a34a;font-weight:700;">${v(oe.daily_pile_count ?? oe.concrete_poured)}</td>
               <td class="td-center">${v(oe.total_production)}</td>
-              <td class="td-center">${elmasText}</td>
-              <td class="td-center">${v(oe.bentonit_miktar)}</td>
-              <td>${oe.work_done ?? ""}</td>
+              <td class="td-center">${v(oe.empty_borehole, "0")}</td>
+              <td class="td-center">${v(oe.pre_borehole, "0")}</td>
+              <td class="td-center">${v(oe.concrete_poured)}</td>
               <td>${oe.note ?? ""}</td>
             </tr>
             ${pileDepths.length > 0 ? `
-            <tr><td colspan="10" style="padding:4px 6px;background:#f8fafc;">
+            <tr><td colspan="9" style="padding:4px 6px;background:#f8fafc;">
               <table style="width:auto;min-width:300px;">
                 <thead><tr><th>No</th><th>Derinlik (m)</th><th>Ön Foraj</th><th>Boş Foraj</th></tr></thead>
                 <tbody>

@@ -346,6 +346,74 @@ export function buildTestEmail(): { subject: string; html: string } {
   }
 }
 
+export interface OperatorReportEmailData {
+  reportId: number
+  date: string
+  siteName: string
+  reportUrl?: string
+  operatorEntries: Array<{
+    machine_name?: string
+    username?: string
+    daily_pile_count?: string | number
+    total_production?: string | number
+    empty_borehole?: string | number
+    pre_borehole?: string | number
+    concrete_poured?: string | number
+    note?: string
+    start_time?: string
+    end_time?: string
+  }>
+}
+
+export function buildOperatorReportEmail(data: OperatorReportEmailData): { subject: string; html: string } {
+  const subject = `👷 Operatör Raporu: ${data.siteName} — ${formatDate(data.date)}`
+  const rows = data.operatorEntries.map((oe, idx) => `
+    <tr style="border-bottom:1px solid ${COLORS.border};">
+      <td style="padding:10px 8px;">${idx + 1}</td>
+      <td style="padding:10px 8px;font-weight:600;">${escapeHtml(String(oe.machine_name ?? "—"))}</td>
+      <td style="padding:10px 8px;">${escapeHtml(String(oe.username ?? "—"))}</td>
+      <td style="padding:10px 8px;text-align:center;">${oe.start_time ?? "—"} / ${oe.end_time ?? "—"}</td>
+      <td style="padding:10px 8px;text-align:center;">${oe.daily_pile_count ?? "—"}</td>
+      <td style="padding:10px 8px;text-align:center;">${oe.total_production ?? "—"}</td>
+      <td style="padding:10px 8px;text-align:center;">${oe.empty_borehole ?? "0"} / ${oe.pre_borehole ?? "0"}</td>
+      <td style="padding:10px 8px;text-align:center;">${oe.concrete_poured ?? "—"}</td>
+      <td style="padding:10px 8px;">${escapeHtml(String(oe.note ?? "—"))}</td>
+    </tr>
+  `).join("")
+
+  const content = `
+  <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      ${infoRow("Şantiye", data.siteName)}
+      ${infoRow("Tarih", formatDate(data.date))}
+      ${infoRow("Kayıt adedi", String(data.operatorEntries.length))}
+    </table>
+  </div>
+
+  <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${COLORS.border};border-radius:10px;overflow:hidden;">
+    <thead>
+      <tr style="background:#eef2ff;">
+        <th style="padding:8px 6px;font-size:11px;">#</th>
+        <th style="padding:8px 6px;font-size:11px;">Makine</th>
+        <th style="padding:8px 6px;font-size:11px;">Operatör</th>
+        <th style="padding:8px 6px;font-size:11px;">Saat</th>
+        <th style="padding:8px 6px;font-size:11px;">Kazık</th>
+        <th style="padding:8px 6px;font-size:11px;">İmalat (m)</th>
+        <th style="padding:8px 6px;font-size:11px;">Boş/Ön</th>
+        <th style="padding:8px 6px;font-size:11px;">Beton</th>
+        <th style="padding:8px 6px;font-size:11px;">Not</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows || `<tr><td colspan="9" style="padding:14px;text-align:center;color:${COLORS.textSecondary};">Operatör kaydı yok.</td></tr>`}
+    </tbody>
+  </table>
+  ${data.reportUrl ? `<div style="text-align:center;margin-top:16px;"><a href="${data.reportUrl}" style="display:inline-block;background:${COLORS.accent};color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;">Rapor Önizleme →</a></div>` : ""}
+  `
+
+  return { subject, html: baseLayout("Operatör Rapor Özeti", content) }
+}
+
 function formatDate(dateStr: string): string {
   if (!dateStr) return dateStr
   try {

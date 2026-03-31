@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect, useRef } from "react"
 import {
@@ -100,7 +100,7 @@ export default function IdariHarcamalarPage() {
 
   // Excel import state
   const [importOpen, setImportOpen] = useState(false)
-  const [importStep, setImportStep] = useState(0) // 0=ayarlar, 1=önizleme, 2=sonuç
+  const [importStep, setImportStep] = useState(0) // 0=ayarlar, 1=Ã¶nizleme, 2=sonuÃ§
   const [importSiteId, setImportSiteId] = useState<string>("")
   const [importParabirimi, setImportParabirimi] = useState<string>("USD")
   const [importFile, setImportFile] = useState<File | null>(null)
@@ -112,7 +112,7 @@ export default function IdariHarcamalarPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
-  const canManage = role === "admin" || role === "manager"
+  const canManage = role === "super_admin" || role === "admin" || role === "manager"
 
   useEffect(() => {
     fetch("/api/sites").then((r) => (r.ok ? r.json() : [])).then(setSites).catch(() => setSites([]))
@@ -139,7 +139,7 @@ export default function IdariHarcamalarPage() {
     const kid = parseInt(form.kategoriId, 10)
     const tutar = parseFloat(form.tutar)
     if (!sid || !kid || Number.isNaN(tutar) || !form.islem_tarihi) {
-      alert("Şantiye, kategori, tutar ve tarih gerekli.")
+      alert("Åžantiye, kategori, tutar ve tarih gerekli.")
       return
     }
     setSaving(true)
@@ -191,7 +191,7 @@ export default function IdariHarcamalarPage() {
 
   const handlePreview = async () => {
     if (!importFile || !importSiteId) {
-      setImportError("Dosya ve şantiye seçimi zorunludur.")
+      setImportError("Dosya ve ÅŸantiye seÃ§imi zorunludur.")
       return
     }
     setImportLoading(true)
@@ -204,12 +204,12 @@ export default function IdariHarcamalarPage() {
       fd.append("previewOnly", "true")
       const res = await fetch("/api/idari/islemler/import", { method: "POST", body: fd })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Dosya okunamadı.")
+      if (!res.ok) throw new Error(data.error || "Dosya okunamadÄ±.")
       setImportPreview(data.preview || [])
       setImportTotal(data.totalRows || 0)
       setImportStep(1)
     } catch (err: unknown) {
-      setImportError(err instanceof Error ? err.message : "Hata oluştu.")
+      setImportError(err instanceof Error ? err.message : "Hata oluÅŸtu.")
     } finally {
       setImportLoading(false)
     }
@@ -227,11 +227,11 @@ export default function IdariHarcamalarPage() {
       fd.append("previewOnly", "false")
       const res = await fetch("/api/idari/islemler/import", { method: "POST", body: fd })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Import başarısız.")
+      if (!res.ok) throw new Error(data.error || "Import baÅŸarÄ±sÄ±z.")
       setImportResult({ created: data.created, failed: data.failed })
       setImportStep(2)
     } catch (err: unknown) {
-      setImportError(err instanceof Error ? err.message : "Hata oluştu.")
+      setImportError(err instanceof Error ? err.message : "Hata oluÅŸtu.")
     } finally {
       setImportLoading(false)
     }
@@ -248,16 +248,16 @@ export default function IdariHarcamalarPage() {
       <Paper sx={{ p: 2, mb: 2 }}>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, alignItems: "center", mb: 2 }}>
           <FormControl size="small" sx={{ minWidth: 200 }}>
-            <InputLabel>Şantiye</InputLabel>
-            <Select value={siteId} label="Şantiye" onChange={(e) => setSiteId(e.target.value)}>
-              <MenuItem value="">Seçin</MenuItem>
+            <InputLabel>Åžantiye</InputLabel>
+            <Select value={siteId} label="Åžantiye" onChange={(e) => setSiteId(e.target.value)}>
+              <MenuItem value="">SeÃ§in</MenuItem>
               {sites.map((s) => (
                 <MenuItem key={s.id} value={String(s.id)}>{s.name}</MenuItem>
               ))}
             </Select>
           </FormControl>
-          <TextField label="Başlangıç" type="date" value={baslangic} onChange={(e) => setBaslangic(e.target.value.slice(0, 10))} size="small" InputLabelProps={{ shrink: true }} />
-          <TextField label="Bitiş" type="date" value={bitis} onChange={(e) => setBitis(e.target.value.slice(0, 10))} size="small" InputLabelProps={{ shrink: true }} />
+          <TextField label="BaÅŸlangÄ±Ã§" type="date" value={baslangic} onChange={(e) => setBaslangic(e.target.value.slice(0, 10))} size="small" InputLabelProps={{ shrink: true }} />
+          <TextField label="BitiÅŸ" type="date" value={bitis} onChange={(e) => setBitis(e.target.value.slice(0, 10))} size="small" InputLabelProps={{ shrink: true }} />
           {canManage && (
             <Box sx={{ display: "flex", gap: 1, ml: "auto" }}>
               <Button
@@ -276,9 +276,9 @@ export default function IdariHarcamalarPage() {
         </Box>
 
         {!siteId ? (
-          <Typography color="text.secondary">Şantiye seçin.</Typography>
+          <Typography color="text.secondary">Åžantiye seÃ§in.</Typography>
         ) : list.length === 0 ? (
-          <Typography color="text.secondary">Kayıt yok.</Typography>
+          <Typography color="text.secondary">KayÄ±t yok.</Typography>
         ) : (
           <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
             <Table size="small">
@@ -287,8 +287,8 @@ export default function IdariHarcamalarPage() {
                   <TableCell><strong>Tarih</strong></TableCell>
                   <TableCell><strong>Kategori</strong></TableCell>
                   <TableCell align="right"><strong>Tutar</strong></TableCell>
-                  <TableCell><strong>Ödeme</strong></TableCell>
-                  <TableCell><strong>Açıklama</strong></TableCell>
+                  <TableCell><strong>Ã–deme</strong></TableCell>
+                  <TableCell><strong>AÃ§Ä±klama</strong></TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -298,9 +298,9 @@ export default function IdariHarcamalarPage() {
                     <TableCell>{row.kategori_adi}</TableCell>
                     <TableCell align="right">{Number(row.tutar).toLocaleString("tr-TR")}</TableCell>
                     <TableCell>
-                      {row.odeme_kaynagi === "Merkez_Banka" ? "Merkez" : row.odeme_kaynagi === "rapor" ? "Günlük Rapor" : "Şantiye Kasası"}
+                      {row.odeme_kaynagi === "Merkez_Banka" ? "Merkez" : row.odeme_kaynagi === "rapor" ? "GÃ¼nlÃ¼k Rapor" : "Åžantiye KasasÄ±"}
                     </TableCell>
-                    <TableCell>{row.aciklama ?? "—"}</TableCell>
+                    <TableCell>{row.aciklama ?? "â€”"}</TableCell>
                   </TableRow>
                 ))}
                 <TableRow sx={{ backgroundColor: "#f5f5f5" }}>
@@ -314,14 +314,14 @@ export default function IdariHarcamalarPage() {
         )}
       </Paper>
 
-      {/* Yeni harcama diyaloğu */}
+      {/* Yeni harcama diyaloÄŸu */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Yeni harcama</DialogTitle>
         <DialogContent>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
             <FormControl fullWidth required>
-              <InputLabel>Şantiye</InputLabel>
-              <Select value={form.siteId} label="Şantiye" onChange={(e) => setForm((f) => ({ ...f, siteId: e.target.value }))}>
+              <InputLabel>Åžantiye</InputLabel>
+              <Select value={form.siteId} label="Åžantiye" onChange={(e) => setForm((f) => ({ ...f, siteId: e.target.value }))}>
                 {sites.map((s) => (
                   <MenuItem key={s.id} value={String(s.id)}>{s.name}</MenuItem>
                 ))}
@@ -338,52 +338,52 @@ export default function IdariHarcamalarPage() {
             <TextField label="Tutar" type="number" value={form.tutar} onChange={(e) => setForm((f) => ({ ...f, tutar: e.target.value }))} required fullWidth inputProps={{ step: 0.01 }} />
             <TextField label="Tarih" type="date" value={form.islem_tarihi} onChange={(e) => setForm((f) => ({ ...f, islem_tarihi: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
             <FormControl fullWidth>
-              <InputLabel>Ödeme kaynağı</InputLabel>
-              <Select value={form.odeme_kaynagi} label="Ödeme kaynağı" onChange={(e) => setForm((f) => ({ ...f, odeme_kaynagi: e.target.value }))}>
-                <MenuItem value="Santiye_Kasa">Şantiye Kasası</MenuItem>
+              <InputLabel>Ã–deme kaynaÄŸÄ±</InputLabel>
+              <Select value={form.odeme_kaynagi} label="Ã–deme kaynaÄŸÄ±" onChange={(e) => setForm((f) => ({ ...f, odeme_kaynagi: e.target.value }))}>
+                <MenuItem value="Santiye_Kasa">Åžantiye KasasÄ±</MenuItem>
                 <MenuItem value="Merkez_Banka">Merkez Banka</MenuItem>
               </Select>
             </FormControl>
-            <TextField label="Açıklama" multiline value={form.aciklama} onChange={(e) => setForm((f) => ({ ...f, aciklama: e.target.value }))} fullWidth />
+            <TextField label="AÃ§Ä±klama" multiline value={form.aciklama} onChange={(e) => setForm((f) => ({ ...f, aciklama: e.target.value }))} fullWidth />
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>İptal</Button>
+          <Button onClick={() => setDialogOpen(false)}>Ä°ptal</Button>
           <Button variant="contained" onClick={handleSave} disabled={saving || !form.siteId || !form.kategoriId || !form.tutar} sx={{ background: "var(--icsp-lacivert)" }}>
             {saving ? "Kaydediliyor..." : "Kaydet"}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Excel import diyaloğu */}
+      {/* Excel import diyaloÄŸu */}
       <Dialog open={importOpen} onClose={closeImport} maxWidth="md" fullWidth>
         <DialogTitle sx={{ pb: 1 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <FileUpload sx={{ color: "var(--icsp-lacivert)" }} />
-            Excel'den Harcama Aktarımı
+            Excel'den Harcama AktarÄ±mÄ±
           </Box>
         </DialogTitle>
         <DialogContent>
           <Stepper activeStep={importStep} sx={{ mb: 3 }}>
             <Step><StepLabel>Dosya & Ayarlar</StepLabel></Step>
-            <Step><StepLabel>Önizleme</StepLabel></Step>
-            <Step><StepLabel>Tamamlandı</StepLabel></Step>
+            <Step><StepLabel>Ã–nizleme</StepLabel></Step>
+            <Step><StepLabel>TamamlandÄ±</StepLabel></Step>
           </Stepper>
 
           {importLoading && <LinearProgress sx={{ mb: 2 }} />}
           {importError && <Alert severity="error" sx={{ mb: 2 }}>{importError}</Alert>}
 
-          {/* Adım 0: Ayarlar */}
+          {/* AdÄ±m 0: Ayarlar */}
           {importStep === 0 && (
             <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <Alert severity="info" sx={{ fontSize: 13 }}>
-                <strong>Desteklenen format:</strong> "GENEL KASA RAPORU" şemasındaki Excel dosyası (.xlsx).
-                Yalnızca <strong>Tediyeler</strong> (gider) satırları aktarılır, Tahsilatlar (gelir) aktarılmaz.
+                <strong>Desteklenen format:</strong> "GENEL KASA RAPORU" ÅŸemasÄ±ndaki Excel dosyasÄ± (.xlsx).
+                YalnÄ±zca <strong>Tediyeler</strong> (gider) satÄ±rlarÄ± aktarÄ±lÄ±r, Tahsilatlar (gelir) aktarÄ±lmaz.
               </Alert>
 
               <FormControl fullWidth required>
-                <InputLabel>Şantiye</InputLabel>
-                <Select value={importSiteId} label="Şantiye" onChange={(e) => setImportSiteId(e.target.value)}>
+                <InputLabel>Åžantiye</InputLabel>
+                <Select value={importSiteId} label="Åžantiye" onChange={(e) => setImportSiteId(e.target.value)}>
                   {sites.map((s) => (
                     <MenuItem key={s.id} value={String(s.id)}>{s.name}</MenuItem>
                   ))}
@@ -391,15 +391,15 @@ export default function IdariHarcamalarPage() {
               </FormControl>
 
               <FormControl fullWidth>
-                <InputLabel>Para birimi önceliği</InputLabel>
-                <Select value={importParabirimi} label="Para birimi önceliği" onChange={(e) => setImportParabirimi(e.target.value)}>
-                  <MenuItem value="USD">USD (önce USD, yoksa IQD)</MenuItem>
-                  <MenuItem value="IQD">IQD (önce IQD, yoksa USD)</MenuItem>
+                <InputLabel>Para birimi Ã¶nceliÄŸi</InputLabel>
+                <Select value={importParabirimi} label="Para birimi Ã¶nceliÄŸi" onChange={(e) => setImportParabirimi(e.target.value)}>
+                  <MenuItem value="USD">USD (Ã¶nce USD, yoksa IQD)</MenuItem>
+                  <MenuItem value="IQD">IQD (Ã¶nce IQD, yoksa USD)</MenuItem>
                 </Select>
               </FormControl>
 
               <Box>
-                <Typography variant="body2" sx={{ mb: 1, color: "text.secondary" }}>Excel dosyası (.xlsx)</Typography>
+                <Typography variant="body2" sx={{ mb: 1, color: "text.secondary" }}>Excel dosyasÄ± (.xlsx)</Typography>
                 <input
                   type="file"
                   accept=".xlsx,.xls"
@@ -409,32 +409,32 @@ export default function IdariHarcamalarPage() {
                 />
                 <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                   <Button variant="outlined" onClick={() => fileInputRef.current?.click()} sx={{ borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}>
-                    Dosya Seç
+                    Dosya SeÃ§
                   </Button>
                   {importFile && (
                     <Typography variant="body2" sx={{ color: "success.main" }}>
-                      ✓ {importFile.name} ({(importFile.size / 1024).toFixed(0)} KB)
+                      âœ“ {importFile.name} ({(importFile.size / 1024).toFixed(0)} KB)
                     </Typography>
                   )}
                 </Box>
               </Box>
 
               <Alert severity="warning" sx={{ fontSize: 12 }}>
-                Kategori eşlemesi otomatik yapılır: Yemek, Akaryakıt (Mazot/Benzin/yakıt sütunları),
-                Maaş (personel/yevmiye), Taşeron (makine/ekipman), Sarf Malzeme, Diğer.
-                Aktarım sonrası kategorileri manuel düzenleyebilirsiniz.
+                Kategori eÅŸlemesi otomatik yapÄ±lÄ±r: Yemek, AkaryakÄ±t (Mazot/Benzin/yakÄ±t sÃ¼tunlarÄ±),
+                MaaÅŸ (personel/yevmiye), TaÅŸeron (makine/ekipman), Sarf Malzeme, DiÄŸer.
+                AktarÄ±m sonrasÄ± kategorileri manuel dÃ¼zenleyebilirsiniz.
               </Alert>
             </Box>
           )}
 
-          {/* Adım 1: Önizleme */}
+          {/* AdÄ±m 1: Ã–nizleme */}
           {importStep === 1 && (
             <Box>
               <Box sx={{ display: "flex", gap: 2, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
-                <Chip label={`${importTotal} satır bulundu`} color="primary" variant="outlined" />
-                <Chip label={`İlk 100 gösteriliyor`} variant="outlined" sx={{ display: importTotal > 100 ? undefined : "none" }} />
+                <Chip label={`${importTotal} satÄ±r bulundu`} color="primary" variant="outlined" />
+                <Chip label={`Ä°lk 100 gÃ¶steriliyor`} variant="outlined" sx={{ display: importTotal > 100 ? undefined : "none" }} />
                 <Typography variant="body2" color="text.secondary">
-                  Şantiye: <strong>{siteName(importSiteId)}</strong> · Para birimi: <strong>{importParabirimi}</strong>
+                  Åžantiye: <strong>{siteName(importSiteId)}</strong> Â· Para birimi: <strong>{importParabirimi}</strong>
                 </Typography>
               </Box>
               <Box sx={{ overflowX: "auto", maxHeight: 400 }}>
@@ -442,7 +442,7 @@ export default function IdariHarcamalarPage() {
                   <TableHead>
                     <TableRow>
                       <TableCell>Tarih</TableCell>
-                      <TableCell>Açıklama</TableCell>
+                      <TableCell>AÃ§Ä±klama</TableCell>
                       <TableCell>Detay</TableCell>
                       <TableCell align="right">Tutar</TableCell>
                       <TableCell>Birim</TableCell>
@@ -471,22 +471,22 @@ export default function IdariHarcamalarPage() {
               <Typography variant="body2" color="text.secondary">
                 Toplam: <strong>
                   {importPreview.reduce((s, r) => s + r.tutar, 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
-                </strong> (gösterilen {importPreview.length} satır)
+                </strong> (gÃ¶sterilen {importPreview.length} satÄ±r)
               </Typography>
             </Box>
           )}
 
-          {/* Adım 2: Sonuç */}
+          {/* AdÄ±m 2: SonuÃ§ */}
           {importStep === 2 && importResult && (
             <Box sx={{ textAlign: "center", py: 3 }}>
               <CheckCircle sx={{ fontSize: 56, color: "success.main", mb: 2 }} />
-              <Typography variant="h6" sx={{ mb: 1 }}>Aktarım tamamlandı</Typography>
+              <Typography variant="h6" sx={{ mb: 1 }}>AktarÄ±m tamamlandÄ±</Typography>
               <Box sx={{ display: "flex", justifyContent: "center", gap: 2, mb: 2 }}>
-                <Chip label={`${importResult.created} kayıt eklendi`} color="success" />
+                <Chip label={`${importResult.created} kayÄ±t eklendi`} color="success" />
                 {importResult.failed > 0 && <Chip label={`${importResult.failed} hata`} color="error" />}
               </Box>
               <Typography variant="body2" color="text.secondary">
-                Şantiye: <strong>{siteName(importSiteId)}</strong>
+                Åžantiye: <strong>{siteName(importSiteId)}</strong>
               </Typography>
             </Box>
           )}
@@ -494,7 +494,7 @@ export default function IdariHarcamalarPage() {
 
         <DialogActions>
           <Button onClick={closeImport}>
-            {importStep === 2 ? "Kapat" : "İptal"}
+            {importStep === 2 ? "Kapat" : "Ä°ptal"}
           </Button>
           {importStep === 0 && (
             <Button
@@ -503,7 +503,7 @@ export default function IdariHarcamalarPage() {
               disabled={importLoading || !importFile || !importSiteId}
               sx={{ background: "var(--icsp-lacivert)" }}
             >
-              Önizle
+              Ã–nizle
             </Button>
           )}
           {importStep === 1 && (
@@ -515,7 +515,7 @@ export default function IdariHarcamalarPage() {
                 disabled={importLoading || importTotal === 0}
                 sx={{ background: "var(--icsp-lacivert)" }}
               >
-                {importLoading ? "Aktarılıyor..." : `${importTotal} kaydı aktar`}
+                {importLoading ? "AktarÄ±lÄ±yor..." : `${importTotal} kaydÄ± aktar`}
               </Button>
             </>
           )}
@@ -524,3 +524,4 @@ export default function IdariHarcamalarPage() {
     </Box>
   )
 }
+

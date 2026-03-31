@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect } from "react"
 import {
@@ -52,7 +52,7 @@ export default function IdariPuantajOnayPage() {
   const [approving, setApproving] = useState(false)
 
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
-  const canApprove = role === "admin" || role === "manager"
+  const canApprove = role === "super_admin" || role === "admin" || role === "manager"
 
   useEffect(() => {
     fetch("/api/sites")
@@ -106,7 +106,7 @@ export default function IdariPuantajOnayPage() {
       loadList()
     } else {
       const err = await res.json().catch(() => ({}))
-      alert(err.error || "Onaylanamadı.")
+      alert(err.error || "OnaylanamadÄ±.")
     }
   }
 
@@ -114,7 +114,7 @@ export default function IdariPuantajOnayPage() {
     return (
       <Box>
         <Typography color="text.secondary">Puantaj onaylama yetkiniz yok. Sadece merkez (admin/manager) onaylayabilir.</Typography>
-        <Button component={Link} href="/idari/puantaj" sx={{ mt: 2 }}>Puantaj girişine dön</Button>
+        <Button component={Link} href="/idari/puantaj" sx={{ mt: 2 }}>Puantaj giriÅŸine dÃ¶n</Button>
       </Box>
     )
   }
@@ -128,31 +128,31 @@ export default function IdariPuantajOnayPage() {
       <Paper sx={{ p: 2, mb: 2 }}>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, alignItems: "center", mb: 2 }}>
           <FormControl size="small" sx={{ minWidth: 200 }}>
-            <InputLabel>Şantiye</InputLabel>
-            <Select value={siteId} label="Şantiye" onChange={(e) => setSiteId(e.target.value)}>
-              <MenuItem value="">Tümü</MenuItem>
+            <InputLabel>Åžantiye</InputLabel>
+            <Select value={siteId} label="Åžantiye" onChange={(e) => setSiteId(e.target.value)}>
+              <MenuItem value="">TÃ¼mÃ¼</MenuItem>
               {sites.map((s) => (
                 <MenuItem key={s.id} value={String(s.id)}>{s.name}</MenuItem>
               ))}
             </Select>
           </FormControl>
-          <TextField label="Başlangıç" type="date" value={baslangic} onChange={(e) => setBaslangic(e.target.value.slice(0, 10))} size="small" InputLabelProps={{ shrink: true }} />
-          <TextField label="Bitiş" type="date" value={bitis} onChange={(e) => setBitis(e.target.value.slice(0, 10))} size="small" InputLabelProps={{ shrink: true }} />
+          <TextField label="BaÅŸlangÄ±Ã§" type="date" value={baslangic} onChange={(e) => setBaslangic(e.target.value.slice(0, 10))} size="small" InputLabelProps={{ shrink: true }} />
+          <TextField label="BitiÅŸ" type="date" value={bitis} onChange={(e) => setBitis(e.target.value.slice(0, 10))} size="small" InputLabelProps={{ shrink: true }} />
           <Button variant="outlined" onClick={loadList}>Yenile</Button>
         </Box>
 
         {loading ? (
-          <Typography color="text.secondary">Yükleniyor...</Typography>
+          <Typography color="text.secondary">YÃ¼kleniyor...</Typography>
         ) : list.length === 0 ? (
           <Typography color="text.secondary">Onay bekleyen (taslak) puantaj yok.</Typography>
         ) : (
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell><strong>Şantiye</strong></TableCell>
+                <TableCell><strong>Åžantiye</strong></TableCell>
                 <TableCell><strong>Tarih</strong></TableCell>
-                <TableCell><strong>Kayıt sayısı</strong></TableCell>
-                <TableCell align="right"><strong>İşlem</strong></TableCell>
+                <TableCell><strong>KayÄ±t sayÄ±sÄ±</strong></TableCell>
+                <TableCell align="right"><strong>Ä°ÅŸlem</strong></TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -173,24 +173,25 @@ export default function IdariPuantajOnayPage() {
         )}
       </Paper>
 
-      <Button component={Link} href="/idari/puantaj">Puantaj girişine dön</Button>
+      <Button component={Link} href="/idari/puantaj">Puantaj giriÅŸine dÃ¶n</Button>
 
       <Dialog open={!!approveDialog} onClose={() => setApproveDialog(null)}>
         <DialogTitle>Puantaj onayla</DialogTitle>
         <DialogContent>
           {approveDialog && (
             <Typography>
-              <strong>{approveDialog.siteName}</strong> — {approveDialog.baslangic} tarihli taslak puantaj onaylanacak. Onaydan sonra değiştirilemez.
+              <strong>{approveDialog.siteName}</strong> â€” {approveDialog.baslangic} tarihli taslak puantaj onaylanacak. Onaydan sonra deÄŸiÅŸtirilemez.
             </Typography>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setApproveDialog(null)}>İptal</Button>
+          <Button onClick={() => setApproveDialog(null)}>Ä°ptal</Button>
           <Button variant="contained" onClick={handleApprove} disabled={approving} sx={{ background: "var(--icsp-lacivert)" }}>
-            {approving ? "Onaylanıyor..." : "Onayla"}
+            {approving ? "OnaylanÄ±yor..." : "Onayla"}
           </Button>
         </DialogActions>
       </Dialog>
     </Box>
   )
 }
+

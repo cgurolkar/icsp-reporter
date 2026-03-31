@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect, useRef } from "react"
 import {
@@ -58,7 +58,7 @@ export default function IdariBelgelerPage() {
   const [saving, setSaving] = useState(false)
 
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
-  const canManage = role === "admin" || role === "manager"
+  const canManage = role === "super_admin" || role === "admin" || role === "manager"
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -73,10 +73,10 @@ export default function IdariBelgelerPage() {
       .catch(() => setPersonelList([]))
     setBelgeTipleri([
       { id: 1, kod: "kimlik", ad: "Kimlik Fotokopisi" },
-      { id: 2, kod: "isg", ad: "İSG Eğitim Sertifikası" },
+      { id: 2, kod: "isg", ad: "Ä°SG EÄŸitim SertifikasÄ±" },
       { id: 3, kod: "mesleki", ad: "Mesleki Yeterlilik Belgesi" },
-      { id: 4, kod: "saglik", ad: "Sağlık Raporu" },
-      { id: 5, kod: "adli_sicil", ad: "Adli Sicil Kaydı" },
+      { id: 4, kod: "saglik", ad: "SaÄŸlÄ±k Raporu" },
+      { id: 5, kod: "adli_sicil", ad: "Adli Sicil KaydÄ±" },
     ])
   }, [role, user?.siteId])
 
@@ -96,7 +96,7 @@ export default function IdariBelgelerPage() {
     if (!input?.files?.[0] || !selectedPersonelId || !form.belge_tipi) return
     const file = input.files[0]
     if (file.size > 5 * 1024 * 1024) {
-      alert("Dosya 5MB'dan küçük olmalı.")
+      alert("Dosya 5MB'dan kÃ¼Ã§Ã¼k olmalÄ±.")
       return
     }
     const reader = new FileReader()
@@ -121,7 +121,7 @@ export default function IdariBelgelerPage() {
         setBelgeler(list)
       } else {
         const err = await res.json().catch(() => ({}))
-        alert(err.error || "Yüklenemedi.")
+        alert(err.error || "YÃ¼klenemedi.")
       }
     }
     reader.readAsDataURL(file)
@@ -150,9 +150,9 @@ export default function IdariBelgelerPage() {
           <FormControl size="small" sx={{ minWidth: 280 }}>
             <InputLabel>Personel</InputLabel>
             <Select value={selectedPersonelId} label="Personel" onChange={(e) => setSelectedPersonelId(e.target.value)}>
-              <MenuItem value="">Seçin</MenuItem>
+              <MenuItem value="">SeÃ§in</MenuItem>
               {personelList.map((p) => (
-                <MenuItem key={p.id} value={String(p.id)}>{p.ad} {p.soyad} — {p.gorev}</MenuItem>
+                <MenuItem key={p.id} value={String(p.id)}>{p.ad} {p.soyad} â€” {p.gorev}</MenuItem>
               ))}
             </Select>
           </FormControl>
@@ -164,7 +164,7 @@ export default function IdariBelgelerPage() {
         </Box>
 
         {!selectedPersonelId ? (
-          <Typography color="text.secondary">Personel seçin.</Typography>
+          <Typography color="text.secondary">Personel seÃ§in.</Typography>
         ) : belgeler.length === 0 ? (
           <Typography color="text.secondary">Belge yok.</Typography>
         ) : (
@@ -172,8 +172,8 @@ export default function IdariBelgelerPage() {
             <TableHead>
               <TableRow>
                 <TableCell><strong>Belge tipi</strong></TableCell>
-                <TableCell><strong>Geçerlilik tarihi</strong></TableCell>
-                <TableCell><strong>Yükleme</strong></TableCell>
+                <TableCell><strong>GeÃ§erlilik tarihi</strong></TableCell>
+                <TableCell><strong>YÃ¼kleme</strong></TableCell>
                 <TableCell>Durum</TableCell>
               </TableRow>
             </TableHead>
@@ -181,12 +181,12 @@ export default function IdariBelgelerPage() {
               {belgeler.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>{row.belge_tipi}</TableCell>
-                  <TableCell>{row.gecerlilik_tarihi ? String(row.gecerlilik_tarihi).slice(0, 10) : "—"}</TableCell>
-                  <TableCell>{row.yukleme_tarihi ? String(row.yukleme_tarihi).slice(0, 10) : "—"}</TableCell>
+                  <TableCell>{row.gecerlilik_tarihi ? String(row.gecerlilik_tarihi).slice(0, 10) : "â€”"}</TableCell>
+                  <TableCell>{row.yukleme_tarihi ? String(row.yukleme_tarihi).slice(0, 10) : "â€”"}</TableCell>
                   <TableCell>
                     {row.gecerlilik_tarihi && (
-                      isGecikmis(row.gecerlilik_tarihi) ? <Typography color="error" variant="body2"><Warning /> Süresi dolmuş</Typography>
-                        : isYakin(row.gecerlilik_tarihi) ? <Typography color="warning.main" variant="body2">Yaklaşıyor</Typography>
+                      isGecikmis(row.gecerlilik_tarihi) ? <Typography color="error" variant="body2"><Warning /> SÃ¼resi dolmuÅŸ</Typography>
+                        : isYakin(row.gecerlilik_tarihi) ? <Typography color="warning.main" variant="body2">YaklaÅŸÄ±yor</Typography>
                         : null
                     )}
                   </TableCell>
@@ -198,7 +198,7 @@ export default function IdariBelgelerPage() {
       </Paper>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Belge yükle</DialogTitle>
+        <DialogTitle>Belge yÃ¼kle</DialogTitle>
         <DialogContent>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
             <FormControl fullWidth required>
@@ -209,12 +209,12 @@ export default function IdariBelgelerPage() {
                 ))}
               </Select>
             </FormControl>
-            <TextField label="Geçerlilik tarihi (opsiyonel)" type="date" value={form.gecerlilik_tarihi} onChange={(e) => setForm((f) => ({ ...f, gecerlilik_tarihi: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
+            <TextField label="GeÃ§erlilik tarihi (opsiyonel)" type="date" value={form.gecerlilik_tarihi} onChange={(e) => setForm((f) => ({ ...f, gecerlilik_tarihi: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
             <Button variant="outlined" component="label" disabled={!form.belge_tipi}>
-              Dosya seç (max 5MB)
+              Dosya seÃ§ (max 5MB)
               <input type="file" ref={fileInputRef} hidden accept=".pdf,image/*" onChange={handleFileChange} />
             </Button>
-            {saving && <Typography variant="body2">Yükleniyor...</Typography>}
+            {saving && <Typography variant="body2">YÃ¼kleniyor...</Typography>}
           </Box>
         </DialogContent>
         <DialogActions>
@@ -224,3 +224,4 @@ export default function IdariBelgelerPage() {
     </Box>
   )
 }
+

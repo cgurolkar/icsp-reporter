@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getAllSites, getSitesWithReportCount, createSite, initializeDatabase } from "@/lib/database"
-import { getSessionFromRequest, canViewAllSites } from "@/lib/auth"
+import { getSessionFromRequest, canAccessAdmin, canViewAllSites } from "@/lib/auth"
 
 export async function GET(request: NextRequest) {
   const session = await getSessionFromRequest(request)
@@ -25,7 +25,13 @@ export async function GET(request: NextRequest) {
     const allowed = canViewAllSites(session.role)
       ? sites
       : (Array.isArray(sites) ? sites : []).filter((s: { id: number }) => s.id === session.siteId)
-    return NextResponse.json(allowed)
+    const isSuperAdmin = session.role === "super_admin"
+    const sanitized = (allowed as Array<Record<string, unknown>>).map((s) => {
+      if (isSuperAdmin) return s
+      const { contract_unit_price, ...rest } = s
+      return rest
+    })
+    return NextResponse.json(sanitized)
   } catch (error) {
     console.error("Error fetching sites:", error)
     return NextResponse.json({ error: "Failed to fetch sites" }, { status: 500 })
@@ -34,7 +40,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const session = await getSessionFromRequest(request)
-  if (!session || session.role !== "admin") {
+  if (!session || !canAccessAdmin(session.role)) {
     return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   }
   try {
@@ -58,11 +64,17 @@ export async function POST(request: NextRequest) {
     const assignedMachineOperators = Array.isArray(body.assignedMachineOperators)
       ? body.assignedMachineOperators.filter((x: unknown) => x != null && typeof (x as any).machineId === "string" && typeof (x as any).personelId === "number")
       : []
+    const contractUnitPrice =
+      session.role === "super_admin" && body.contractUnitPrice != null && !Number.isNaN(Number(body.contractUnitPrice))
+        ? Number(body.contractUnitPrice)
+        : null
     if (!name || !code) {
       return NextResponse.json({ error: "Şantiye adı ve kod zorunludur." }, { status: 400 })
     }
-    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, timezone, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators })
-    return NextResponse.json(site)
+    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, timezone, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, contractUnitPrice })
+    if (session.role === "super_admin") return NextResponse.json(site)
+    const { contract_unit_price, ...rest } = site as Record<string, unknown>
+    return NextResponse.json(rest)
   } catch (error: unknown) {
     console.error("Error creating site:", error)
     const msg =

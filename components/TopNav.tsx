@@ -13,11 +13,11 @@ export default function TopNav() {
   const [menuOpen, setMenuOpen] = useState(false)
 
   const role = (user?.role != null ? String(user.role).toLowerCase() : null) || "user"
-  const canViewReports = role === "admin" || role === "manager"
-  const canDoDataEntry = role === "admin" || role === "user" || role === "personel"
+  const canViewReports = role === "super_admin" || role === "admin" || role === "manager"
+  const canDoDataEntry = role === "super_admin" || role === "admin" || role === "user" || role === "personel"
   const canDoMachineEntry = role === "operator"
-  const canAccessAdmin = role === "admin"
-  const canAccessIdari = role === "admin" || role === "manager" || role === "user" || role === "personel"
+  const canAccessAdmin = role === "super_admin" || role === "admin"
+  const canAccessIdari = role === "super_admin" || role === "admin" || role === "manager" || role === "user" || role === "personel"
 
   const navLinks = [
     !canDoMachineEntry && { href: "/proje", label: t("home") },

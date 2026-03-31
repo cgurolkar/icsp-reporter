@@ -52,6 +52,7 @@ import CssBaseline from "@mui/material/CssBaseline"
 import { theme } from "@/lib/theme"
 import { LanguageProvider, useLanguage } from "@/contexts/language-context"
 import LanguageSelector from "@/components/language-selector"
+import { useAuth } from "@/contexts/auth-context"
 
 interface TabPanelProps {
   children?: React.ReactNode
@@ -92,6 +93,7 @@ function defaultDbUserModulePerms(): Record<string, ModPermLevel> {
 
 function roleLabelTr(role: string): string {
   const m: Record<string, string> = {
+    super_admin: "Super Admin",
     admin: "Yönetici",
     manager: "Manager",
     user: "İdari / Kullanıcı",
@@ -113,6 +115,9 @@ function normalizeModulePerms(raw: unknown): Record<string, ModPermLevel> {
 }
 
 function AdminPanel() {
+  const { user } = useAuth()
+  const currentRole = String(user?.role ?? "")
+  const isSuperAdmin = currentRole === "super_admin"
   const [tabValue, setTabValue] = useState(0)
   const [emails, setEmails] = useState<string[]>([])
   const [users, setUsers] = useState<string[]>([])
@@ -158,17 +163,18 @@ function AdminPanel() {
   })
 
   // Şantiye yönetimi
-  const [dbSites, setDbSites] = useState<{ id: number; name: string; code: string; email_list: string[]; report_count?: number; total_piles?: number | null; region?: string | null; city?: string | null; country?: string | null; authorized_person?: string | null; employer?: string | null; assigned_machine_operators?: { machineId: string; personelId: number }[] }[]>([])
+  const [dbSites, setDbSites] = useState<{ id: number; name: string; code: string; email_list: string[]; report_count?: number; total_piles?: number | null; contract_unit_price?: number | null; region?: string | null; city?: string | null; country?: string | null; authorized_person?: string | null; employer?: string | null; assigned_machine_operators?: { machineId: string; personelId: number }[] }[]>([])
   const [personelList, setPersonelList] = useState<{ id: number; ad: string; soyad: string; gorev: string }[]>([])
   const [siteDialogOpen, setSiteDialogOpen] = useState(false)
   const [idariMachineOptions, setIdariMachineOptions] = useState<{ id: number; name: string; machine_type: string; current_site_id: number | null }[]>([])
-  const [siteDialogData, setSiteDialogData] = useState<{ id?: number; name: string; code: string; country: string; timezone: string; emailList: string[]; totalPiles: string; authorizedPerson: string; employer: string; projectStartDate: string; isOngoing: boolean; initialPilesDone: string; assignedMachineIds: string[]; assignedOperatorIds: number[]; assignedMachineOperators: { machineId: string; personelId: number }[] }>({
+  const [siteDialogData, setSiteDialogData] = useState<{ id?: number; name: string; code: string; country: string; timezone: string; emailList: string[]; totalPiles: string; contractUnitPrice: string; authorizedPerson: string; employer: string; projectStartDate: string; isOngoing: boolean; initialPilesDone: string; assignedMachineIds: string[]; assignedOperatorIds: number[]; assignedMachineOperators: { machineId: string; personelId: number }[] }>({
     name: "",
     code: "",
     country: "",
     timezone: "",
     emailList: [],
     totalPiles: "",
+    contractUnitPrice: "",
     authorizedPerson: "",
     employer: "",
     projectStartDate: "",
@@ -1114,7 +1120,7 @@ function AdminPanel() {
               variant="contained"
               startIcon={<Add />}
               onClick={() => {
-                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [] })
+                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", contractUnitPrice: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [] })
                 if (personelList.length === 0) fetch("/api/idari/personel?limit=500").then((r) => (r.ok ? r.json() : { data: [] })).then((res: any) => setPersonelList(Array.isArray(res) ? res : (res.data ?? []))).catch(() => {})
                 setSiteDialogOpen(true)
               }}
@@ -1134,6 +1140,7 @@ function AdminPanel() {
                         : ""}
                       <strong>Rapor sayısı: {Number(site.report_count) || 0}</strong>
                       {site.total_piles != null ? ` · Proje toplam kazık sayısı (Ad.): ${site.total_piles}` : ""}
+                      {isSuperAdmin && site.contract_unit_price != null ? ` · Birim fiyat: ${Number(site.contract_unit_price).toLocaleString("tr-TR")} /m` : ""}
                     </>
                   }
                 />
@@ -1166,6 +1173,7 @@ function AdminPanel() {
                       timezone: (site as any).timezone != null ? String((site as any).timezone) : "",
                       emailList: site.email_list || [],
                       totalPiles: site.total_piles != null ? String(site.total_piles) : "",
+                      contractUnitPrice: (site as any).contract_unit_price != null ? String((site as any).contract_unit_price) : "",
                       authorizedPerson: (site as any).authorized_person != null ? String((site as any).authorized_person) : "",
                       employer: (site as any).employer != null ? String((site as any).employer) : "",
                       projectStartDate: (site as any).project_start_date ? String((site as any).project_start_date).slice(0, 10) : "",
@@ -1446,6 +1454,18 @@ function AdminPanel() {
               placeholder="Örn: 150"
               inputProps={{ min: 0 }}
             />
+            {isSuperAdmin && (
+              <TextField
+                margin="dense"
+                fullWidth
+                type="number"
+                label="Sözleşme birim fiyatı (metre başı)"
+                value={siteDialogData.contractUnitPrice}
+                onChange={(e) => setSiteDialogData((prev) => ({ ...prev, contractUnitPrice: e.target.value }))}
+                placeholder="Örn: 250"
+                inputProps={{ min: 0, step: "0.01" }}
+              />
+            )}
             <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }} color="text.secondary">Proje durumu</Typography>
             <TextField
               margin="dense"
@@ -1526,6 +1546,7 @@ function AdminPanel() {
                   projectStartDate: siteDialogData.projectStartDate.trim() || null,
                   isOngoing: siteDialogData.isOngoing,
                   initialPilesDone: siteDialogData.isOngoing && siteDialogData.initialPilesDone.trim() ? parseInt(siteDialogData.initialPilesDone, 10) || null : null,
+                  ...(isSuperAdmin ? { contractUnitPrice: siteDialogData.contractUnitPrice.trim() ? Number(siteDialogData.contractUnitPrice) : null } : {}),
                   assignedMachineIds: kazikIds,
                   assignedOperatorIds: siteDialogData.assignedOperatorIds || [],
                   assignedMachineOperators: (siteDialogData.assignedMachineOperators || []).filter((o) => o.personelId > 0 && kazikIds.includes(o.machineId)),
@@ -1708,6 +1729,7 @@ function AdminPanel() {
             <FormControl fullWidth margin="dense" size="small" variant="outlined">
               <InputLabel>Kullanıcı tipi (oturum rolü)</InputLabel>
               <Select value={dbUserForm.role} label="Kullanıcı tipi (oturum rolü)" onChange={(e) => setDbUserForm((p) => ({ ...p, role: e.target.value }))}>
+                {(isSuperAdmin || dbUserForm.role === "super_admin") && <MenuItem value="super_admin">Super Admin</MenuItem>}
                 <MenuItem value="admin">Yönetici</MenuItem>
                 <MenuItem value="manager">Manager</MenuItem>
                 <MenuItem value="user">İdari / Kullanıcı</MenuItem>

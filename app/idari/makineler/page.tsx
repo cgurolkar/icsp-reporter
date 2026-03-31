@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect } from "react"
 import {
@@ -14,13 +14,13 @@ import {
 import { useAuth } from "@/contexts/auth-context"
 
 const MACHINE_TYPES = [
-  "Kazık Makinesi", "Ekskavatör", "Vinç", "Loader",
-  "Beton Pompası", "Jeneratör", "Kompresör", "Araç", "Diğer",
+  "KazÄ±k Makinesi", "EkskavatÃ¶r", "VinÃ§", "Loader",
+  "Beton PompasÄ±", "JeneratÃ¶r", "KompresÃ¶r", "AraÃ§", "DiÄŸer",
 ]
 
 const STATUS_OPTS = [
   { value: "aktif", label: "Aktif", color: "#2e7d32", bg: "#e8f5e9" },
-  { value: "bakimda", label: "Bakımda", color: "#e65100", bg: "#fff3e0" },
+  { value: "bakimda", label: "BakÄ±mda", color: "#e65100", bg: "#fff3e0" },
   { value: "depoda", label: "Depoda", color: "#1565c0", bg: "#e3f2fd" },
   { value: "hurda", label: "Hurda", color: "#7f0000", bg: "#ffebee" },
 ]
@@ -49,7 +49,7 @@ interface MachineRow {
 }
 
 const emptyForm = {
-  name: "", machine_type: "Kazık Makinesi", marka: "", model: "",
+  name: "", machine_type: "KazÄ±k Makinesi", marka: "", model: "",
   plaka_no: "", seri_no: "", status: "aktif", current_site_id: "" as string,
   notlar: "", operator_personel_ids: [] as number[],
 }
@@ -67,7 +67,7 @@ export default function MakineDefteri() {
   const [form, setForm] = useState(emptyForm)
 
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
-  const canManage = role === "admin" || role === "manager"
+  const canManage = role === "super_admin" || role === "admin" || role === "manager"
 
   const load = () => {
     setLoading(true)
@@ -167,11 +167,11 @@ export default function MakineDefteri() {
         <TableHead>
           <TableRow>
             <TableCell><strong>Makine</strong></TableCell>
-            <TableCell><strong>Tür / Marka</strong></TableCell>
+            <TableCell><strong>TÃ¼r / Marka</strong></TableCell>
             <TableCell><strong>Plaka / Seri</strong></TableCell>
             <TableCell><strong>Durum</strong></TableCell>
-            <TableCell><strong>Operatörler</strong></TableCell>
-            {canManage && <TableCell align="right">İşlem</TableCell>}
+            <TableCell><strong>OperatÃ¶rler</strong></TableCell>
+            {canManage && <TableCell align="right">Ä°ÅŸlem</TableCell>}
           </TableRow>
         </TableHead>
         <TableBody>
@@ -188,12 +188,12 @@ export default function MakineDefteri() {
               <TableCell>
                 {m.plaka_no && <Typography variant="body2">{m.plaka_no}</Typography>}
                 {m.seri_no && <Typography variant="caption" color="text.secondary">S/N: {m.seri_no}</Typography>}
-                {!m.plaka_no && !m.seri_no && "—"}
+                {!m.plaka_no && !m.seri_no && "â€”"}
               </TableCell>
               <TableCell>{statusChip(m.status)}</TableCell>
               <TableCell>
                 {m.operators.length === 0 ? (
-                  <Typography variant="caption" color="text.secondary">Atanmamış</Typography>
+                  <Typography variant="caption" color="text.secondary">AtanmamÄ±ÅŸ</Typography>
                 ) : (
                   <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
                     {m.operators.map((op) => (
@@ -210,7 +210,7 @@ export default function MakineDefteri() {
               </TableCell>
               {canManage && (
                 <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                  <Tooltip title="Düzenle / Şantiye Değiştir">
+                  <Tooltip title="DÃ¼zenle / Åžantiye DeÄŸiÅŸtir">
                     <IconButton size="small" onClick={() => openEdit(m)}>
                       <Edit fontSize="small" />
                     </IconButton>
@@ -243,20 +243,20 @@ export default function MakineDefteri() {
       </Box>
 
       {loading ? (
-        <Typography color="text.secondary">Yükleniyor...</Typography>
+        <Typography color="text.secondary">YÃ¼kleniyor...</Typography>
       ) : machines.length === 0 ? (
         <Paper sx={{ p: 3, textAlign: "center" }}>
           <Construction sx={{ fontSize: 48, color: "text.disabled", mb: 1 }} />
-          <Typography color="text.secondary">Henüz makine kaydı yok.</Typography>
+          <Typography color="text.secondary">HenÃ¼z makine kaydÄ± yok.</Typography>
           {canManage && (
             <Button variant="contained" startIcon={<Add />} onClick={openAdd} sx={{ mt: 2, background: "var(--icsp-lacivert)" }}>
-              İlk makineyi ekle
+              Ä°lk makineyi ekle
             </Button>
           )}
         </Paper>
       ) : (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          {/* Şantiyeye göre gruplar */}
+          {/* Åžantiyeye gÃ¶re gruplar */}
           {siteGroups.map(([siteName, list]) => (
             <Accordion key={siteName} defaultExpanded elevation={1} sx={{ borderRadius: "8px !important", "&:before": { display: "none" } }}>
               <AccordionSummary expandIcon={<ExpandMore />} sx={{ background: "#f5f5f5", borderRadius: "8px 8px 0 0" }}>
@@ -272,13 +272,13 @@ export default function MakineDefteri() {
             </Accordion>
           ))}
 
-          {/* Şantiye atanmayanlar */}
+          {/* Åžantiye atanmayanlar */}
           {noSite.length > 0 && (
             <Accordion defaultExpanded={false} elevation={1} sx={{ borderRadius: "8px !important", "&:before": { display: "none" } }}>
               <AccordionSummary expandIcon={<ExpandMore />} sx={{ background: "#fafafa", borderRadius: "8px 8px 0 0" }}>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                   <BuildOutlined color="disabled" fontSize="small" />
-                  <Typography fontWeight={600} color="text.secondary">Şantiye Atanmamış / Depoda</Typography>
+                  <Typography fontWeight={600} color="text.secondary">Åžantiye AtanmamÄ±ÅŸ / Depoda</Typography>
                   <Chip label={`${noSite.length}`} size="small" color="default" sx={{ ml: 1 }} />
                 </Box>
               </AccordionSummary>
@@ -290,18 +290,18 @@ export default function MakineDefteri() {
         </Box>
       )}
 
-      {/* Ekle / Düzenle Dialog */}
+      {/* Ekle / DÃ¼zenle Dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <Construction />
-          {editingId != null ? "Makine Düzenle" : "Yeni Makine Ekle"}
+          {editingId != null ? "Makine DÃ¼zenle" : "Yeni Makine Ekle"}
         </DialogTitle>
         <DialogContent>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
-            <TextField label="Makine Adı" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required fullWidth />
+            <TextField label="Makine AdÄ±" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required fullWidth />
             <FormControl fullWidth>
-              <InputLabel>Makine Türü</InputLabel>
-              <Select value={form.machine_type} label="Makine Türü" onChange={(e) => setForm((f) => ({ ...f, machine_type: e.target.value }))}>
+              <InputLabel>Makine TÃ¼rÃ¼</InputLabel>
+              <Select value={form.machine_type} label="Makine TÃ¼rÃ¼" onChange={(e) => setForm((f) => ({ ...f, machine_type: e.target.value }))}>
                 {MACHINE_TYPES.map((t) => <MenuItem key={t} value={t}>{t}</MenuItem>)}
               </Select>
             </FormControl>
@@ -322,32 +322,32 @@ export default function MakineDefteri() {
                 </Select>
               </FormControl>
               <FormControl fullWidth>
-                <InputLabel>Şantiye (Konum)</InputLabel>
+                <InputLabel>Åžantiye (Konum)</InputLabel>
                 <Select
                   value={form.current_site_id}
-                  label="Şantiye (Konum)"
+                  label="Åžantiye (Konum)"
                   onChange={(e) => setForm((f) => ({ ...f, current_site_id: e.target.value }))}
                   startAdornment={form.current_site_id ? <SwapHoriz sx={{ mr: 1, color: "primary.main" }} /> : undefined}
                 >
-                  <MenuItem value="">Depoda / Atanmamış</MenuItem>
+                  <MenuItem value="">Depoda / AtanmamÄ±ÅŸ</MenuItem>
                   {sites.map((s) => <MenuItem key={s.id} value={String(s.id)}>{s.name}</MenuItem>)}
                 </Select>
               </FormControl>
             </Box>
 
-            {/* Çoklu operatör atama */}
+            {/* Ã‡oklu operatÃ¶r atama */}
             <FormControl fullWidth>
-              <InputLabel>Operatörler (birden fazla seçilebilir)</InputLabel>
+              <InputLabel>OperatÃ¶rler (birden fazla seÃ§ilebilir)</InputLabel>
               <Select
                 multiple
                 value={form.operator_personel_ids}
-                label="Operatörler (birden fazla seçilebilir)"
+                label="OperatÃ¶rler (birden fazla seÃ§ilebilir)"
                 onChange={(e) => setForm((f) => ({ ...f, operator_personel_ids: (e.target.value as number[]).filter((n) => n > 0) }))}
                 renderValue={(sel) =>
                   (sel as number[]).map((id) => {
                     const p = personeller.find((p) => p.id === id)
                     return p ? `${p.ad} ${p.soyad}` : String(id)
-                  }).join(", ") || "Seçin"
+                  }).join(", ") || "SeÃ§in"
                 }
               >
                 {personeller.map((p) => (
@@ -368,9 +368,9 @@ export default function MakineDefteri() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)} disabled={saving}>İptal</Button>
+          <Button onClick={() => setDialogOpen(false)} disabled={saving}>Ä°ptal</Button>
           <Button variant="contained" onClick={handleSave} disabled={saving || !form.name.trim()} sx={{ background: "var(--icsp-lacivert)" }}>
-            {saving ? "Kaydediliyor…" : editingId != null ? "Güncelle" : "Ekle"}
+            {saving ? "Kaydediliyorâ€¦" : editingId != null ? "GÃ¼ncelle" : "Ekle"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -378,12 +378,13 @@ export default function MakineDefteri() {
       {/* Silme onay */}
       <Dialog open={confirmDeleteId != null} onClose={() => setConfirmDeleteId(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Makine Sil</DialogTitle>
-        <DialogContent><Typography>Bu makine kaydı silinecek. Emin misiniz?</Typography></DialogContent>
+        <DialogContent><Typography>Bu makine kaydÄ± silinecek. Emin misiniz?</Typography></DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmDeleteId(null)}>İptal</Button>
+          <Button onClick={() => setConfirmDeleteId(null)}>Ä°ptal</Button>
           <Button variant="contained" color="error" onClick={handleDelete}>Evet, Sil</Button>
         </DialogActions>
       </Dialog>
     </Box>
   )
 }
+

@@ -47,16 +47,16 @@ export function clearSessionCookie(): string {
 
 /** Rol yetkileri */
 export function canAccessAdmin(role: Role): boolean {
-  return role === "admin"
+  return role === "super_admin" || role === "admin"
 }
 
 export function canViewReports(role: Role): boolean {
   // admin ve manager tüm şantiyeleri görebilir; user ve personel kendi şantiyelerini görebilir
-  return role === "admin" || role === "manager" || role === "user" || role === "personel"
+  return role === "super_admin" || role === "admin" || role === "manager" || role === "user" || role === "personel"
 }
 
 export function canDoDataEntry(role: Role): boolean {
-  return role === "admin" || role === "user" || role === "personel"
+  return role === "super_admin" || role === "admin" || role === "user" || role === "personel"
 }
 
 /** Sadece makine bilgisi girişi (operatör) */
@@ -65,26 +65,26 @@ export function canDoMachineEntry(role: Role): boolean {
 }
 
 export function canViewAllSites(role: Role): boolean {
-  return role === "admin" || role === "manager"
+  return role === "super_admin" || role === "admin" || role === "manager"
 }
 
 /** İdari modüle erişim (operator hariç) */
 export function canAccessIdari(role: Role): boolean {
-  return role === "admin" || role === "manager" || role === "user" || role === "personel"
+  return role === "super_admin" || role === "admin" || role === "manager" || role === "user" || role === "personel"
 }
 
 /** Personel/özlük/finans girişi (merkez İK/idari) */
 export function canManageIdariCentral(role: Role): boolean {
-  return role === "admin" || role === "manager"
+  return role === "super_admin" || role === "admin" || role === "manager"
 }
 
 /** Puantaj girişi: sadece o şantiyenin sorumlusu veya admin */
 export function canEnterTimesheet(role: Role, sessionSiteId: number | null | undefined, targetSiteId: number): boolean {
-  if (role === "admin") return true
+  if (role === "super_admin" || role === "admin") return true
   return sessionSiteId != null && sessionSiteId === targetSiteId
 }
 
 /** Puantaj onaylama: merkez (admin/manager) */
 export function canApproveTimesheet(role: Role): boolean {
-  return role === "admin" || role === "manager"
+  return role === "super_admin" || role === "admin" || role === "manager"
 }

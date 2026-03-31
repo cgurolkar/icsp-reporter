@@ -1,19 +1,27 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSiteById, updateSite, initializeDatabase } from "@/lib/database"
+import { canAccessAdmin, canViewAllSites, getSessionFromRequest } from "@/lib/auth"
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getSessionFromRequest(request)
+    if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
     const { id } = await params
     const siteId = parseInt(id, 10)
     if (isNaN(siteId)) {
       return NextResponse.json({ error: "Invalid site id" }, { status: 400 })
     }
+    if (!canViewAllSites(session.role) && session.siteId !== siteId) {
+      return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
+    }
     const site = await getSiteById(siteId)
     if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
-    return NextResponse.json(site)
+    if (session.role === "super_admin") return NextResponse.json(site)
+    const { contract_unit_price, ...rest } = site as Record<string, unknown>
+    return NextResponse.json(rest)
   } catch (error) {
     console.error("Error fetching site:", error)
     return NextResponse.json({ error: "Failed to fetch site" }, { status: 500 })
@@ -25,6 +33,9 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getSessionFromRequest(request)
+    if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
+    if (!canAccessAdmin(session.role)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
     await initializeDatabase()
     const { id } = await params
     const siteId = parseInt(id, 10)
@@ -32,7 +43,7 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid site id" }, { status: 400 })
     }
     const body = await request.json()
-    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, budget, timezone } = body
+    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, budget, timezone, contractUnitPrice } = body
     const site = await updateSite(siteId, {
       ...(name !== undefined && { name }),
       ...(code !== undefined && { code }),
@@ -52,9 +63,12 @@ export async function PUT(
       ...(assignedMachineOperators !== undefined && { assignedMachineOperators: Array.isArray(assignedMachineOperators) ? assignedMachineOperators.filter((x: unknown) => x != null && typeof (x as any).machineId === "string" && typeof (x as any).personelId === "number") : [] }),
       ...(budget !== undefined && { budget: budget != null && !Number.isNaN(Number(budget)) ? Number(budget) : null }),
       ...(timezone !== undefined && { timezone: timezone != null ? String(timezone).trim() || null : undefined }),
+      ...(session.role === "super_admin" && contractUnitPrice !== undefined && { contractUnitPrice: contractUnitPrice != null && !Number.isNaN(Number(contractUnitPrice)) ? Number(contractUnitPrice) : null }),
     })
     if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
-    return NextResponse.json(site)
+    if (session.role === "super_admin") return NextResponse.json(site)
+    const { contract_unit_price, ...rest } = site as Record<string, unknown>
+    return NextResponse.json(rest)
   } catch (error) {
     console.error("Error updating site:", error)
     return NextResponse.json({ error: "Failed to update site" }, { status: 500 })

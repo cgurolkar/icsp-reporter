@@ -62,12 +62,8 @@ export default function OperatorFormPage() {
   const [motorSaatInis, setMotorSaatInis] = useState("")
   const [startTime, setStartTime] = useState("")
   const [endTime, setEndTime] = useState("")
-  const [machineHours, setMachineHours] = useState("")
   const [pileDepths, setPileDepths] = useState<{ depth: string; onForaj: boolean; bosForaj: boolean }[]>([{ depth: "", onForaj: false, bosForaj: false }])
   const [usedFuel, setUsedFuel] = useState("")
-  const [elmasMiktar, setElmasMiktar] = useState("")
-  const [elmasDegisimYok, setElmasDegisimYok] = useState(false)
-  const [bentonitMiktar, setBentonitMiktar] = useState("")
   const [note, setNote] = useState("")
   const [concretePoured, setConcretePoured] = useState("")
   const [image1, setImage1] = useState("")
@@ -171,16 +167,6 @@ export default function OperatorFormPage() {
       setMessage({ type: "error", text: !selectedDbMachine ? "Lütfen makine seçin." : "Tarih zorunludur." })
       return
     }
-    const elmasTrim = elmasMiktar.trim()
-    let finalElmasDegisimYok = false
-    if (!elmasTrim) {
-      const degisimYok = window.confirm("Değişen elmas yok mu?")
-      if (degisimYok) finalElmasDegisimYok = true
-      else {
-        setMessage({ type: "error", text: "Lütfen elmas miktarını girin." })
-        return
-      }
-    }
     setSaving(true)
     setMessage(null)
     try {
@@ -198,14 +184,10 @@ export default function OperatorFormPage() {
           dbMachineId: selectedDbMachine?.id ?? null,
           startTime: startTime.trim().slice(0, 5),
           endTime: endTime.trim().slice(0, 5),
-          machineHours: machineHours.trim(),
           motorSaatBinis: motorSaatBinis.trim(),
           motorSaatInis: motorSaatInis.trim(),
           pileDepths: payloadPileDepths,
           usedFuel: usedFuel.trim(),
-          elmasMiktar: elmasTrim || (finalElmasDegisimYok ? "yok" : ""),
-          elmasDegisimYok: finalElmasDegisimYok,
-          bentonitMiktar: bentonitMiktar.trim(),
           kullanılanMalzeme: kullanılanMalzeme.trim(),
           malzemeIhtiyaci,
           servisIhtiyaci,
@@ -227,12 +209,8 @@ export default function OperatorFormPage() {
         setMotorSaatInis("")
         setStartTime("")
         setEndTime("")
-        setMachineHours("")
         setPileDepths([{ depth: "", onForaj: false, bosForaj: false }])
         setUsedFuel("")
-        setElmasMiktar("")
-        setElmasDegisimYok(false)
-        setBentonitMiktar("")
         setKullanılanMalzeme("")
         setMalzemeIhtiyaci(false)
         setServisIhtiyaci(false)
@@ -341,7 +319,6 @@ export default function OperatorFormPage() {
             </Button>
             {endTime ? <Typography variant="body2" sx={{ alignSelf: "center", ml: 1 }}>Bitiş: {endTime}</Typography> : null}
           </Box>
-          <TextField fullWidth label="Makine çalışma saati (opsiyonel)" type="number" value={machineHours} onChange={(e) => setMachineHours(e.target.value)} placeholder="Saat (örn: 8 veya 8,5)" inputProps={{ min: 0, step: 0.5 }} sx={{ maxWidth: 160 }} />
           <TextField fullWidth label="Mazot Miktarı (Litre)" type="number" value={usedFuel} onChange={(e) => setUsedFuel(e.target.value)} placeholder="Örn: 120" />
 
           {/* Kullanılan malzeme */}
@@ -384,18 +361,6 @@ export default function OperatorFormPage() {
             </Box>
           ))}
           <Button size="small" startIcon={<Add />} onClick={addPileRow} variant="outlined">Satır ekle</Button>
-          <Typography variant="subtitle2" sx={{ mt: 1, fontWeight: 600 }}>Diğer malzemeler</Typography>
-          <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-            <TextField size="small" label="Elmas" value={elmasMiktar} onChange={(e) => setElmasMiktar(e.target.value.slice(0, 3))} placeholder="Miktar" inputProps={{ maxLength: 3 }} sx={{ width: 100 }} />
-            <TextField size="small" label="Bentonit" value={bentonitMiktar} onChange={(e) => setBentonitMiktar(e.target.value.slice(0, 3))} placeholder="Miktar" inputProps={{ maxLength: 3 }} sx={{ width: 100 }} />
-          </Box>
-          <Typography variant="subtitle2" sx={{ mt: 1.5, fontWeight: 600 }}>Özet (kazık derinliklerinden otomatik)</Typography>
-          <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "center" }}>
-            <TextField size="small" label="Hazırlanan kazık (Ad.)" value={hazirlananKazik} InputProps={{ readOnly: true }} sx={{ width: 120 }} />
-            <TextField size="small" label="Toplam imalat (m)" value={toplamImalat.toFixed(1)} InputProps={{ readOnly: true }} sx={{ width: 120 }} />
-            <TextField size="small" label="Boş foraj (Adet)" value={bosForajCount} InputProps={{ readOnly: true }} sx={{ width: 110 }} />
-            <TextField size="small" label="Ön foraj (Adet)" value={onForajCount} InputProps={{ readOnly: true }} sx={{ width: 110 }} />
-          </Box>
           <TextField fullWidth size="small" label="Beton dökülen kazık (Ad.) – sadece döküldüyse" type="number" value={concretePoured} onChange={(e) => setConcretePoured(e.target.value)} placeholder="Beton döküldüyse adet girin" sx={{ maxWidth: 280 }} />
           <TextField fullWidth label="Makine İçin Not" multiline minRows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Makine ile ilgili notlar" />
         </Box>

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 
-export type Role = "admin" | "manager" | "user" | "personel" | "operator"
+export type Role = "super_admin" | "admin" | "manager" | "user" | "personel" | "operator"
 
 export interface AuthUser {
   id: number

@@ -3,11 +3,11 @@ import pool, { initializeDatabase } from '@/lib/database';
 import { getSessionFromRequest } from '@/lib/auth';
 import { hashPassword } from '@/lib/auth';
 
-const ALLOWED_ROLES = ['admin', 'manager', 'user', 'personel', 'operator'];
+const ALLOWED_ROLES = ['super_admin', 'admin', 'manager', 'user', 'personel', 'operator'];
 
 export async function GET(request: NextRequest) {
   const session = await getSessionFromRequest(request);
-  if (!session || session.role !== 'admin') {
+  if (!session || (session.role !== 'admin' && session.role !== 'super_admin')) {
     return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 });
   }
   try {
@@ -39,14 +39,15 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const session = await getSessionFromRequest(request);
-  if (!session || session.role !== 'admin') {
+  if (!session || (session.role !== 'admin' && session.role !== 'super_admin')) {
     return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 });
   }
   try {
     await initializeDatabase();
     const body = await request.json();
     const { username, password, role, email, siteId, modulePermissions, personelId } = body;
-    const roleVal = role && ALLOWED_ROLES.includes(role) ? role : 'user';
+    const requestedRole = role && ALLOWED_ROLES.includes(role) ? role : 'user';
+    const roleVal = (requestedRole === "super_admin" && session.role !== "super_admin") ? "admin" : requestedRole;
     const passwordHash = await hashPassword(password);
     const siteIdVal = siteId != null && siteId !== '' ? (typeof siteId === 'number' ? siteId : parseInt(String(siteId), 10)) : null;
     const permsJson = modulePermissions && typeof modulePermissions === 'object'

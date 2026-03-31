@@ -7,7 +7,7 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   const session = await getSessionFromRequest(request);
-  if (!session || session.role !== 'admin') {
+  if (!session || (session.role !== 'admin' && session.role !== 'super_admin')) {
     return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 });
   }
   try {
@@ -15,8 +15,9 @@ export async function PUT(
     const userId = parseInt(params.id);
     const body = await request.json();
     const { role, siteId, modulePermissions, personelId, password, email } = body;
-    const ALLOWED_ROLES = ['admin', 'manager', 'user', 'personel', 'operator'];
-    const roleVal = role !== undefined && ALLOWED_ROLES.includes(role) ? role : undefined;
+    const ALLOWED_ROLES = ['super_admin', 'admin', 'manager', 'user', 'personel', 'operator'];
+    const requestedRole = role !== undefined && ALLOWED_ROLES.includes(role) ? role : undefined;
+    const roleVal = requestedRole === 'super_admin' && session.role !== 'super_admin' ? 'admin' : requestedRole;
 
     const client = await pool.connect();
 
@@ -86,7 +87,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   const session = await getSessionFromRequest(request);
-  if (!session || session.role !== 'admin') {
+  if (!session || (session.role !== 'admin' && session.role !== 'super_admin')) {
     return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 });
   }
   const userId = parseInt(params.id, 10);

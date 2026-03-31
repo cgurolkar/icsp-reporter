@@ -1,11 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server"
 import fs from "fs"
 import path from "path"
-import { saveWorkReport, initializeDatabase, getSiteReportEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler } from "@/lib/database"
+import { saveWorkReport, initializeDatabase, getSiteReportEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativeTotalProduction } from "@/lib/database"
 import { isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
 import { getSessionFromRequest, canDoDataEntry } from "@/lib/auth"
-import { buildReportNotificationEmail } from "@/lib/email-templates"
+import { buildReportNotificationEmail, buildOperatorReportEmail } from "@/lib/email-templates"
 import { detectReportAnomalies } from "@/lib/anomaly-detection"
 import { publishNotification } from "@/lib/notification-bus"
 
@@ -70,9 +70,14 @@ export async function POST(request: NextRequest) {
     const operatorEntries = siteIdForDb && formData.basicInfo?.date
       ? await getOperatorEntriesBySiteAndDate(siteIdForDb, formData.basicInfo.date)
       : []
-    const firstOperatorHours = operatorEntries.length > 0 && operatorEntries[0]?.machine_hours
-      ? String(operatorEntries[0].machine_hours).trim()
-      : ""
+    const projectStartDate = site?.project_start_date ? String(site.project_start_date).slice(0, 10) : null
+    const reportDateStr = (formData.basicInfo?.date ?? "").slice(0, 10)
+    const daysElapsed = projectStartDate && reportDateStr
+      ? Math.max(0, Math.floor((new Date(`${reportDateStr}T00:00:00Z`).getTime() - new Date(`${projectStartDate}T00:00:00Z`).getTime()) / 86400000) + 1)
+      : null
+    const cumulativeTotalProduction = siteIdForDb && reportDateStr
+      ? await getCumulativeTotalProduction(siteIdForDb, reportDateStr)
+      : null
     // Kalan kazık: Yeni proje = 0 başlangıç; Devam eden = rapor başlangıcında girilen yapılan düşülür. Kümülatif = önceki yapılan + bugün
     let remainingPilesForDb = currentProductionSummary?.remainingPiles ?? ""
     if (siteIdForDb && site) {
@@ -95,7 +100,7 @@ export async function POST(request: NextRequest) {
       siteId: siteIdForDb,
       selectedMachineId: formData.machineSelection.selectedMachine?.id,
       selectedMachineName: formData.machineSelection.selectedMachine?.name,
-      machineHours: firstOperatorHours || currentMachine?.machineHours || "",
+      machineHours: currentMachine?.machineHours || "",
       totalProduction: currentMachine?.totalProduction || "",
       pileCount: currentMachine?.pileCount || "",
       drilledPile: currentMachine?.drilledPile || "",
@@ -190,7 +195,7 @@ export async function POST(request: NextRequest) {
         ? formData.expenses.reduce((s: number, e: { amount?: string | number }) => s + (parseFloat(String(e.amount ?? "0")) || 0), 0)
         : 0
       const anomaliesForNotif = detectReportAnomalies({
-        machineHours: firstOperatorHours || currentMachine?.machineHours,
+        machineHours: currentMachine?.machineHours,
         dailyPileCount: dailyPileForDb,
         personnelTotal: formData.personnel?.total,
         remainingPiles: remainingPilesForDb,
@@ -221,6 +226,11 @@ export async function POST(request: NextRequest) {
       computedRemainingPiles: remainingPilesForDb,
       computedDailyPileCount: dailyPileForDb,
       concretePouredSum,
+      projectStartDate,
+      daysElapsed,
+      showHakedis: session.role === "super_admin",
+      contractUnitPrice: site?.contract_unit_price != null ? Number(site.contract_unit_price) : null,
+      cumulativeTotalProduction,
       operatorEntries,
     })
     const expensesPageContent = generatePDFExpensesPage(formData)
@@ -252,7 +262,7 @@ export async function POST(request: NextRequest) {
 
       // Anomali tespiti
       const anomalies = detectReportAnomalies({
-        machineHours: firstOperatorHours || currentMachine?.machineHours,
+        machineHours: currentMachine?.machineHours,
         dailyPileCount: dailyPileForDb,
         personnelTotal: formData.personnel?.total,
         dailyFuelUsage: formData.fuel?.dailyUsage || (formData.fuel?.machines || []).reduce((s: number, m: { used?: string }) => s + (parseFloat(m?.used ?? "") || 0), 0) || null,
@@ -280,7 +290,7 @@ export async function POST(request: NextRequest) {
         concretePoured: currentProductionSummary?.concretePoured,
         personnelTotal: formData.personnel?.total,
         engineerCount: formData.personnel?.engineer,
-        machineHours: firstOperatorHours || currentMachine?.machineHours,
+        machineHours: currentMachine?.machineHours,
         selectedMachineName: formData.machineSelection?.selectedMachine?.name,
         dailyFuelUsage: formData.fuel?.dailyUsage || ((formData.fuel?.machines || []).reduce((s: number, m: { used?: string }) => s + (parseFloat(m?.used ?? "") || 0), 0) || null),
         expenseTotal: expenseTotal || null,
@@ -310,6 +320,31 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Operatör raporu ayrı e-posta: sadece super admin alıcıları
+    let operatorEmailSent = false
+    let operatorEmailError: string | undefined
+    if (operatorEntries.length > 0 && isEmailSendEnabled()) {
+      const superAdminEmails = await getSuperAdminEmails()
+      if (superAdminEmails.length > 0) {
+        const opMail = buildOperatorReportEmail({
+          reportId,
+          date: formData.basicInfo.date,
+          siteName: projectName || site?.name || "Şantiye",
+          operatorEntries,
+          reportUrl: (process.env.NEXTAUTH_URL || process.env.APP_URL)
+            ? `${process.env.NEXTAUTH_URL || process.env.APP_URL}/api/reports/${reportId}/preview`
+            : undefined,
+        })
+        const opResult = await sendReportEmail({
+          to: superAdminEmails,
+          subject: opMail.subject,
+          html: opMail.html,
+        })
+        operatorEmailSent = opResult.sent
+        operatorEmailError = opResult.error
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: "Report generated and saved successfully",
@@ -317,6 +352,8 @@ export async function POST(request: NextRequest) {
       recipients: settings.emails,
       emailSent,
       emailError: emailError ?? undefined,
+      operatorEmailSent,
+      operatorEmailError: operatorEmailError ?? undefined,
       emailContent: fullHtml,
       expensesContent: expensesPageContent,
     })

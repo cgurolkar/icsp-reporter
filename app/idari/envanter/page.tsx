@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
@@ -18,19 +18,19 @@ import { SortableTh, type SortDir } from "@/components/idari/SortableTh"
 
 const DURUM_OPTS = [
   { value: "aktif", label: "Aktif" },
-  { value: "arizali", label: "Arızalı" },
+  { value: "arizali", label: "ArÄ±zalÄ±" },
   { value: "tamirde", label: "Tamirde" },
   { value: "hurda", label: "Hurda" },
 ]
 
-const SABIT_YERLER = ["Bağdat Depo", "Erbil Depo 1", "Erbil Depo 2", "Satın Alınanlar"]
+const SABIT_YERLER = ["BaÄŸdat Depo", "Erbil Depo 1", "Erbil Depo 2", "SatÄ±n AlÄ±nanlar"]
 
 function durumBadge(durum: string, siteId: number | null | undefined) {
   if (!durum || durum === "aktif") {
-    if (siteId) return { label: "Kullanımda", bg: "#b71c1c", color: "#fff" }
-    return { label: "Hazır", bg: "#2e7d32", color: "#fff" }
+    if (siteId) return { label: "KullanÄ±mda", bg: "#b71c1c", color: "#fff" }
+    return { label: "HazÄ±r", bg: "#2e7d32", color: "#fff" }
   }
-  if (durum === "arizali" || durum === "tamirde") return { label: durum === "arizali" ? "Arızalı" : "Tamirde", bg: "#f57f17", color: "#fff" }
+  if (durum === "arizali" || durum === "tamirde") return { label: durum === "arizali" ? "ArÄ±zalÄ±" : "Tamirde", bg: "#f57f17", color: "#fff" }
   return { label: "Hurda", bg: "#616161", color: "#fff" }
 }
 
@@ -85,7 +85,7 @@ export default function IdariEnvanterPage() {
 
   const [form, setForm] = useState(emptyForm)
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
-  const canManage = role === "admin" || role === "manager"
+  const canManage = role === "super_admin" || role === "admin" || role === "manager"
 
   const handleListSort = (k: string, d: SortDir) => {
     setSortBy(k)
@@ -142,7 +142,7 @@ export default function IdariEnvanterPage() {
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 4 * 1024 * 1024) { alert("Resim 4MB'dan küçük olmalı."); return }
+    if (file.size > 4 * 1024 * 1024) { alert("Resim 4MB'dan kÃ¼Ã§Ã¼k olmalÄ±."); return }
     const reader = new FileReader()
     reader.onload = () => {
       const b64 = reader.result as string
@@ -189,7 +189,7 @@ export default function IdariEnvanterPage() {
 
   const handleSave = async () => {
     if (!form.kod.trim() || !form.malzeme_adi.trim()) return
-    const yerFinal = form.yer === "Şantiye" && form.site_id
+    const yerFinal = form.yer === "Åžantiye" && form.site_id
       ? sites.find((s) => String(s.id) === form.site_id)?.name ?? form.yer
       : form.yer
     const payload = {
@@ -259,22 +259,22 @@ export default function IdariEnvanterPage() {
           <FormControl size="small" sx={{ minWidth: 150 }}>
             <InputLabel>Yer</InputLabel>
             <Select value={yerFilter} label="Yer" onChange={(e) => setYerFilter(e.target.value)}>
-              <MenuItem value="">Tümü</MenuItem>
+              <MenuItem value="">TÃ¼mÃ¼</MenuItem>
               {SABIT_YERLER.map((y) => <MenuItem key={y} value={y}>{y}</MenuItem>)}
-              <MenuItem value="Şantiye">Şantiye</MenuItem>
+              <MenuItem value="Åžantiye">Åžantiye</MenuItem>
             </Select>
           </FormControl>
           <FormControl size="small" sx={{ minWidth: 140 }}>
             <InputLabel>Durum</InputLabel>
             <Select value={durumFilter} label="Durum" onChange={(e) => setDurumFilter(e.target.value)}>
-              <MenuItem value="">Tümü</MenuItem>
+              <MenuItem value="">TÃ¼mÃ¼</MenuItem>
               {DURUM_OPTS.map((d) => <MenuItem key={d.value} value={d.value}>{d.label}</MenuItem>)}
             </Select>
           </FormControl>
           <FormControl size="small" sx={{ minWidth: 150 }}>
-            <InputLabel>Şantiye</InputLabel>
-            <Select value={siteId} label="Şantiye" onChange={(e) => setSiteId(e.target.value)}>
-              <MenuItem value="">Tümü</MenuItem>
+            <InputLabel>Åžantiye</InputLabel>
+            <Select value={siteId} label="Åžantiye" onChange={(e) => setSiteId(e.target.value)}>
+              <MenuItem value="">TÃ¼mÃ¼</MenuItem>
               {sites.map((s) => <MenuItem key={s.id} value={String(s.id)}>{s.name}</MenuItem>)}
             </Select>
           </FormControl>
@@ -292,11 +292,11 @@ export default function IdariEnvanterPage() {
                 <Button variant="outlined" size="small" startIcon={<Download />}
                   href="/api/idari/envanter/template" download="envanter_sablonu.xlsx"
                   sx={{ borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}>
-                  Şablon
+                  Åžablon
                 </Button>
                 <Button variant="outlined" size="small" component="label" startIcon={<Upload />} disabled={importing}
                   sx={{ borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}>
-                  {importing ? "Yükleniyor…" : "Excel aktar"}
+                  {importing ? "YÃ¼kleniyorâ€¦" : "Excel aktar"}
                   <input type="file" accept=".xlsx,.xls" hidden onChange={async (e) => {
                     const file = e.target.files?.[0]; if (!file) return
                     setImporting(true)
@@ -307,16 +307,16 @@ export default function IdariEnvanterPage() {
                       if (res.ok) {
                         const parts = [
                           data.inserted > 0 ? `${data.inserted} yeni` : "",
-                          data.updated > 0 ? `${data.updated} güncellendi` : "",
-                          data.skipped > 0 ? `${data.skipped} değişiklik yok (aynı kod, boş satır)` : "",
+                          data.updated > 0 ? `${data.updated} gÃ¼ncellendi` : "",
+                          data.skipped > 0 ? `${data.skipped} deÄŸiÅŸiklik yok (aynÄ± kod, boÅŸ satÄ±r)` : "",
                         ].filter(Boolean)
                         alert(
-                          (parts.length ? parts.join(", ") : "İşlem tamamlandı") +
-                            (data.failed > 0 ? ` · ${data.failed} hata` : ""),
+                          (parts.length ? parts.join(", ") : "Ä°ÅŸlem tamamlandÄ±") +
+                            (data.failed > 0 ? ` Â· ${data.failed} hata` : ""),
                         )
                         loadList()
                       }
-                      else alert(data.error || "Aktarma hatası.")
+                      else alert(data.error || "Aktarma hatasÄ±.")
                     } finally { setImporting(false); e.target.value = "" }
                   }} />
                 </Button>
@@ -329,11 +329,11 @@ export default function IdariEnvanterPage() {
         </Box>
 
         {loading ? (
-          <Typography color="text.secondary">Yükleniyor...</Typography>
+          <Typography color="text.secondary">YÃ¼kleniyor...</Typography>
         ) : list.length === 0 ? (
-          <Typography color="text.secondary" sx={{ py: 4, textAlign: "center" }}>Kayıt bulunamadı.</Typography>
+          <Typography color="text.secondary" sx={{ py: 4, textAlign: "center" }}>KayÄ±t bulunamadÄ±.</Typography>
         ) : viewMode === "list" ? (
-          /* ── Liste görünümü ── */
+          /* â”€â”€ Liste gÃ¶rÃ¼nÃ¼mÃ¼ â”€â”€ */
           <Box sx={{ overflowX: "auto" }}>
             <Table size="small">
               <TableHead>
@@ -344,7 +344,7 @@ export default function IdariEnvanterPage() {
                   <SortableTh label="Yer" sortKey="yer" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
                   <SortableTh label="Durum" sortKey="durum" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
                   <SortableTh label="Fiyat" sortKey="fiyat" sortBy={sortBy} sortDir={sortDir} align="right" onSort={handleListSort} />
-                  <TableCell align="right">İşlem</TableCell>
+                  <TableCell align="right">Ä°ÅŸlem</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -364,7 +364,7 @@ export default function IdariEnvanterPage() {
                     <TableCell><Typography variant="caption">{row.kod}</Typography></TableCell>
                     <TableCell align="center">{row.adet}</TableCell>
                     <TableCell>
-                      <Typography variant="body2">{row.yer ?? "—"}</Typography>
+                      <Typography variant="body2">{row.yer ?? "â€”"}</Typography>
                       {row.site_name && <Typography variant="caption" color="primary">{row.site_name}</Typography>}
                     </TableCell>
                     <TableCell>
@@ -375,13 +375,13 @@ export default function IdariEnvanterPage() {
                       )})()}
                     </TableCell>
                     <TableCell align="right">
-                      {row.fiyat != null ? `${Number(row.fiyat).toLocaleString("tr-TR")} ₺` : "—"}
+                      {row.fiyat != null ? `${Number(row.fiyat).toLocaleString("tr-TR")} â‚º` : "â€”"}
                     </TableCell>
                     <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
                       {canManage && (
                         <>
                           <Tooltip title="Hareket"><IconButton size="small" onClick={() => openHareket(row)} sx={{ color: "primary.main" }}><SwapHoriz fontSize="small" /></IconButton></Tooltip>
-                          <Tooltip title="Düzenle"><IconButton size="small" onClick={() => openEdit(row)}><Edit fontSize="small" /></IconButton></Tooltip>
+                          <Tooltip title="DÃ¼zenle"><IconButton size="small" onClick={() => openEdit(row)}><Edit fontSize="small" /></IconButton></Tooltip>
                           <Tooltip title="Sil"><IconButton size="small" onClick={() => setConfirmDeleteId(row.id)} sx={{ color: "error.main" }}><Delete fontSize="small" /></IconButton></Tooltip>
                         </>
                       )}
@@ -392,7 +392,7 @@ export default function IdariEnvanterPage() {
             </Table>
           </Box>
         ) : (
-          /* ── Grid görünümü ── */
+          /* â”€â”€ Grid gÃ¶rÃ¼nÃ¼mÃ¼ â”€â”€ */
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(3,1fr)", md: "repeat(4,1fr)" }, gap: 1.5 }}>
             {list.map((row) => (
               <Card key={row.id} variant="outlined" sx={{ borderRadius: 2, display: "flex", flexDirection: "column" }}>
@@ -425,7 +425,7 @@ export default function IdariEnvanterPage() {
           <TablePagination component="div" count={total} page={page}
             onPageChange={(_, p) => setPage(p)} rowsPerPage={PAGE_SIZE}
             rowsPerPageOptions={[PAGE_SIZE]}
-            labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+            labelDisplayedRows={({ from, to, count }) => `${from}â€“${to} / ${count}`}
             sx={{ borderTop: "1px solid", borderColor: "divider" }}
           />
         )}
@@ -436,9 +436,9 @@ export default function IdariEnvanterPage() {
         )}
       </Paper>
 
-      {/* ── Ekle / Düzenle Dialog ── */}
+      {/* â”€â”€ Ekle / DÃ¼zenle Dialog â”€â”€ */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingId != null ? "Envanter düzenle" : "Yeni envanter"}</DialogTitle>
+        <DialogTitle>{editingId != null ? "Envanter dÃ¼zenle" : "Yeni envanter"}</DialogTitle>
         <DialogContent>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
             {/* Resim */}
@@ -461,7 +461,7 @@ export default function IdariEnvanterPage() {
               <input ref={imgInputRef} type="file" accept="image/*" hidden onChange={handleImageChange} />
               {imgPreview && (
                 <Button size="small" color="error" onClick={() => { setImgPreview(""); setForm((f) => ({ ...f, fotograf_base64: "" })) }}>
-                  Resmi kaldır
+                  Resmi kaldÄ±r
                 </Button>
               )}
             </Box>
@@ -470,8 +470,8 @@ export default function IdariEnvanterPage() {
               <TextField label="Kod" value={form.kod} onChange={(e) => setForm((f) => ({ ...f, kod: e.target.value }))} required fullWidth />
               <TextField label="Adet" type="number" value={form.adet} onChange={(e) => setForm((f) => ({ ...f, adet: e.target.value }))} fullWidth inputProps={{ min: 0 }} sx={{ maxWidth: 100 }} />
             </Box>
-            <TextField label="Malzeme adı" value={form.malzeme_adi} onChange={(e) => setForm((f) => ({ ...f, malzeme_adi: e.target.value }))} required fullWidth />
-            <TextField label="Açıklama" value={form.aciklama} onChange={(e) => setForm((f) => ({ ...f, aciklama: e.target.value }))} fullWidth multiline rows={2} />
+            <TextField label="Malzeme adÄ±" value={form.malzeme_adi} onChange={(e) => setForm((f) => ({ ...f, malzeme_adi: e.target.value }))} required fullWidth />
+            <TextField label="AÃ§Ä±klama" value={form.aciklama} onChange={(e) => setForm((f) => ({ ...f, aciklama: e.target.value }))} fullWidth multiline rows={2} />
             <TextField label="Fiyat" type="number" value={form.fiyat} onChange={(e) => setForm((f) => ({ ...f, fiyat: e.target.value }))} fullWidth />
 
             {/* Durum */}
@@ -486,20 +486,20 @@ export default function IdariEnvanterPage() {
             <FormControl fullWidth>
               <InputLabel>Konum / Yer</InputLabel>
               <Select value={form.yer} label="Konum / Yer"
-                onChange={(e) => setForm((f) => ({ ...f, yer: e.target.value, site_id: e.target.value !== "Şantiye" ? "" : f.site_id }))}>
-                <MenuItem value="">— Seçin —</MenuItem>
+                onChange={(e) => setForm((f) => ({ ...f, yer: e.target.value, site_id: e.target.value !== "Åžantiye" ? "" : f.site_id }))}>
+                <MenuItem value="">â€” SeÃ§in â€”</MenuItem>
                 {SABIT_YERLER.map((y) => <MenuItem key={y} value={y}>{y}</MenuItem>)}
-                <MenuItem value="Şantiye">📍 Şantiye</MenuItem>
+                <MenuItem value="Åžantiye">ðŸ“ Åžantiye</MenuItem>
               </Select>
             </FormControl>
 
-            {/* Şantiye seçimi – sadece "Şantiye" seçilince */}
-            {form.yer === "Şantiye" && (
+            {/* Åžantiye seÃ§imi â€“ sadece "Åžantiye" seÃ§ilince */}
+            {form.yer === "Åžantiye" && (
               <FormControl fullWidth required>
-                <InputLabel>Şantiye Seç</InputLabel>
-                <Select value={form.site_id} label="Şantiye Seç"
+                <InputLabel>Åžantiye SeÃ§</InputLabel>
+                <Select value={form.site_id} label="Åžantiye SeÃ§"
                   onChange={(e) => setForm((f) => ({ ...f, site_id: e.target.value }))}>
-                  <MenuItem value="">— Seçin —</MenuItem>
+                  <MenuItem value="">â€” SeÃ§in â€”</MenuItem>
                   {sites.map((s) => <MenuItem key={s.id} value={String(s.id)}>{s.name}</MenuItem>)}
                 </Select>
               </FormControl>
@@ -507,16 +507,16 @@ export default function IdariEnvanterPage() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>İptal</Button>
+          <Button onClick={() => setDialogOpen(false)}>Ä°ptal</Button>
           <Button variant="contained" onClick={handleSave}
-            disabled={!form.kod.trim() || !form.malzeme_adi.trim() || (form.yer === "Şantiye" && !form.site_id)}
+            disabled={!form.kod.trim() || !form.malzeme_adi.trim() || (form.yer === "Åžantiye" && !form.site_id)}
             sx={{ background: "var(--icsp-lacivert)" }}>
-            {editingId != null ? "Güncelle" : "Ekle"}
+            {editingId != null ? "GÃ¼ncelle" : "Ekle"}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* ── Hareket Dialog ── */}
+      {/* â”€â”€ Hareket Dialog â”€â”€ */}
       <Dialog open={hareketDialogOpen} onClose={() => setHareketDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
           <Typography variant="subtitle1" fontWeight={600}>Hareket Ekle</Typography>
@@ -525,21 +525,21 @@ export default function IdariEnvanterPage() {
         <DialogContent>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
             <FormControl fullWidth required>
-              <InputLabel>Hareket Türü</InputLabel>
-              <Select value={hareketForm.hareket_tipi} label="Hareket Türü"
+              <InputLabel>Hareket TÃ¼rÃ¼</InputLabel>
+              <Select value={hareketForm.hareket_tipi} label="Hareket TÃ¼rÃ¼"
                 onChange={(e) => setHareketForm((f) => ({ ...f, hareket_tipi: e.target.value as "gelen" | "giden" }))}>
-                <MenuItem value="gelen">⬇️ Gelen (Depo / Satın alındı → Şantiye)</MenuItem>
-                <MenuItem value="giden">⬆️ Giden (Şantiye → Depo veya başka şantiye)</MenuItem>
+                <MenuItem value="gelen">â¬‡ï¸ Gelen (Depo / SatÄ±n alÄ±ndÄ± â†’ Åžantiye)</MenuItem>
+                <MenuItem value="giden">â¬†ï¸ Giden (Åžantiye â†’ Depo veya baÅŸka ÅŸantiye)</MenuItem>
               </Select>
             </FormControl>
             <FormControl fullWidth>
               <InputLabel>Nereden</InputLabel>
               <Select value={hareketForm.kaynak_yer} label="Nereden"
                 onChange={(e) => setHareketForm((f) => ({ ...f, kaynak_yer: e.target.value }))}>
-                <MenuItem value="">— Seçin —</MenuItem>
-                {hareketForm.hareket_tipi === "gelen" && <MenuItem value="Satın alındı">Satın alındı</MenuItem>}
+                <MenuItem value="">â€” SeÃ§in â€”</MenuItem>
+                {hareketForm.hareket_tipi === "gelen" && <MenuItem value="SatÄ±n alÄ±ndÄ±">SatÄ±n alÄ±ndÄ±</MenuItem>}
                 {SABIT_YERLER.map((y) => <MenuItem key={y} value={y}>{y}</MenuItem>)}
-                {sites.map((s) => <MenuItem key={s.id} value={s.name}>{s.name} (Şantiye)</MenuItem>)}
+                {sites.map((s) => <MenuItem key={s.id} value={s.name}>{s.name} (Åžantiye)</MenuItem>)}
               </Select>
             </FormControl>
             <FormControl fullWidth>
@@ -550,9 +550,9 @@ export default function IdariEnvanterPage() {
                   const matchSite = sites.find((s) => s.name === val)
                   setHareketForm((f) => ({ ...f, hedef_yer: val, site_id: matchSite ? String(matchSite.id) : f.site_id }))
                 }}>
-                <MenuItem value="">— Seçin —</MenuItem>
+                <MenuItem value="">â€” SeÃ§in â€”</MenuItem>
                 {SABIT_YERLER.map((y) => <MenuItem key={y} value={y}>{y}</MenuItem>)}
-                {sites.map((s) => <MenuItem key={s.id} value={s.name}>{s.name} (Şantiye)</MenuItem>)}
+                {sites.map((s) => <MenuItem key={s.id} value={s.name}>{s.name} (Åžantiye)</MenuItem>)}
               </Select>
             </FormControl>
             <Box sx={{ display: "flex", gap: 2 }}>
@@ -569,7 +569,7 @@ export default function IdariEnvanterPage() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setHareketDialogOpen(false)} disabled={hareketSaving}>İptal</Button>
+          <Button onClick={() => setHareketDialogOpen(false)} disabled={hareketSaving}>Ä°ptal</Button>
           <Button variant="contained" onClick={handleHareketSave}
             disabled={hareketSaving || !hareketForm.tarih || parseInt(hareketForm.adet, 10) < 1}
             sx={{ background: "var(--icsp-lacivert)" }}>
@@ -578,17 +578,18 @@ export default function IdariEnvanterPage() {
         </DialogActions>
       </Dialog>
 
-      {/* ── Silme Onay ── */}
+      {/* â”€â”€ Silme Onay â”€â”€ */}
       <Dialog open={confirmDeleteId != null} onClose={() => setConfirmDeleteId(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Envanter Kaydı Sil</DialogTitle>
-        <DialogContent><Typography>Bu kayıt kalıcı olarak silinecek. Emin misiniz?</Typography></DialogContent>
+        <DialogTitle>Envanter KaydÄ± Sil</DialogTitle>
+        <DialogContent><Typography>Bu kayÄ±t kalÄ±cÄ± olarak silinecek. Emin misiniz?</Typography></DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmDeleteId(null)} disabled={deleting}>İptal</Button>
+          <Button onClick={() => setConfirmDeleteId(null)} disabled={deleting}>Ä°ptal</Button>
           <Button variant="contained" color="error" onClick={handleDelete} disabled={deleting}>
-            {deleting ? "Siliniyor…" : "Evet, Sil"}
+            {deleting ? "Siliniyorâ€¦" : "Evet, Sil"}
           </Button>
         </DialogActions>
       </Dialog>
     </Box>
   )
 }
+

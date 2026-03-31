@@ -27,7 +27,7 @@ export default function IdariLayout({ children }: { children: React.ReactNode })
   const router = useRouter()
   const { user } = useAuth()
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
-  const canAccessIdari = ["admin", "manager", "user", "personel"].includes(role)
+  const canAccessIdari = ["super_admin", "admin", "manager", "user", "personel"].includes(role)
 
   useEffect(() => {
     if (user && !canAccessIdari) router.replace("/proje")
@@ -70,7 +70,7 @@ export default function IdariLayout({ children }: { children: React.ReactNode })
               const isUserRole = role === "user" || role === "personel"
               const USER_ALLOWED = ["/idari", "/idari/personel", "/idari/envanter", "/idari/makineler", "/idari/harcamalar"]
               if (isUserRole) return USER_ALLOWED.includes(item.href)
-              if (item.href === "/idari/puantaj-onay") return role === "admin" || role === "manager"
+              if (item.href === "/idari/puantaj-onay") return role === "super_admin" || role === "admin" || role === "manager"
               return true
             }).map(({ href, label, icon: Icon }) => (
               <Button

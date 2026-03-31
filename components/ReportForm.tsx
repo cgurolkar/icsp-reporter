@@ -381,8 +381,6 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
                       <TableRow>
                         <TableCell><strong>Makine</strong></TableCell>
                         <TableCell><strong>Operatör</strong></TableCell>
-                        <TableCell><strong>Makine Saati</strong></TableCell>
-                        <TableCell><strong>Mazot</strong></TableCell>
                         <TableCell><strong>Kazık (Ad.)</strong></TableCell>
                         <TableCell><strong>İmalat (m)</strong></TableCell>
                         <TableCell><strong>Boş Foraj</strong></TableCell>
@@ -396,8 +394,6 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
                         <TableRow key={row.id ?? idx}>
                           <TableCell>{row.machine_name ?? "—"}</TableCell>
                           <TableCell>{row.username ?? "—"}</TableCell>
-                          <TableCell>{row.machine_hours ?? "—"}</TableCell>
-                          <TableCell>{row.used_fuel ?? "—"}</TableCell>
                           <TableCell>{row.daily_pile_count ?? "—"}</TableCell>
                           <TableCell>{row.total_production ?? "—"}</TableCell>
                           <TableCell>{row.empty_borehole ?? "—"}</TableCell>
@@ -495,8 +491,6 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
                       <TableRow>
                         <TableCell><strong>Makine</strong></TableCell>
                         <TableCell><strong>Operatör</strong></TableCell>
-                        <TableCell><strong>Makine Saati</strong></TableCell>
-                        <TableCell><strong>Mazot</strong></TableCell>
                         <TableCell><strong>Kazık (Ad.)</strong></TableCell>
                         <TableCell><strong>İmalat (m)</strong></TableCell>
                         <TableCell><strong>Boş Foraj</strong></TableCell>
@@ -510,8 +504,6 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
                         <TableRow key={row.id ?? idx}>
                           <TableCell>{row.machine_name ?? "—"}</TableCell>
                           <TableCell>{row.username ?? "—"}</TableCell>
-                          <TableCell>{row.machine_hours ?? "—"}</TableCell>
-                          <TableCell>{row.used_fuel ?? "—"}</TableCell>
                           <TableCell>{row.daily_pile_count ?? "—"}</TableCell>
                           <TableCell>{row.total_production ?? "—"}</TableCell>
                           <TableCell>{row.empty_borehole ?? "—"}</TableCell>

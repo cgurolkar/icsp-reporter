@@ -308,6 +308,9 @@ async function _doInitializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'budget') THEN
           ALTER TABLE sites ADD COLUMN budget DECIMAL(14,2) DEFAULT NULL;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'contract_unit_price') THEN
+          ALTER TABLE sites ADD COLUMN contract_unit_price DECIMAL(14,2) DEFAULT NULL;
+        END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'assigned_machine_operators') THEN
           ALTER TABLE sites ADD COLUMN assigned_machine_operators JSONB DEFAULT '[]';
         END IF;
@@ -1359,13 +1362,14 @@ export async function createSite(data: {
   assignedOperatorIds?: number[]
   assignedMachineOperators?: { machineId: string; personelId: number }[]
   timezone?: string | null
+  contractUnitPrice?: number | null
 }) {
   const client = await pool.connect()
   try {
     const ops = data.assignedMachineOperators || []
     const result = await client.query(
-      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators, timezone)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING *`,
+      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators, timezone, contract_unit_price)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *`,
       [
         data.name,
         data.code,
@@ -1383,6 +1387,7 @@ export async function createSite(data: {
         JSON.stringify(data.assignedOperatorIds || []),
         JSON.stringify(ops),
         data.timezone ?? null,
+        data.contractUnitPrice ?? null,
       ]
     )
     const newSite = result.rows[0]
@@ -1429,6 +1434,7 @@ export async function updateSite(id: number, data: {
   assignedMachineOperators?: { machineId: string; personelId: number }[]
   budget?: number | null
   timezone?: string | null
+  contractUnitPrice?: number | null
 }) {
   const client = await pool.connect()
   try {
@@ -1437,6 +1443,7 @@ export async function updateSite(id: number, data: {
     let i = 1
     if (data.name !== undefined) { updates.push(`name = $${i++}`); values.push(data.name) }
     if (data.budget !== undefined) { updates.push(`budget = $${i++}`); values.push(data.budget) }
+    if (data.contractUnitPrice !== undefined) { updates.push(`contract_unit_price = $${i++}`); values.push(data.contractUnitPrice) }
     if (data.timezone !== undefined) { updates.push(`timezone = $${i++}`); values.push(data.timezone) }
     if (data.code !== undefined) { updates.push(`code = $${i++}`); values.push(data.code) }
     if (data.emailList !== undefined) { updates.push(`email_list = $${i++}`); values.push(JSON.stringify(data.emailList)) }
@@ -1494,6 +1501,41 @@ export async function getSiteReportEmails(siteId: number | null): Promise<string
     if (site?.email_list && Array.isArray(site.email_list)) return site.email_list as string[]
   }
   return []
+}
+
+export async function getSuperAdminEmails(): Promise<string[]> {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `SELECT email FROM users WHERE role = 'super_admin' AND email IS NOT NULL AND TRIM(email) <> '' ORDER BY id`
+    )
+    return r.rows.map((row: { email: string }) => String(row.email).trim()).filter(Boolean)
+  } finally {
+    client.release()
+  }
+}
+
+/** Şantiye bazında verilen tarihe kadar kümülatif toplam imalat (metre). */
+export async function getCumulativeTotalProduction(siteId: number, date: string): Promise<number> {
+  const client = await pool.connect()
+  try {
+    const d = (date || "").slice(0, 10)
+    const r = await client.query(
+      `SELECT COALESCE(SUM(
+          CASE
+            WHEN COALESCE(total_production_summary, '') ~ '^[0-9]+([\\.,][0-9]+)?$'
+              THEN REPLACE(total_production_summary, ',', '.')::numeric
+            ELSE 0
+          END
+        ), 0) AS toplam
+       FROM work_reports
+       WHERE site_id = $1 AND date <= $2`,
+      [siteId, d]
+    )
+    return parseFloat(String(r.rows[0]?.toplam ?? "0")) || 0
+  } finally {
+    client.release()
+  }
 }
 
 // Rapor detayını getir (site_name, site_code ile)

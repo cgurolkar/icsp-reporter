@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
@@ -80,7 +80,7 @@ export default function IdariPersonelDetailPage() {
   const [belgeSaving, setBelgeSaving] = useState(false)
 
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
-  const canManage = role === "admin" || role === "manager"
+  const canManage = role === "super_admin" || role === "admin" || role === "manager"
 
   useEffect(() => {
     if (Number.isNaN(id)) return
@@ -128,7 +128,7 @@ export default function IdariPersonelDetailPage() {
     const file = e.target.files?.[0]
     if (!file || !id || !belgeForm.belge_tipi) return
     if (file.size > 5 * 1024 * 1024) {
-      alert("Dosya 5MB'dan küçük olmalı.")
+      alert("Dosya 5MB'dan kÃ¼Ã§Ã¼k olmalÄ±.")
       return
     }
     const reader = new FileReader()
@@ -151,7 +151,7 @@ export default function IdariPersonelDetailPage() {
         loadPersonel()
       } else {
         const err = await res.json().catch(() => ({}))
-        alert(err.error || "Yüklenemedi.")
+        alert(err.error || "YÃ¼klenemedi.")
       }
     }
     reader.readAsDataURL(file)
@@ -160,7 +160,7 @@ export default function IdariPersonelDetailPage() {
   const handleAddAtama = async () => {
     const site_id = parseInt(atamaForm.site_id, 10)
     if (!site_id || !atamaForm.baslangic_tarihi.trim()) {
-      alert("Şantiye ve başlangıç tarihi gerekli.")
+      alert("Åžantiye ve baÅŸlangÄ±Ã§ tarihi gerekli.")
       return
     }
     const res = await fetch(`/api/idari/personel/${id}/atama`, {
@@ -185,8 +185,8 @@ export default function IdariPersonelDetailPage() {
   if (Number.isNaN(id)) {
     return (
       <Box>
-        <Typography color="error">Geçersiz personel.</Typography>
-        <Button component={Link} href="/idari/personel" sx={{ mt: 2 }}>Listeye dön</Button>
+        <Typography color="error">GeÃ§ersiz personel.</Typography>
+        <Button component={Link} href="/idari/personel" sx={{ mt: 2 }}>Listeye dÃ¶n</Button>
       </Box>
     )
   }
@@ -194,8 +194,8 @@ export default function IdariPersonelDetailPage() {
   if (!personel) {
     return (
       <Box>
-        <Typography color="text.secondary">Yükleniyor...</Typography>
-        <Button component={Link} href="/idari/personel" sx={{ mt: 2 }}>Listeye dön</Button>
+        <Typography color="text.secondary">YÃ¼kleniyor...</Typography>
+        <Button component={Link} href="/idari/personel" sx={{ mt: 2 }}>Listeye dÃ¶n</Button>
       </Box>
     )
   }
@@ -203,7 +203,7 @@ export default function IdariPersonelDetailPage() {
   return (
     <Box>
       <Button component={Link} href="/idari/personel" startIcon={<ArrowBack />} sx={{ mb: 2 }}>
-        Listeye dön
+        Listeye dÃ¶n
       </Button>
 
       <Paper sx={{ p: 0, mb: 2, borderRadius: 2, overflow: "hidden" }}>
@@ -231,20 +231,20 @@ export default function IdariPersonelDetailPage() {
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
               {personel.gorev}
-              {personel.calistigi_bolum && ` · ${personel.calistigi_bolum}`}
+              {personel.calistigi_bolum && ` Â· ${personel.calistigi_bolum}`}
             </Typography>
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.5, mt: 2 }}>
-              <Typography variant="body2"><strong>Kimlik:</strong> {personel.tc_kimlik ? `TC ${personel.tc_kimlik}` : personel.pasaport_no ? `Pasaport ${personel.pasaport_no}` : "—"}</Typography>
-              <Typography variant="body2"><strong>İşe giriş:</strong> {personel.ise_giris_tarihi ? String(personel.ise_giris_tarihi).slice(0, 10) : "—"}</Typography>
-              <Typography variant="body2"><strong>İşten çıkış:</strong> {personel.isten_cikis_tarihi ? String(personel.isten_cikis_tarihi).slice(0, 10) : "—"}</Typography>
-              <Typography variant="body2"><strong>Çalıştığı bölüm:</strong> {personel.calistigi_bolum ?? "—"}</Typography>
-              <Typography variant="body2"><strong>Kan grubu:</strong> {personel.kan_grubu ?? "—"}</Typography>
-              <Typography variant="body2"><strong>Acil iletişim:</strong> {personel.acil_iletisim ?? "—"}</Typography>
-              <Typography variant="body2"><strong>Acil telefon:</strong> {personel.acil_telefon ?? "—"}</Typography>
-              <Typography variant="body2"><strong>Günlük yevmiye:</strong> {personel.gunluk_yevmiye != null ? personel.gunluk_yevmiye : "—"}</Typography>
-              <Typography variant="body2"><strong>Aylık maaş:</strong> {personel.aylik_maas != null ? personel.aylik_maas : "—"}</Typography>
-              <Typography variant="body2"><strong>IBAN:</strong> {personel.iban ?? "—"}</Typography>
-              <Typography variant="body2"><strong>Banka:</strong> {personel.banka_adi ?? "—"}</Typography>
+              <Typography variant="body2"><strong>Kimlik:</strong> {personel.tc_kimlik ? `TC ${personel.tc_kimlik}` : personel.pasaport_no ? `Pasaport ${personel.pasaport_no}` : "â€”"}</Typography>
+              <Typography variant="body2"><strong>Ä°ÅŸe giriÅŸ:</strong> {personel.ise_giris_tarihi ? String(personel.ise_giris_tarihi).slice(0, 10) : "â€”"}</Typography>
+              <Typography variant="body2"><strong>Ä°ÅŸten Ã§Ä±kÄ±ÅŸ:</strong> {personel.isten_cikis_tarihi ? String(personel.isten_cikis_tarihi).slice(0, 10) : "â€”"}</Typography>
+              <Typography variant="body2"><strong>Ã‡alÄ±ÅŸtÄ±ÄŸÄ± bÃ¶lÃ¼m:</strong> {personel.calistigi_bolum ?? "â€”"}</Typography>
+              <Typography variant="body2"><strong>Kan grubu:</strong> {personel.kan_grubu ?? "â€”"}</Typography>
+              <Typography variant="body2"><strong>Acil iletiÅŸim:</strong> {personel.acil_iletisim ?? "â€”"}</Typography>
+              <Typography variant="body2"><strong>Acil telefon:</strong> {personel.acil_telefon ?? "â€”"}</Typography>
+              <Typography variant="body2"><strong>GÃ¼nlÃ¼k yevmiye:</strong> {personel.gunluk_yevmiye != null ? personel.gunluk_yevmiye : "â€”"}</Typography>
+              <Typography variant="body2"><strong>AylÄ±k maaÅŸ:</strong> {personel.aylik_maas != null ? personel.aylik_maas : "â€”"}</Typography>
+              <Typography variant="body2"><strong>IBAN:</strong> {personel.iban ?? "â€”"}</Typography>
+              <Typography variant="body2"><strong>Banka:</strong> {personel.banka_adi ?? "â€”"}</Typography>
             </Box>
           </Box>
         </Box>
@@ -252,27 +252,27 @@ export default function IdariPersonelDetailPage() {
 
       {canManage && (
         <Paper sx={{ p: 2, mb: 2, borderRadius: 2 }}>
-          <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>Belgeler (Pasaport/Kimlik, Personel fotoğrafı)</Typography>
+          <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>Belgeler (Pasaport/Kimlik, Personel fotoÄŸrafÄ±)</Typography>
           <Button size="small" variant="outlined" startIcon={<Add />} onClick={() => setBelgeDialogOpen(true)} sx={{ mb: 2 }}>
-            Belge / fotoğraf yükle
+            Belge / fotoÄŸraf yÃ¼kle
           </Button>
           {belgeler.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">Henüz belge yok.</Typography>
+            <Typography variant="body2" color="text.secondary">HenÃ¼z belge yok.</Typography>
           ) : (
             <Table size="small">
               <TableHead>
                 <TableRow>
                   <TableCell><strong>Belge</strong></TableCell>
-                  <TableCell><strong>Geçerlilik</strong></TableCell>
-                  <TableCell>İndir</TableCell>
+                  <TableCell><strong>GeÃ§erlilik</strong></TableCell>
+                  <TableCell>Ä°ndir</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {belgeler.map((b) => (
                   <TableRow key={b.id}>
                     <TableCell>{belgeTipleri.find((t) => t.kod === b.belge_tipi)?.ad ?? b.belge_tipi}</TableCell>
-                    <TableCell>{b.gecerlilik_tarihi ? String(b.gecerlilik_tarihi).slice(0, 10) : "—"}</TableCell>
-                    <TableCell><Button size="small" href={b.dosya_yolu} target="_blank" rel="noopener">Görüntüle</Button></TableCell>
+                    <TableCell>{b.gecerlilik_tarihi ? String(b.gecerlilik_tarihi).slice(0, 10) : "â€”"}</TableCell>
+                    <TableCell><Button size="small" href={b.dosya_yolu} target="_blank" rel="noopener">GÃ¶rÃ¼ntÃ¼le</Button></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -283,7 +283,7 @@ export default function IdariPersonelDetailPage() {
 
       <Paper sx={{ p: 2 }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-          <Typography variant="subtitle1" fontWeight={600}>Atama geçmişi (şantiye)</Typography>
+          <Typography variant="subtitle1" fontWeight={600}>Atama geÃ§miÅŸi (ÅŸantiye)</Typography>
           {canManage && (
             <Button size="small" variant="outlined" startIcon={<Add />} onClick={() => setAtamaDialogOpen(true)}>
               Atama ekle
@@ -291,14 +291,14 @@ export default function IdariPersonelDetailPage() {
           )}
         </Box>
         {!personel.atamalar || personel.atamalar.length === 0 ? (
-          <Typography color="text.secondary">Henüz atama yok.</Typography>
+          <Typography color="text.secondary">HenÃ¼z atama yok.</Typography>
         ) : (
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell><strong>Şantiye</strong></TableCell>
-                <TableCell><strong>Başlangıç</strong></TableCell>
-                <TableCell><strong>Bitiş</strong></TableCell>
+                <TableCell><strong>Åžantiye</strong></TableCell>
+                <TableCell><strong>BaÅŸlangÄ±Ã§</strong></TableCell>
+                <TableCell><strong>BitiÅŸ</strong></TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -315,21 +315,21 @@ export default function IdariPersonelDetailPage() {
       </Paper>
 
       <Dialog open={belgeDialogOpen} onClose={() => setBelgeDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Belge / fotoğraf yükle</DialogTitle>
+        <DialogTitle>Belge / fotoÄŸraf yÃ¼kle</DialogTitle>
         <DialogContent>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
             <FormControl fullWidth>
               <InputLabel>Belge tipi</InputLabel>
               <Select value={belgeForm.belge_tipi} label="Belge tipi" onChange={(e) => setBelgeForm((f) => ({ ...f, belge_tipi: e.target.value }))}>
-                <MenuItem value="">Seçin</MenuItem>
+                <MenuItem value="">SeÃ§in</MenuItem>
                 {belgeTipleri.map((t) => (
                   <MenuItem key={t.id} value={t.kod}>{t.ad}</MenuItem>
                 ))}
               </Select>
             </FormControl>
-            <TextField label="Geçerlilik tarihi (opsiyonel)" type="date" value={belgeForm.gecerlilik_tarihi} onChange={(e) => setBelgeForm((f) => ({ ...f, gecerlilik_tarihi: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
+            <TextField label="GeÃ§erlilik tarihi (opsiyonel)" type="date" value={belgeForm.gecerlilik_tarihi} onChange={(e) => setBelgeForm((f) => ({ ...f, gecerlilik_tarihi: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
             <Button variant="outlined" component="label" disabled={!belgeForm.belge_tipi || belgeSaving}>
-              {belgeSaving ? "Yükleniyor…" : "Dosya seç"}
+              {belgeSaving ? "YÃ¼kleniyorâ€¦" : "Dosya seÃ§"}
               <input type="file" accept="image/*,.pdf" hidden onChange={handleBelgeFileChange} />
             </Button>
           </Box>
@@ -340,14 +340,14 @@ export default function IdariPersonelDetailPage() {
       </Dialog>
 
       <Dialog open={atamaDialogOpen} onClose={() => setAtamaDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Şantiye ataması ekle</DialogTitle>
+        <DialogTitle>Åžantiye atamasÄ± ekle</DialogTitle>
         <DialogContent>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
             <FormControl fullWidth required>
-              <InputLabel>Şantiye</InputLabel>
+              <InputLabel>Åžantiye</InputLabel>
               <Select
                 value={atamaForm.site_id}
-                label="Şantiye"
+                label="Åžantiye"
                 onChange={(e) => setAtamaForm((f) => ({ ...f, site_id: e.target.value }))}
               >
                 {sites.map((s) => (
@@ -356,7 +356,7 @@ export default function IdariPersonelDetailPage() {
               </Select>
             </FormControl>
             <TextField
-              label="Başlangıç tarihi"
+              label="BaÅŸlangÄ±Ã§ tarihi"
               type="date"
               value={atamaForm.baslangic_tarihi}
               onChange={(e) => setAtamaForm((f) => ({ ...f, baslangic_tarihi: e.target.value }))}
@@ -365,7 +365,7 @@ export default function IdariPersonelDetailPage() {
               required
             />
             <TextField
-              label="Bitiş tarihi (opsiyonel)"
+              label="BitiÅŸ tarihi (opsiyonel)"
               type="date"
               value={atamaForm.bitis_tarihi}
               onChange={(e) => setAtamaForm((f) => ({ ...f, bitis_tarihi: e.target.value }))}
@@ -375,7 +375,7 @@ export default function IdariPersonelDetailPage() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setAtamaDialogOpen(false)}>İptal</Button>
+          <Button onClick={() => setAtamaDialogOpen(false)}>Ä°ptal</Button>
           <Button variant="contained" onClick={handleAddAtama} disabled={!atamaForm.site_id || !atamaForm.baslangic_tarihi} sx={{ background: "var(--icsp-lacivert)" }}>
             Ekle
           </Button>
@@ -384,3 +384,4 @@ export default function IdariPersonelDetailPage() {
     </Box>
   )
 }
+
