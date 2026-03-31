@@ -2,6 +2,12 @@ export interface Machine {
   id: string
   name: string
   type: string
+  marka?: string
+  model?: string
+  plaka_no?: string
+  seri_no?: string
+  status?: string
+  notlar?: string
 }
 
 export interface MachineSelection {

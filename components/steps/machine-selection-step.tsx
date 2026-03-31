@@ -78,6 +78,13 @@ export default function MachineSelectionStep({ data, onChange, machines }: Machi
                   <Typography variant="body2" color="text.secondary">
                     {machine.type}
                   </Typography>
+                  {(machine.marka || machine.model || machine.plaka_no || machine.seri_no || machine.status) && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
+                      {[machine.marka, machine.model, machine.plaka_no ? `Plaka: ${machine.plaka_no}` : "", machine.seri_no ? `Seri: ${machine.seri_no}` : "", machine.status ? `Durum: ${machine.status}` : ""]
+                        .filter(Boolean)
+                        .join(" • ")}
+                    </Typography>
+                  )}
                 </Box>
               </Button>
             ))}

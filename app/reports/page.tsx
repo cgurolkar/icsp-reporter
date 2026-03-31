@@ -50,7 +50,7 @@ interface ReportRow {
   notes?: string
 }
 
-const MONTH_NAMES = ["Ocak", "Åžubat", "Mart", "Nisan", "MayÄ±s", "Haziran", "Temmuz", "AÄŸustos", "EylÃ¼l", "Ekim", "KasÄ±m", "AralÄ±k"]
+const MONTH_NAMES = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 
 function ReportsContent() {
   const searchParams = useSearchParams()
@@ -100,12 +100,12 @@ function ReportsContent() {
     const params = new URLSearchParams({ siteId, startDate: startStr, endDate: endStr, raw: "1" })
     fetch(`/api/reports?${params}`)
       .then((res) => {
-        if (!res.ok) throw new Error("Veriler alÄ±namadÄ±")
+        if (!res.ok) throw new Error("Veriler alınamadı")
         return res.json()
       })
       .then((data: ReportRow[]) => setReports(data))
       .catch((err) => {
-        setError(err.message || "Bir hata oluÅŸtu")
+        setError(err.message || "Bir hata oluştu")
         setReports([])
       })
       .finally(() => setLoading(false))
@@ -164,26 +164,26 @@ function ReportsContent() {
     <Box sx={{ minHeight: "100vh", background: "#fafafa", py: 2, px: 0, overflowX: "hidden", maxWidth: "100%" }}>
       <Container maxWidth="lg" sx={{ maxWidth: "100%", px: { xs: 1.5, sm: 2 } }}>
         <Typography variant="h6" fontWeight={600} sx={{ color: "var(--icsp-lacivert)", mb: 2 }}>
-          Åžantiyeler â€“ Tarihe gÃ¶re rapor Ã¶zeti
+          Şantiyeler – Tarihe göre rapor özeti
         </Typography>
 
         {sites.length > 0 && (
           <Box sx={{ width: "100%", maxWidth: 420, mb: 3, display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
             <FormControl fullWidth size="small" sx={{ minWidth: 0, flex: "1 1 200px" }}>
-              <InputLabel id="report-site-label">Åžantiye</InputLabel>
+              <InputLabel id="report-site-label">Şantiye</InputLabel>
               <Select
                 labelId="report-site-label"
-                label="Åžantiye"
+                label="Şantiye"
                 value={siteId}
                 onChange={(e) => {
                   setSiteId(e.target.value)
                   setSelectedDate(null)
                 }}
               >
-                <MenuItem value="">Åžantiye seÃ§in</MenuItem>
+                <MenuItem value="">Şantiye seçin</MenuItem>
                 {sites.map((s) => (
                   <MenuItem key={s.id} value={String(s.id)}>
-                    {s.name} ({s.code}) â€” {s.report_count ?? 0} rapor
+                    {s.name} ({s.code}) — {s.report_count ?? 0} rapor
                   </MenuItem>
                 ))}
               </Select>
@@ -198,7 +198,7 @@ function ReportsContent() {
 
         {!siteId && (
           <Alert severity="info" sx={{ mb: 2 }}>
-            RaporlarÄ± gÃ¶rmek iÃ§in Ã¶nce bir ÅŸantiye seÃ§in.
+            Raporları görmek için önce bir şantiye seçin.
           </Alert>
         )}
 
@@ -245,7 +245,7 @@ function ReportsContent() {
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    {["Pzt", "Sal", "Ã‡ar", "Per", "Cum", "Cmt", "Paz"].map((day) => (
+                    {["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"].map((day) => (
                       <TableCell key={day} align="center" sx={{ fontWeight: 600, py: 0.5, borderColor: "var(--icsp-nav-border)" }}>
                         {day}
                       </TableCell>
@@ -289,10 +289,10 @@ function ReportsContent() {
 
             <Paper sx={{ p: 2, background: "#fff", border: "1px solid var(--icsp-nav-border)", overflow: "hidden", maxWidth: "100%" }}>
               <Typography variant="subtitle1" fontWeight={600} sx={{ color: "var(--icsp-lacivert)", mb: 2 }}>
-                {selectedDate ? `${selectedDate} â€” Rapor Ã¶zeti` : "Rapor Ã¶zeti"}
+                {selectedDate ? `${selectedDate} — Rapor özeti` : "Rapor özeti"}
               </Typography>
               {!selectedDate ? (
-                <Typography color="text.secondary" sx={{ wordBreak: "break-word" }}>Takvimden bir gÃ¼n seÃ§in; seÃ§ilen tarihe ait rapor Ã¶zeti burada gÃ¶rÃ¼nÃ¼r.</Typography>
+                <Typography color="text.secondary" sx={{ wordBreak: "break-word" }}>Takvimden bir gün seçin; seçilen tarihe ait rapor özeti burada görünür.</Typography>
               ) : selectedReports.length === 0 ? (
                 <Typography color="text.secondary">Bu tarihte rapor yok.</Typography>
               ) : (
@@ -301,13 +301,13 @@ function ReportsContent() {
                     <Table size="small" sx={{ minWidth: 260 }}>
                       <TableBody>
                         <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Proje</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.project}</TableCell></TableRow>
-                        <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Makine</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.selected_machine_name || "â€”"}</TableCell></TableRow>
-                        <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>KazÄ±k Ä°malatÄ± (m)</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.total_production_summary ?? r.total_production ?? "â€”"}</TableCell></TableRow>
-                        <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>KazÄ±k SayÄ±sÄ± (Ad.)</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{[r.daily_pile_count, r.total_pile_count, r.concrete_poured].find((v) => v != null && String(v).trim() !== "") ?? "â€”"}</TableCell></TableRow>
-                        <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Beton dÃ¶kÃ¼len (Ad.)</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.concrete_poured != null && String(r.concrete_poured).trim() !== "" ? r.concrete_poured : "â€”"}</TableCell></TableRow>
-                        <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Kalan kazÄ±k (Ad.)</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.remaining_piles != null && String(r.remaining_piles).trim() !== "" ? r.remaining_piles : "â€”"}</TableCell></TableRow>
-                        <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Personel toplam</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.personnel_total ?? "â€”"}</TableCell></TableRow>
-                        <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Mazot MiktarÄ± (lt) / not</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.daily_fuel_usage != null && String(r.daily_fuel_usage).trim() !== "" ? String(r.daily_fuel_usage) : "â€”"}</TableCell></TableRow>
+                        <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Makine</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.selected_machine_name || "—"}</TableCell></TableRow>
+                        <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Kazık İmalatı (m)</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.total_production_summary ?? r.total_production ?? "—"}</TableCell></TableRow>
+                        <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Kazık Sayısı (Ad.)</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{[r.daily_pile_count, r.total_pile_count, r.concrete_poured].find((v) => v != null && String(v).trim() !== "") ?? "—"}</TableCell></TableRow>
+                        <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Beton dökülen (Ad.)</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.concrete_poured != null && String(r.concrete_poured).trim() !== "" ? r.concrete_poured : "—"}</TableCell></TableRow>
+                        <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Kalan kazık (Ad.)</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.remaining_piles != null && String(r.remaining_piles).trim() !== "" ? r.remaining_piles : "—"}</TableCell></TableRow>
+                        <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Personel toplam</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.personnel_total ?? "—"}</TableCell></TableRow>
+                        <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Mazot Miktarı (lt) / not</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.daily_fuel_usage != null && String(r.daily_fuel_usage).trim() !== "" ? String(r.daily_fuel_usage) : "—"}</TableCell></TableRow>
                         {r.notes && (
                           <TableRow><TableCell sx={{ borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Notlar</TableCell><TableCell sx={{ borderColor: "var(--icsp-nav-border)", whiteSpace: "pre-wrap" }}>{r.notes}</TableCell></TableRow>
                         )}

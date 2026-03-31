@@ -166,7 +166,7 @@ function AdminPanel() {
   const [dbSites, setDbSites] = useState<{ id: number; name: string; code: string; email_list: string[]; report_count?: number; total_piles?: number | null; contract_unit_price?: number | null; region?: string | null; city?: string | null; country?: string | null; authorized_person?: string | null; employer?: string | null; assigned_machine_operators?: { machineId: string; personelId: number }[] }[]>([])
   const [personelList, setPersonelList] = useState<{ id: number; ad: string; soyad: string; gorev: string }[]>([])
   const [siteDialogOpen, setSiteDialogOpen] = useState(false)
-  const [idariMachineOptions, setIdariMachineOptions] = useState<{ id: number; name: string; machine_type: string; current_site_id: number | null }[]>([])
+  const [idariMachineOptions, setIdariMachineOptions] = useState<{ id: number; name: string; machine_type: string; marka?: string | null; model?: string | null; plaka_no?: string | null; seri_no?: string | null; status?: string | null; current_site_id: number | null }[]>([])
   const [siteDialogData, setSiteDialogData] = useState<{ id?: number; name: string; code: string; country: string; timezone: string; emailList: string[]; totalPiles: string; contractUnitPrice: string; authorizedPerson: string; employer: string; projectStartDate: string; isOngoing: boolean; initialPilesDone: string; assignedMachineIds: string[]; assignedOperatorIds: number[]; assignedMachineOperators: { machineId: string; personelId: number }[] }>({
     name: "",
     code: "",
@@ -237,7 +237,7 @@ function AdminPanel() {
     if (!siteDialogOpen) return
     fetch("/api/idari/makineler")
       .then((r) => (r.ok ? r.json() : []))
-      .then((list: { id: number; name: string; machine_type: string; current_site_id: number | null }[]) => {
+      .then((list: { id: number; name: string; machine_type: string; marka?: string | null; model?: string | null; plaka_no?: string | null; seri_no?: string | null; status?: string | null; current_site_id: number | null }[]) => {
         setIdariMachineOptions(Array.isArray(list) ? list : [])
       })
       .catch(() => setIdariMachineOptions([]))
@@ -1396,8 +1396,17 @@ function AdminPanel() {
                   .filter((m) => m.machine_type === "Kazık Makinesi")
                   .map((m) => (
                     <MenuItem key={m.id} value={String(m.id)}>
-                      {m.name}
-                      {m.current_site_id != null && m.current_site_id !== siteDialogData.id ? " (başka şantiyede — seçerseniz bu şantiyeye alınır)" : ""}
+                      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+                        <Typography variant="body2" fontWeight={600}>
+                          {m.name}
+                          {m.current_site_id != null && m.current_site_id !== siteDialogData.id ? " (başka şantiyede — seçerseniz bu şantiyeye alınır)" : ""}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {[m.machine_type, m.marka, m.model, m.plaka_no ? `Plaka: ${m.plaka_no}` : "", m.seri_no ? `Seri: ${m.seri_no}` : "", m.status ? `Durum: ${m.status}` : ""]
+                            .filter(Boolean)
+                            .join(" • ")}
+                        </Typography>
+                      </Box>
                     </MenuItem>
                   ))}
               </Select>
@@ -1410,7 +1419,18 @@ function AdminPanel() {
                     .map((o) => o.personelId)
                   return (
                   <Box key={machineId} sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-                    <Typography variant="body2" sx={{ minWidth: 140 }}>{idariMachineOptions.find((m) => String(m.id) === machineId)?.name ?? machineId}</Typography>
+                    <Box sx={{ minWidth: 240 }}>
+                      <Typography variant="body2" fontWeight={600}>{idariMachineOptions.find((m) => String(m.id) === machineId)?.name ?? machineId}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {(() => {
+                          const m = idariMachineOptions.find((x) => String(x.id) === machineId)
+                          if (!m) return "—"
+                          return [m.machine_type, m.marka, m.model, m.plaka_no ? `Plaka: ${m.plaka_no}` : "", m.seri_no ? `Seri: ${m.seri_no}` : ""]
+                            .filter(Boolean)
+                            .join(" • ")
+                        })()}
+                      </Typography>
+                    </Box>
                     <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
                       <InputLabel>Operatörler (birden fazla seçilebilir)</InputLabel>
                       <Select

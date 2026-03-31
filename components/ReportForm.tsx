@@ -122,10 +122,20 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     let cancelled = false
     fetch(`/api/idari/makineler?siteId=${siteId}&status=aktif`)
       .then((res) => (res.ok ? res.json() : []))
-      .then((list: { id: number; name: string; machine_type: string }[]) => {
+      .then((list: { id: number; name: string; machine_type: string; marka?: string | null; model?: string | null; plaka_no?: string | null; seri_no?: string | null; status?: string | null; notlar?: string | null }[]) => {
         if (cancelled) return
         const fromDb: Machine[] = Array.isArray(list)
-          ? list.map((m) => ({ id: String(m.id), name: m.name, type: m.machine_type || "Kazık Makinesi" }))
+          ? list.map((m) => ({
+              id: String(m.id),
+              name: m.name,
+              type: m.machine_type || "Kazık Makinesi",
+              marka: m.marka ?? undefined,
+              model: m.model ?? undefined,
+              plaka_no: m.plaka_no ?? undefined,
+              seri_no: m.seri_no ?? undefined,
+              status: m.status ?? undefined,
+              notlar: m.notlar ?? undefined,
+            }))
           : []
         const options = fromDb.length > 0 ? fromDb : AVAILABLE_MACHINES
         setReportMachineOptions(options)
