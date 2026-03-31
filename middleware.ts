@@ -5,6 +5,8 @@ import { getSessionFromRequest, canAccessAdmin } from "@/lib/auth-session"
 const LOGIN_PATH = "/login"
 const ADMIN_PREFIX = "/admin"
 const IDARI_PREFIX = "/idari"
+const REPORTS_PREFIX = "/reports"
+const FORM_PREFIX = "/form"
 const PROJE_HOME = "/proje"
 const OPERATOR_HOME = "/operator-form"
 
@@ -51,6 +53,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(OPERATOR_HOME, request.url))
   }
 
+  const role = String(session.role || "").toLowerCase()
+  const canViewReports = role === "super_admin" || role === "admin" || role === "manager" || role === "user" || role === "personel"
+  const canDoDataEntry = role === "super_admin" || role === "admin" || role === "user" || role === "personel"
+
   if (pathname.startsWith(ADMIN_PREFIX) && !canAccessAdmin(session.role)) {
     return NextResponse.redirect(new URL(PROJE_HOME, request.url))
   }
@@ -58,6 +64,16 @@ export async function middleware(request: NextRequest) {
   // /idari sadece admin/manager/user/personel; operator engellenmiş (yukarıda)
   if (pathname.startsWith(IDARI_PREFIX) && session.role === "operator") {
     return NextResponse.redirect(new URL(OPERATOR_HOME, request.url))
+  }
+
+  // Raporlar erişimi role göre
+  if (pathname.startsWith(REPORTS_PREFIX) && !canViewReports) {
+    return NextResponse.redirect(new URL(PROJE_HOME, request.url))
+  }
+
+  // Bilgi girişi erişimi role göre
+  if (pathname.startsWith(FORM_PREFIX) && !canDoDataEntry) {
+    return NextResponse.redirect(new URL(PROJE_HOME, request.url))
   }
 
   return NextResponse.next()

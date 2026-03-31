@@ -28,6 +28,9 @@ function ProjeHomePage() {
   const { user } = useAuth()
   const [sites, setSites] = useState<SiteItem[]>([])
   const { t } = useLanguage()
+  const role = String(user?.role ?? "").toLowerCase()
+  const canViewReports = role === "super_admin" || role === "admin" || role === "manager"
+  const canDoDataEntry = role === "super_admin" || role === "admin" || role === "user" || role === "personel"
 
   useEffect(() => {
     if ((user?.role ?? "").toLowerCase() === "operator") {
@@ -95,16 +98,20 @@ function ProjeHomePage() {
                     </TableCell>
                     <TableCell align="right">{site.total_piles != null ? site.total_piles : "—"}</TableCell>
                     <TableCell align="center" sx={{ whiteSpace: "nowrap" }}>
-                      <Link href={`/reports?siteId=${site.id}`} style={{ textDecoration: "none" }}>
-                        <Button size="small" variant="outlined" sx={{ mr: 0.5, borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}>
-                          Raporlar
-                        </Button>
-                      </Link>
-                      <Link href={`/form?siteId=${site.id}`} style={{ textDecoration: "none" }}>
-                        <Button size="small" variant="contained" sx={{ backgroundColor: "var(--icsp-lacivert)" }}>
-                          Bilgi girişi
-                        </Button>
-                      </Link>
+                      {canViewReports && (
+                        <Link href={`/reports?siteId=${site.id}`} style={{ textDecoration: "none" }}>
+                          <Button size="small" variant="outlined" sx={{ mr: 0.5, borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}>
+                            Raporlar
+                          </Button>
+                        </Link>
+                      )}
+                      {canDoDataEntry && (
+                        <Link href={`/form?siteId=${site.id}`} style={{ textDecoration: "none" }}>
+                          <Button size="small" variant="contained" sx={{ backgroundColor: "var(--icsp-lacivert)" }}>
+                            Bilgi girişi
+                          </Button>
+                        </Link>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -117,11 +124,13 @@ function ProjeHomePage() {
           <Typography color="text.secondary">
             Henüz şantiye tanımlı değil. Admin panelinden şantiye ekleyebilirsiniz.
           </Typography>
-          <Link href="/form" style={{ textDecoration: "none", display: "inline-block", marginTop: 16 }}>
-            <Button variant="contained" sx={{ backgroundColor: "var(--icsp-lacivert)" }}>
-              Bilgi girişi sayfasına git
-            </Button>
-          </Link>
+          {canDoDataEntry && (
+            <Link href="/form" style={{ textDecoration: "none", display: "inline-block", marginTop: 16 }}>
+              <Button variant="contained" sx={{ backgroundColor: "var(--icsp-lacivert)" }}>
+                Bilgi girişi sayfasına git
+              </Button>
+            </Link>
+          )}
         </Paper>
       )}
     </Container>
