@@ -52,6 +52,10 @@ export default function AnaGirisPage() {
       .then((res) => res.json())
       .then((data) => {
         if (data.user) {
+          if (data.user.mustChangePassword) {
+            router.replace("/change-password")
+            return
+          }
           const role = String(data.user.role ?? "").toLowerCase()
           if (role === "operator") router.replace("/operator-form")
           else router.replace("/proje")

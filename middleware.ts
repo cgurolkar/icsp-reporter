@@ -7,6 +7,7 @@ const ADMIN_PREFIX = "/admin"
 const IDARI_PREFIX = "/idari"
 const REPORTS_PREFIX = "/reports"
 const FORM_PREFIX = "/form"
+const CHANGE_PASSWORD_PATH = "/change-password"
 const PROJE_HOME = "/proje"
 const OPERATOR_HOME = "/operator-form"
 
@@ -28,7 +29,7 @@ export async function middleware(request: NextRequest) {
   // Kök path: giriş yapmışsa rolüne göre yönlendir, yapmamışsa login
   if (pathname === "/") {
     if (session) {
-      const dest = session.role === "operator" ? OPERATOR_HOME : PROJE_HOME
+      const dest = session.mustChangePassword ? CHANGE_PASSWORD_PATH : (session.role === "operator" ? OPERATOR_HOME : PROJE_HOME)
       return NextResponse.redirect(new URL(dest, request.url))
     }
     return NextResponse.redirect(new URL(LOGIN_PATH, request.url))
@@ -36,7 +37,7 @@ export async function middleware(request: NextRequest) {
 
   if (isPublicPath(pathname)) {
     if (session && pathname === LOGIN_PATH) {
-      const dest = session.role === "operator" ? OPERATOR_HOME : PROJE_HOME
+      const dest = session.mustChangePassword ? CHANGE_PASSWORD_PATH : (session.role === "operator" ? OPERATOR_HOME : PROJE_HOME)
       return NextResponse.redirect(new URL(dest, request.url))
     }
     return NextResponse.next()
@@ -46,6 +47,15 @@ export async function middleware(request: NextRequest) {
     const loginUrl = new URL(LOGIN_PATH, request.url)
     loginUrl.searchParams.set("next", pathname)
     return NextResponse.redirect(loginUrl)
+  }
+
+  if (session.mustChangePassword && pathname !== CHANGE_PASSWORD_PATH) {
+    return NextResponse.redirect(new URL(CHANGE_PASSWORD_PATH, request.url))
+  }
+
+  if (!session.mustChangePassword && pathname === CHANGE_PASSWORD_PATH) {
+    const dest = session.role === "operator" ? OPERATOR_HOME : PROJE_HOME
+    return NextResponse.redirect(new URL(dest, request.url))
   }
 
   // Operator rolü yalnızca /operator-form'a erişebilir

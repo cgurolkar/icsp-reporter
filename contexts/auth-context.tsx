@@ -9,6 +9,7 @@ export interface AuthUser {
   username: string
   role: Role
   siteId: number | null
+  mustChangePassword?: boolean
 }
 
 interface AuthContextType {

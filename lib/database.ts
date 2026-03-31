@@ -340,6 +340,15 @@ async function _doInitializeDatabase() {
       END $$
     `)
 
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'must_change_password') THEN
+          ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT false;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'users must_change_password: %', SQLERRM;
+      END $$
+    `)
+
     // ---------- İdari modül tabloları (Faz 1) ----------
     await client.query(`
       CREATE TABLE IF NOT EXISTS personeller (

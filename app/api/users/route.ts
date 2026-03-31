@@ -56,9 +56,9 @@ export async function POST(request: NextRequest) {
     const personelIdVal = personelId != null && personelId !== '' ? parseInt(String(personelId), 10) : null;
     const client = await pool.connect();
     const result = await client.query(`
-      INSERT INTO users (username, password_hash, role, email, site_id, module_permissions)
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-      RETURNING id, username, role, email, site_id, module_permissions
+      INSERT INTO users (username, password_hash, role, email, site_id, module_permissions, must_change_password)
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, true)
+      RETURNING id, username, role, email, site_id, module_permissions, must_change_password
     `, [username, passwordHash, roleVal, email || null, Number.isInteger(siteIdVal) ? siteIdVal : null, permsJson]);
 
     const newUserId = result.rows[0]?.id as number;

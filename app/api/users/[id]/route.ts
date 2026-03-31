@@ -43,6 +43,7 @@ export async function PUT(
     if (password !== undefined && typeof password === 'string' && password.length >= 6) {
       updates.push(`password_hash = $${i++}`);
       values.push(await hashPassword(password));
+      updates.push(`must_change_password = true`);
     }
     values.push(userId);
     const result = await client.query(`

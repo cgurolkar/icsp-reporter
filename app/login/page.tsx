@@ -23,7 +23,7 @@ function LoginForm() {
       .then((res) => res.json())
       .then((data) => {
         if (data.user) {
-          const dest = data.user.role === "operator" ? "/operator-form" : next
+          const dest = data.user.mustChangePassword ? "/change-password" : (data.user.role === "operator" ? "/operator-form" : next)
           router.replace(dest)
         }
       })
@@ -53,7 +53,7 @@ function LoginForm() {
       }
       setLoading(false)
       const role = data?.user?.role
-      const dest = role === "operator" ? "/operator-form" : next
+      const dest = data?.user?.mustChangePassword ? "/change-password" : (role === "operator" ? "/operator-form" : next)
       window.location.href = dest
     } catch (err) {
       const isAbort = err instanceof Error && err.name === "AbortError"

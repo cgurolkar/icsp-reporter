@@ -17,6 +17,7 @@ export interface SessionUser {
   username: string
   role: Role
   siteId: number | null
+  mustChangePassword: boolean
 }
 
 export async function createToken(payload: SessionUser): Promise<string> {
@@ -34,6 +35,7 @@ export async function verifyToken(token: string): Promise<SessionUser | null> {
       username: String(payload.username),
       role: payload.role as Role,
       siteId: payload.siteId != null ? Number(payload.siteId) : null,
+      mustChangePassword: payload.mustChangePassword === true,
     }
   } catch {
     return null
