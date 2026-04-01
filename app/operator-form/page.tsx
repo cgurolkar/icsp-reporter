@@ -80,6 +80,64 @@ export default function OperatorFormPage() {
   const input1Ref = useRef<HTMLInputElement>(null)
   const input2Ref = useRef<HTMLInputElement>(null)
 
+  // Per-machine form data store — preserves data when switching between machines without saving
+  const machineDataStore = useRef<Record<number, {
+    motorSaatBinis: string; motorSaatInis: string; startTime: string; endTime: string
+    pileDepths: { depth: string; onForaj: boolean; bosForaj: boolean }[]
+    usedFuel: string; note: string; concretePoured: string
+    image1: string; image2: string; notes: string
+    kullanılanMalzeme: string; malzemeIhtiyaci: boolean; servisIhtiyaci: boolean
+  }>>({})
+
+  // When machine selection changes, save current data for the outgoing machine, restore for incoming
+  const prevSelectedMachineRef = useRef<DbMachine | null>(null)
+  useEffect(() => {
+    const prev = prevSelectedMachineRef.current
+    const curr = selectedDbMachine
+    if (prev?.id === curr?.id) return // No actual change
+
+    // Save outgoing machine's data
+    if (prev != null) {
+      machineDataStore.current[prev.id] = {
+        motorSaatBinis, motorSaatInis, startTime, endTime,
+        pileDepths: [...pileDepths],
+        usedFuel, note, concretePoured, image1, image2, notes,
+        kullanılanMalzeme, malzemeIhtiyaci, servisIhtiyaci,
+      }
+    }
+
+    // Restore incoming machine's data (or clear if no stored data)
+    if (curr != null) {
+      const stored = machineDataStore.current[curr.id]
+      if (stored) {
+        setMotorSaatBinis(stored.motorSaatBinis)
+        setMotorSaatInis(stored.motorSaatInis)
+        setStartTime(stored.startTime)
+        setEndTime(stored.endTime)
+        setPileDepths(stored.pileDepths)
+        setUsedFuel(stored.usedFuel)
+        setNote(stored.note)
+        setConcretePoured(stored.concretePoured)
+        setImage1(stored.image1)
+        setImage2(stored.image2)
+        setNotes(stored.notes)
+        setKullanılanMalzeme(stored.kullanılanMalzeme)
+        setMalzemeIhtiyaci(stored.malzemeIhtiyaci)
+        setServisIhtiyaci(stored.servisIhtiyaci)
+      } else {
+        // Fresh form for this machine
+        setMotorSaatBinis(""); setMotorSaatInis(""); setStartTime(""); setEndTime("")
+        setPileDepths([{ depth: "", onForaj: false, bosForaj: false }])
+        setUsedFuel(""); setNote(""); setConcretePoured("")
+        setImage1(""); setImage2(""); setNotes("")
+        setKullanılanMalzeme(""); setMalzemeIhtiyaci(false); setServisIhtiyaci(false)
+      }
+    }
+
+    prevSelectedMachineRef.current = curr
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDbMachine])
+
   useEffect(() => {
     if (!isOperator) {
       router.replace("/proje")
@@ -205,6 +263,9 @@ export default function OperatorFormPage() {
       const data = await res.json().catch(() => ({}))
       if (res.ok && data.success) {
         setMessage({ type: "success", text: "Kayıt başarılı. Veriler ana rapora birleştirilecektir." })
+        // Clear stored data for this machine (was successfully saved)
+        if (selectedDbMachine) delete machineDataStore.current[selectedDbMachine.id]
+        prevSelectedMachineRef.current = null // Reset so switching back doesn't restore old data
         setMotorSaatBinis("")
         setMotorSaatInis("")
         setStartTime("")
@@ -219,6 +280,7 @@ export default function OperatorFormPage() {
         setImage1("")
         setImage2("")
         setNotes("")
+        prevSelectedMachineRef.current = selectedDbMachine
       } else {
         setMessage({ type: "error", text: data.error || "Kayıt sırasında hata oluştu." })
       }
@@ -281,16 +343,20 @@ export default function OperatorFormPage() {
               Bu şantiyede birden fazla makine mevcut. Lütfen kullandığınız makineyi seçin:
             </Typography>
             <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-              {dbMachines.map((m) => (
-                <Chip
-                  key={m.id}
-                  label={m.name}
-                  variant={selectedDbMachine?.id === m.id ? "filled" : "outlined"}
-                  color={selectedDbMachine?.id === m.id ? "primary" : "default"}
-                  onClick={() => setSelectedDbMachine(m)}
-                  sx={{ cursor: "pointer" }}
-                />
-              ))}
+              {dbMachines.map((m) => {
+                const hasUnsaved = m.id !== selectedDbMachine?.id && !!machineDataStore.current[m.id]
+                return (
+                  <Chip
+                    key={m.id}
+                    label={hasUnsaved ? `${m.name} ●` : m.name}
+                    variant={selectedDbMachine?.id === m.id ? "filled" : "outlined"}
+                    color={selectedDbMachine?.id === m.id ? "primary" : hasUnsaved ? "warning" : "default"}
+                    onClick={() => setSelectedDbMachine(m)}
+                    sx={{ cursor: "pointer" }}
+                    title={hasUnsaved ? "Bu makinede kaydedilmemiş veri var" : undefined}
+                  />
+                )
+              })}
             </Box>
             {selectedDbMachine && (
               <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>

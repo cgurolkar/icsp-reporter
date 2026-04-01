@@ -14,7 +14,7 @@ const IzinSchema = z.object({
 export async function POST(request: NextRequest) {
   const session = await getSessionFromRequest(request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
-  if (!canAccessIdari(session.role)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
+  if (!canAccessIdari(session.role, session)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   if (!canManageIdariCentral(session.role)) {
     return NextResponse.json({ error: "İzin girişi yetkiniz yok." }, { status: 403 })
   }

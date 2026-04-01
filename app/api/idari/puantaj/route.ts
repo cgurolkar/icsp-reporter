@@ -6,7 +6,7 @@ import { initializeDatabase, getPuantajForSiteAndDate, savePuantajBulk } from "@
 export async function GET(request: NextRequest) {
   const session = await getSessionFromRequest(request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
-  if (!canAccessIdari(session.role)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
+  if (!canAccessIdari(session.role, session)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
 
   const { searchParams } = new URL(request.url)
   const siteIdParam = searchParams.get("siteId")
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getSessionFromRequest(request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
-  if (!canAccessIdari(session.role)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
+  if (!canAccessIdari(session.role, session)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
 
   const body = await request.json().catch(() => ({}))
   const siteId = body?.siteId != null ? Number(body.siteId) : NaN

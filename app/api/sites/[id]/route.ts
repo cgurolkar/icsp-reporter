@@ -14,7 +14,7 @@ export async function GET(
     if (isNaN(siteId)) {
       return NextResponse.json({ error: "Invalid site id" }, { status: 400 })
     }
-    if (!canViewAllSites(session.role) && session.siteId !== siteId) {
+    if (!canViewAllSites(session.role, session) && session.siteId !== siteId) {
       return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
     }
     const site = await getSiteById(siteId)

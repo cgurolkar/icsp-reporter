@@ -9,7 +9,7 @@ export async function GET(
 ) {
   const session = await getSessionFromRequest(_request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
-  if (!canAccessIdari(session.role)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
+  if (!canAccessIdari(session.role, session)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   const id = parseInt((await params).id, 10)
   if (Number.isNaN(id)) return NextResponse.json({ error: "Geçersiz ID." }, { status: 400 })
   try {

@@ -237,19 +237,55 @@ export function generatePDFMainReport(
             <span class="machine-tag">${formData.machineSelection?.selectedMachine?.name ?? "Seçilmedi"}</span>
             ${(additionalMachines || []).map((m: any) => `<span class="machine-tag secondary">${m.name}</span>`).join("")}
           </div>
-          <table>
-            <thead><tr><th>Makine</th><th>Saat</th><th>İmalat</th><th>Delinen</th><th>Beton</th></tr></thead>
-            <tbody>
-              ${(machines || []).map((m: any) => `
-              <tr>
-                <td style="font-weight:600;">${m.machineName ?? ""}</td>
-                <td class="td-center">${v(m.machineHours)}</td>
-                <td class="td-center">${v(m.totalProduction)}</td>
-                <td class="td-center">${v(m.drilledPile)}</td>
-                <td class="td-center">${v(m.concretePile)}</td>
-              </tr>`).join("")}
-            </tbody>
-          </table>
+          ${(() => {
+            // Prefer operator entries for machine data (always accurate, works for old + new reports)
+            if (operatorEntries.length > 0) {
+              return `<table>
+                <thead><tr><th>Makine</th><th>Motor (Biniş→İniş)</th><th>İmalat (m)</th><th>Kazık (Ad.)</th><th>Beton</th></tr></thead>
+                <tbody>
+                  ${operatorEntries.map((oe: any) => `
+                  <tr>
+                    <td style="font-weight:600;">${oe.machine_name ?? ""}</td>
+                    <td class="td-center">${oe.motor_saat_binis ? `${oe.motor_saat_binis}→${oe.motor_saat_inis ?? "—"}` : (oe.machine_hours ? oe.machine_hours : "—")}</td>
+                    <td class="td-center" style="font-weight:700;color:#1a237e;">${v(oe.total_production)}</td>
+                    <td class="td-center" style="color:#16a34a;font-weight:700;">${v(oe.daily_pile_count ?? oe.concrete_poured)}</td>
+                    <td class="td-center">${v(oe.concrete_poured)}</td>
+                  </tr>`).join("")}
+                  ${operatorEntries.length > 1 ? `<tr style="background:#e8eaf6;">
+                    <td style="font-weight:700;">TOPLAM</td>
+                    <td>—</td>
+                    <td class="td-total">${operatorEntries.reduce((s: number, oe: any) => s + (parseFloat(oe.total_production ?? "") || 0), 0).toFixed(2)} m</td>
+                    <td class="td-total">${operatorEntries.reduce((s: number, oe: any) => s + (parseInt(oe.daily_pile_count ?? oe.concrete_poured ?? "0") || 0), 0)} Ad.</td>
+                    <td class="td-total">${operatorEntries.reduce((s: number, oe: any) => s + (parseInt(oe.concrete_poured ?? "0") || 0), 0)} Ad.</td>
+                  </tr>` : ""}
+                </tbody>
+              </table>`
+            }
+            // Fallback: use productionSummary data
+            const ps = Array.isArray(formData.productionSummary) ? formData.productionSummary : []
+            if (ps.length > 0) {
+              return `<table>
+                <thead><tr><th>Makine</th><th>İmalat (m)</th><th>Boş Foraj</th><th>Ön Foraj</th><th>Beton</th></tr></thead>
+                <tbody>
+                  ${ps.map((m: any) => `<tr>
+                    <td style="font-weight:600;">${m.machineName ?? ""}</td>
+                    <td class="td-center" style="font-weight:700;color:#1a237e;">${v(m.totalProduction)}</td>
+                    <td class="td-center">${v(m.emptyBorehole, "0")}</td>
+                    <td class="td-center">${v(m.preBorehole, "0")}</td>
+                    <td class="td-center">${v(m.concretePoured)}</td>
+                  </tr>`).join("")}
+                  ${ps.length > 1 ? `<tr style="background:#e8eaf6;">
+                    <td style="font-weight:700;">TOPLAM</td>
+                    <td class="td-total">${ps.reduce((s: number, m: any) => s + (parseFloat(m.totalProduction) || 0), 0).toFixed(2)} m</td>
+                    <td class="td-total">${ps.reduce((s: number, m: any) => s + (parseInt(m.emptyBorehole) || 0), 0)} Ad.</td>
+                    <td class="td-total">${ps.reduce((s: number, m: any) => s + (parseInt(m.preBorehole) || 0), 0)} Ad.</td>
+                    <td class="td-total">${ps.reduce((s: number, m: any) => s + (parseInt(m.concretePoured) || 0), 0)} Ad.</td>
+                  </tr>` : ""}
+                </tbody>
+              </table>`
+            }
+            return "<p style='color:#94a3b8;font-size:10px;'>Makine bilgisi operatör tarafından girilmedi.</p>"
+          })()}
         </div>
       </div>
 

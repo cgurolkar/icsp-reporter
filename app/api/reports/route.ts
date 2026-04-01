@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 
     // user/personel rolleri yalnızca kendi şantiyelerinin raporlarını görebilir
     let siteId: number | undefined
-    if (!canViewAllSites(session.role)) {
+    if (!canViewAllSites(session.role, session)) {
       // Şantiye kısıtlaması: session.siteId'den farklı bir şantiye istenemez
       if (session.siteId == null) {
         return NextResponse.json({ error: "Şantiye atanmamış." }, { status: 403 })

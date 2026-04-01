@@ -16,7 +16,7 @@ const ENVANTER_SORT_KEYS = new Set([
 export async function GET(request: NextRequest) {
   const session = await getSessionFromRequest(request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
-  if (!canAccessIdari(session.role)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
+  if (!canAccessIdari(session.role, session)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   try {
     await initializeDatabase()
     const { searchParams } = new URL(request.url)

@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     const withReportCount = searchParams.get("withReportCount") === "1"
     let siteIdParam = searchParams.get("siteId")
     // Kullanıcı/Personel sadece kendi şantiyesini görebilir
-    if (!canViewAllSites(session.role) && session.siteId != null) {
+    if (!canViewAllSites(session.role, session) && session.siteId != null) {
       siteIdParam = String(session.siteId)
     }
     const siteIdNum = siteIdParam ? parseInt(siteIdParam, 10) : NaN
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
       ? await getSitesWithReportCount(filterSiteId)
       : await getAllSites()
     // Kullanıcı/Personel: sadece kendi şantiyesi dönsün
-    const allowed = canViewAllSites(session.role)
+    const allowed = canViewAllSites(session.role, session)
       ? sites
       : (Array.isArray(sites) ? sites : []).filter((s: { id: number }) => s.id === session.siteId)
     const isSuperAdmin = session.role === "super_admin"

@@ -110,6 +110,9 @@ function normalizeModulePerms(raw: unknown): Record<string, ModPermLevel> {
       const v = (raw as Record<string, unknown>)[k]
       if (v === "view" || v === "write" || v === "off") base[k] = v
     }
+    // Preserve view_all_sites (set by "Genel" site selection, not in UI module defs)
+    const vas = (raw as Record<string, unknown>).view_all_sites
+    if (vas === "view" || vas === "write" || vas === "off") base.view_all_sites = vas
   }
   return base
 }
@@ -567,7 +570,9 @@ function AdminPanel() {
         password: "",
         email: String(user.email ?? ""),
         role: String(user.role ?? "user"),
-        siteId: user.site_id != null ? Number(user.site_id) : "",
+        siteId: user.site_id != null
+          ? Number(user.site_id)
+          : ((user.module_permissions as Record<string, string> | null)?.view_all_sites === "write" ? "genel" : ""),
         personelMode: "none",
         personelId: "",
         newPersonelAd: "",
@@ -1738,9 +1743,26 @@ function AdminPanel() {
               <Select
                 value={dbUserForm.siteId === "" ? "" : dbUserForm.siteId}
                 label="Sorumlu şantiye"
-                onChange={(e) => setDbUserForm((p) => ({ ...p, siteId: e.target.value === "" ? "" : Number(e.target.value) }))}
+                onChange={(e) => {
+                  const val = e.target.value
+                  if (val === "genel") {
+                    // "Genel" → site_id=null + view_all_sites permission
+                    setDbUserForm((p) => ({
+                      ...p,
+                      siteId: "genel",
+                      modulePerms: { ...p.modulePerms, view_all_sites: "write" },
+                    }))
+                  } else {
+                    setDbUserForm((p) => ({
+                      ...p,
+                      siteId: val === "" ? "" : Number(val),
+                      modulePerms: { ...p.modulePerms, view_all_sites: "off" },
+                    }))
+                  }
+                }}
               >
                 <MenuItem value="">— Yok</MenuItem>
+                <MenuItem value="genel">— Genel (tüm şantiyeleri görebilir) —</MenuItem>
                 {dbSites.map((s) => (
                   <MenuItem key={s.id} value={s.id}>{s.name} ({s.code})</MenuItem>
                 ))}
@@ -1849,7 +1871,7 @@ function AdminPanel() {
                         ad: dbUserForm.newPersonelAd.trim(),
                         soyad: dbUserForm.newPersonelSoyad.trim(),
                         gorev: dbUserForm.newPersonelGorev.trim() || "İşçi",
-                        site_id: dbUserForm.siteId === "" ? undefined : Number(dbUserForm.siteId),
+                        site_id: (dbUserForm.siteId === "" || dbUserForm.siteId === "genel") ? undefined : Number(dbUserForm.siteId),
                       }),
                     })
                     const pd = await pr.json().catch(() => ({}))
@@ -1867,7 +1889,7 @@ function AdminPanel() {
                   if (dbUserEditingId != null) {
                     const body: Record<string, unknown> = {
                       role: dbUserForm.role,
-                      siteId: dbUserForm.siteId === "" ? null : dbUserForm.siteId,
+                      siteId: (dbUserForm.siteId === "" || dbUserForm.siteId === "genel") ? null : dbUserForm.siteId,
                       modulePermissions: dbUserForm.modulePerms,
                       email: dbUserForm.email.trim() || null,
                     }
@@ -1897,7 +1919,7 @@ function AdminPanel() {
                         username: dbUserForm.username.trim(),
                         password: dbUserForm.password,
                         role: dbUserForm.role,
-                        siteId: dbUserForm.siteId === "" ? null : dbUserForm.siteId,
+                        siteId: (dbUserForm.siteId === "" || dbUserForm.siteId === "genel") ? null : dbUserForm.siteId,
                         email: dbUserForm.email.trim() || null,
                         modulePermissions: dbUserForm.modulePerms,
                         personelId: personelIdToLink,

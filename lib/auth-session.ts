@@ -18,6 +18,10 @@ export interface SessionUser {
   role: Role
   siteId: number | null
   mustChangePassword: boolean
+  /** Per-module permissions from the DB (off/view/write) */
+  modulePermissions?: Record<string, string>
+  /** True if this user can view all sites (either by role or by explicit "Genel" assignment) */
+  viewAllSites?: boolean
 }
 
 export async function createToken(payload: SessionUser): Promise<string> {
@@ -30,12 +34,19 @@ export async function createToken(payload: SessionUser): Promise<string> {
 export async function verifyToken(token: string): Promise<SessionUser | null> {
   try {
     const { payload } = await jwtVerify(token, SECRET_BYTES)
+    const rawPerms = payload.modulePermissions
+    const modulePermissions =
+      rawPerms && typeof rawPerms === "object" && !Array.isArray(rawPerms)
+        ? (rawPerms as Record<string, string>)
+        : undefined
     return {
       id: Number(payload.id),
       username: String(payload.username),
       role: payload.role as Role,
       siteId: payload.siteId != null ? Number(payload.siteId) : null,
       mustChangePassword: payload.mustChangePassword === true,
+      modulePermissions,
+      viewAllSites: payload.viewAllSites === true,
     }
   } catch {
     return null

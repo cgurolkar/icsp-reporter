@@ -28,10 +28,10 @@ export async function POST(request: NextRequest) {
     }
 
     const client = await pool.connect()
-    let row: { id: number; username: string; password_hash: string; role: string; site_id: number | null; must_change_password: boolean } | null = null
+    let row: { id: number; username: string; password_hash: string; role: string; site_id: number | null; must_change_password: boolean; module_permissions: Record<string, string> | null } | null = null
     try {
       const result = await client.query(
-        `SELECT id, username, password_hash, role, site_id, must_change_password FROM users WHERE username = $1`,
+        `SELECT id, username, password_hash, role, site_id, must_change_password, module_permissions FROM users WHERE username = $1`,
         [username]
       )
       row = result.rows[0] || null
@@ -64,12 +64,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Kullanıcı adı veya şifre hatalı." }, { status: 401 })
     }
 
+    // Parse module_permissions from DB (JSONB column)
+    const rawPerms = row.module_permissions
+    const modulePermissions: Record<string, string> | undefined =
+      rawPerms && typeof rawPerms === "object" && !Array.isArray(rawPerms)
+        ? (rawPerms as Record<string, string>)
+        : undefined
+
+    // "Genel" users: site_id is null AND view_all_sites = "write" in module_permissions
+    const viewAllSites =
+      role === "super_admin" ||
+      role === "admin" ||
+      role === "manager" ||
+      (modulePermissions?.view_all_sites === "write")
+
     const token = await createToken({
       id: row.id,
       username: row.username,
       role,
       siteId: row.site_id ?? null,
       mustChangePassword: row.must_change_password === true,
+      modulePermissions,
+      viewAllSites,
     })
 
     const forwardedProto = request.headers.get("x-forwarded-proto")

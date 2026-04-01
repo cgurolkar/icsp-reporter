@@ -6,7 +6,7 @@ import pool, { initializeDatabase, getHarcamaKategorileri } from "@/lib/database
 export async function GET(request: NextRequest) {
   const session = await getSessionFromRequest(request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
-  if (!canAccessIdari(session.role)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
+  if (!canAccessIdari(session.role, session)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   try {
     await initializeDatabase()
     const list = await getHarcamaKategorileri()

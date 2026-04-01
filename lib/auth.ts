@@ -64,13 +64,36 @@ export function canDoMachineEntry(role: Role): boolean {
   return role === "operator"
 }
 
-export function canViewAllSites(role: Role): boolean {
-  return role === "super_admin" || role === "admin" || role === "manager"
+/**
+ * Check if user can view all sites.
+ * Pass the full session object when available so "Genel" users are also included.
+ */
+export function canViewAllSites(role: Role, session?: SessionUser | null): boolean {
+  if (role === "super_admin" || role === "admin" || role === "manager") return true
+  return session?.viewAllSites === true
 }
 
-/** İdari modüle erişim (operator hariç) */
-export function canAccessIdari(role: Role): boolean {
-  return role === "super_admin" || role === "admin" || role === "manager" || role === "user" || role === "personel"
+/**
+ * Check if user has access to a specific module at the given level.
+ * "write" implies "view". Used for module-permission-gated features.
+ */
+export function canAccessModule(session: SessionUser, moduleKey: string, level: "view" | "write" = "view"): boolean {
+  const perms = session.modulePermissions
+  if (!perms) return false
+  const perm = perms[moduleKey]
+  if (level === "view") return perm === "view" || perm === "write"
+  return perm === "write"
+}
+
+/** İdari modüle erişim (operator hariç) — extended by module permissions */
+export function canAccessIdari(role: Role, session?: SessionUser | null): boolean {
+  if (role === "super_admin" || role === "admin" || role === "manager" || role === "user" || role === "personel") return true
+  // A user with any idari module permission (view or write) can access the idari area
+  if (session) {
+    const idariModules = ["personel", "envanter", "harcamalar", "puantaj", "bilgi_giris", "makineler"]
+    return idariModules.some((m) => canAccessModule(session, m, "view"))
+  }
+  return false
 }
 
 /** Personel/özlük/finans girişi (merkez İK/idari) */

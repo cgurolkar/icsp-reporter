@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   if (!Number.isInteger(siteId) || siteId < 1 || !reportDate) {
     return NextResponse.json({ error: "siteId ve reportDate gerekli." }, { status: 400 })
   }
-  if (!canViewAllSites(session.role) && session.siteId !== siteId) {
+  if (!canViewAllSites(session.role, session) && session.siteId !== siteId) {
     return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   }
   try {

@@ -10,6 +10,8 @@ export interface AuthUser {
   role: Role
   siteId: number | null
   mustChangePassword?: boolean
+  modulePermissions?: Record<string, string>
+  viewAllSites?: boolean
 }
 
 interface AuthContextType {

@@ -97,7 +97,7 @@ export async function GET(
     // Rapor erişim sınırı: user/personel sadece kendi şantiyesi
     const rawReport = data.report as Record<string, unknown>
     const siteId = rawReport.site_id != null ? Number(rawReport.site_id) : null
-    if (!canViewAllSites(session.role) && session.siteId !== siteId) {
+    if (!canViewAllSites(session.role, session) && session.siteId !== siteId) {
       return new NextResponse("Yetkisiz.", { status: 403 })
     }
 

@@ -17,7 +17,7 @@ const HareketSchema = z.object({
 export async function POST(request: NextRequest) {
   const session = await getSessionFromRequest(request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
-  if (!canAccessIdari(session.role)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
+  if (!canAccessIdari(session.role, session)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   if (session.role !== "admin" && session.role !== "manager") {
     return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   }

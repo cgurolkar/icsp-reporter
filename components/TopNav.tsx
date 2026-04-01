@@ -20,11 +20,14 @@ export default function TopNav() {
   const [isInstalled, setIsInstalled] = useState(false)
 
   const role = (user?.role != null ? String(user.role).toLowerCase() : null) || "user"
-  const canViewReports = role === "super_admin" || role === "admin" || role === "manager"
-  const canDoDataEntry = role === "super_admin" || role === "admin" || role === "user" || role === "personel"
+  const modulePerms = user?.modulePermissions ?? {}
+  const hasModulePerm = (key: string) => modulePerms[key] === "view" || modulePerms[key] === "write"
+  const canViewReports = role === "super_admin" || role === "admin" || role === "manager" || user?.viewAllSites
+  const canDoDataEntry = role === "super_admin" || role === "admin" || role === "user" || role === "personel" || hasModulePerm("bilgi_giris")
   const canDoMachineEntry = role === "operator"
   const canAccessAdmin = role === "super_admin" || role === "admin"
-  const canAccessIdari = role === "super_admin" || role === "admin" || role === "manager" || role === "user" || role === "personel"
+  const idariModules = ["personel", "envanter", "harcamalar", "puantaj", "bilgi_giris", "makineler"]
+  const canAccessIdari = role === "super_admin" || role === "admin" || role === "manager" || role === "user" || role === "personel" || idariModules.some(hasModulePerm)
 
   const navLinks = [
     !canDoMachineEntry && { href: "/proje", label: t("home") },
