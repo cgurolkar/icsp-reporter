@@ -93,8 +93,11 @@ export interface DailyInfo {
   notes: string
   /** Bir sonraki gün için planlanan imalat ve yapılacak işler */
   nextDayPlannedWork?: string
-  /** Base64 data URL veya boş */
+  /** Base64 data URL array — up to 10 images */
+  images?: string[]
+  /** @deprecated use images[0] */
   image1?: string
+  /** @deprecated use images[1] */
   image2?: string
 }
 
@@ -189,7 +192,7 @@ export const initialFormData: FormData = {
     remainingOnSite: "",
   },
   expenses: [{ description: "", amount: 0, category: "diger" }],
-  dailyInfo: { notes: "", nextDayPlannedWork: "", image1: "", image2: "" },
+  dailyInfo: { notes: "", nextDayPlannedWork: "", images: [] },
   productionSummary: [{
     machineId: "",
     machineName: "",

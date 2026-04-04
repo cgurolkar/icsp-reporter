@@ -1,8 +1,8 @@
 "use client"
 
 import React, { useRef } from "react"
-import { Typography, Box, TextField, Paper, Button } from "@mui/material"
-import { PhotoCamera } from "@mui/icons-material"
+import { Typography, Box, TextField, Paper, Button, IconButton } from "@mui/material"
+import { PhotoCamera, Delete } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
 import type { DailyInfo } from "@/types/form-data"
 
@@ -12,6 +12,7 @@ interface DailyInfoStepProps {
 }
 
 const MAX_IMAGE_SIZE_MB = 5
+const MAX_IMAGES = 10
 const ACCEPT_IMAGE = "image/jpeg,image/png,image/webp"
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -23,32 +24,51 @@ function readFileAsDataUrl(file: File): Promise<string> {
   })
 }
 
+/** Normalize legacy image1/image2 fields into the images array */
+function getImages(data: DailyInfo): string[] {
+  if (Array.isArray(data.images) && data.images.length > 0) return data.images
+  // Backward compat: merge image1/image2 into array
+  const legacy = [data.image1 ?? "", data.image2 ?? ""].filter(Boolean)
+  return legacy
+}
+
 export default function DailyInfoStep({ data, onChange }: DailyInfoStepProps) {
   const { t } = useLanguage()
-  const input1Ref = useRef<HTMLInputElement>(null)
-  const input2Ref = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const images = getImages(data)
 
-  const handleImageChange = async (slot: 1 | 2, e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
-      alert(t("image_max_size").replace("{{max}}", String(MAX_IMAGE_SIZE_MB)))
-      return
-    }
-    try {
-      const dataUrl = await readFileAsDataUrl(file)
-      if (slot === 1) onChange({ ...data, image1: dataUrl })
-      else onChange({ ...data, image2: dataUrl })
-    } catch (err) {
-      console.error(err)
-      alert(t("image_upload_error"))
-    }
-    e.target.value = ""
+  const setImages = (newImages: string[]) => {
+    onChange({ ...data, images: newImages, image1: newImages[0] ?? "", image2: newImages[1] ?? "" })
   }
 
-  const removeImage = (slot: 1 | 2) => {
-    if (slot === 1) onChange({ ...data, image1: "" })
-    else onChange({ ...data, image2: "" })
+  const handleAddImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
+    e.target.value = ""
+
+    const remaining = MAX_IMAGES - images.length
+    const toProcess = files.slice(0, remaining)
+
+    const newImages: string[] = []
+    for (const file of toProcess) {
+      if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
+        alert(t("image_max_size").replace("{{max}}", String(MAX_IMAGE_SIZE_MB)))
+        continue
+      }
+      try {
+        const dataUrl = await readFileAsDataUrl(file)
+        newImages.push(dataUrl)
+      } catch (err) {
+        console.error(err)
+        alert(t("image_upload_error"))
+      }
+    }
+    setImages([...images, ...newImages])
+  }
+
+  const removeImage = (index: number) => {
+    const updated = images.filter((_, i) => i !== index)
+    setImages(updated)
   }
 
   return (
@@ -89,70 +109,94 @@ export default function DailyInfoStep({ data, onChange }: DailyInfoStepProps) {
         />
 
         <Typography variant="subtitle2" sx={{ color: "#1565c0", mb: 1.5, fontWeight: 600 }}>
-          {t("daily_images_label")}
+          {t("daily_images_label")} ({images.length}/{MAX_IMAGES})
         </Typography>
-        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-          <Box sx={{ flex: "1 1 200px" }}>
+
+        {/* Mevcut resimler */}
+        {images.length > 0 && (
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, mb: 2 }}>
+            {images.map((src, i) => (
+              <Box
+                key={i}
+                sx={{
+                  position: "relative",
+                  display: "inline-block",
+                  border: "1px solid #90caf9",
+                  borderRadius: 2,
+                  overflow: "hidden",
+                  background: "#fff",
+                }}
+              >
+                <img
+                  src={src}
+                  alt={`Fotoğraf ${i + 1}`}
+                  style={{ maxWidth: 180, maxHeight: 160, objectFit: "contain", display: "block" }}
+                />
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 0,
+                    right: 0,
+                    background: "rgba(0,0,0,0.45)",
+                    borderRadius: "0 0 0 6px",
+                  }}
+                >
+                  <IconButton
+                    size="small"
+                    onClick={() => removeImage(i)}
+                    sx={{ color: "#fff", p: 0.5 }}
+                    title="Kaldır"
+                  >
+                    <Delete fontSize="small" />
+                  </IconButton>
+                </Box>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    position: "absolute",
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    textAlign: "center",
+                    background: "rgba(0,0,0,0.35)",
+                    color: "#fff",
+                    py: 0.25,
+                    fontSize: "0.7rem",
+                  }}
+                >
+                  {i + 1}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        )}
+
+        {/* Resim ekle butonu */}
+        {images.length < MAX_IMAGES && (
+          <>
             <input
-              ref={input1Ref}
+              ref={fileInputRef}
               type="file"
               accept={ACCEPT_IMAGE}
+              multiple
               style={{ display: "none" }}
-              onChange={(e) => handleImageChange(1, e)}
+              onChange={handleAddImage}
             />
-            {data.image1 ? (
-              <Box sx={{ position: "relative", display: "inline-block" }}>
-                <img
-                  src={data.image1}
-                  alt="Günlük 1"
-                  style={{ maxWidth: "100%", maxHeight: 200, objectFit: "contain", border: "1px solid #ccc", borderRadius: 8 }}
-                />
-                <Button size="small" color="error" onClick={() => removeImage(1)} sx={{ position: "absolute", top: 4, right: 4 }}>
-                  {t("remove")}
-                </Button>
-              </Box>
-            ) : (
-              <Button
-                variant="outlined"
-                startIcon={<PhotoCamera />}
-                onClick={() => input1Ref.current?.click()}
-                sx={{ borderColor: "#1976d2", color: "#1976d2" }}
-              >
-                {t("add_image_1")}
-              </Button>
-            )}
-          </Box>
-          <Box sx={{ flex: "1 1 200px" }}>
-            <input
-              ref={input2Ref}
-              type="file"
-              accept={ACCEPT_IMAGE}
-              style={{ display: "none" }}
-              onChange={(e) => handleImageChange(2, e)}
-            />
-            {data.image2 ? (
-              <Box sx={{ position: "relative", display: "inline-block" }}>
-                <img
-                  src={data.image2}
-                  alt="2"
-                  style={{ maxWidth: "100%", maxHeight: 200, objectFit: "contain", border: "1px solid #ccc", borderRadius: 8 }}
-                />
-                <Button size="small" color="error" onClick={() => removeImage(2)} sx={{ position: "absolute", top: 4, right: 4 }}>
-                  {t("remove")}
-                </Button>
-              </Box>
-            ) : (
-              <Button
-                variant="outlined"
-                startIcon={<PhotoCamera />}
-                onClick={() => input2Ref.current?.click()}
-                sx={{ borderColor: "#1976d2", color: "#1976d2" }}
-              >
-                {t("add_image_2")}
-              </Button>
-            )}
-          </Box>
-        </Box>
+            <Button
+              variant="outlined"
+              startIcon={<PhotoCamera />}
+              onClick={() => fileInputRef.current?.click()}
+              sx={{ borderColor: "#1976d2", color: "#1976d2" }}
+            >
+              Fotoğraf Ekle ({images.length}/{MAX_IMAGES})
+            </Button>
+          </>
+        )}
+        {images.length >= MAX_IMAGES && (
+          <Typography variant="caption" color="text.secondary">
+            Maksimum fotoğraf sayısına ({MAX_IMAGES}) ulaşıldı.
+          </Typography>
+        )}
       </Paper>
     </Box>
   )

@@ -451,7 +451,13 @@ export function generatePDFMainReport(
   ` : ""}
 
   <!-- GÜNLÜK BİLGİLER -->
-  ${(formData.dailyInfo?.notes || formData.dailyInfo?.image1 || formData.dailyInfo?.image2 || (formData.dailyInfo?.nextDayPlannedWork && String(formData.dailyInfo.nextDayPlannedWork).trim())) ? `
+  ${(() => {
+    const dailyImgs: string[] = Array.isArray(formData.dailyInfo?.images) && formData.dailyInfo.images.length > 0
+      ? formData.dailyInfo.images.filter((s: unknown) => s && typeof s === "string")
+      : [formData.dailyInfo?.image1, formData.dailyInfo?.image2].filter((s): s is string => !!s && typeof s === "string")
+    const hasContent = formData.dailyInfo?.notes || dailyImgs.length > 0 || (formData.dailyInfo?.nextDayPlannedWork && String(formData.dailyInfo.nextDayPlannedWork).trim())
+    if (!hasContent) return ""
+    return `
   <div class="section">
     <div class="section-header">📝 Günlük Bilgiler</div>
     <div class="section-body">
@@ -469,14 +475,13 @@ export function generatePDFMainReport(
           </ul>
         </div>
       </div>` : ""}
-      ${(formData.dailyInfo?.image1 || formData.dailyInfo?.image2) ? `
+      ${dailyImgs.length > 0 ? `
       <div class="img-row">
-        ${formData.dailyInfo.image1 ? `<img src="${formData.dailyInfo.image1}" alt="Sahadan 1" />` : ""}
-        ${formData.dailyInfo.image2 ? `<img src="${formData.dailyInfo.image2}" alt="Sahadan 2" />` : ""}
+        ${dailyImgs.map((src: string, i: number) => `<img src="${src}" alt="Sahadan ${i + 1}" />`).join("")}
       </div>` : ""}
     </div>
-  </div>
-  ` : ""}
+  </div>`
+  })()}
 
   <!-- BAKIM / NOTLAR -->
   ${formData.notes ? `

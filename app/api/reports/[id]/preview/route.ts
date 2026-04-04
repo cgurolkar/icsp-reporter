@@ -72,6 +72,13 @@ function formDataFromDbReport(data: { report: Record<string, unknown>; machines:
     dailyInfo: {
       notes: (r.daily_notes as string) ?? "",
       nextDayPlannedWork: (r.next_day_planned as string) ?? "",
+      // Prefer daily_images array (new), fall back to individual columns (legacy)
+      images: (() => {
+        const arr = Array.isArray(r.daily_images) ? r.daily_images as string[] : []
+        if (arr.length > 0) return arr
+        const legacy = [(r.daily_image1 as string) ?? "", (r.daily_image2 as string) ?? ""].filter(Boolean)
+        return legacy
+      })(),
       image1: (r.daily_image1 as string) ?? "",
       image2: (r.daily_image2 as string) ?? "",
     },

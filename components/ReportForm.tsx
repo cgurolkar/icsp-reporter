@@ -20,6 +20,7 @@ import Dialog from "@mui/material/Dialog"
 import DialogTitle from "@mui/material/DialogTitle"
 import DialogContent from "@mui/material/DialogContent"
 import DialogActions from "@mui/material/DialogActions"
+import CircularProgress from "@mui/material/CircularProgress"
 
 const steps = [
   "machine_selection",
@@ -76,6 +77,15 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
   const [reportMachineOptions, setReportMachineOptions] = useState<Machine[]>(AVAILABLE_MACHINES)
   const [draftSnack, setDraftSnack] = useState<{ open: boolean; savedAt?: number }>({ open: false })
   const [draftRestoreSnack, setDraftRestoreSnack] = useState(false)
+  // Two-step save/email flow
+  const [showSaveConfirmDialog, setShowSaveConfirmDialog] = useState(false)
+  const [showEmailConfirmDialog, setShowEmailConfirmDialog] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isSendingEmail, setIsSendingEmail] = useState(false)
+  const [savedReportId, setSavedReportId] = useState<number | null>(null)
+  const [savedRecipients, setSavedRecipients] = useState<string[]>([])
+  // Snapshot of formData at time of save (needed for email step)
+  const [savedFormData, setSavedFormData] = useState<FormData | null>(null)
   const { t } = useLanguage()
   const stepsToUse = isRestricted ? stepsRestricted : steps
 
@@ -309,37 +319,69 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
 
   const handleBack = () => setActiveStep((prev) => Math.max(0, prev - 1))
 
-  const handleSubmit = async () => {
+  // Step 1: "Kaydet" butonuna basıldığında onay dialogu göster
+  const handleSubmit = () => {
+    setShowSaveConfirmDialog(true)
+  }
+
+  // Step 2: Onay sonrası raporu kaydet (e-posta olmadan)
+  const handleConfirmSave = async () => {
+    setShowSaveConfirmDialog(false)
+    setIsSaving(true)
     try {
       const response = await fetch("/api/send-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, skipEmail: true }),
       })
       const data = response.ok ? await response.json().catch(() => ({})) : null
-      if (response.ok) {
-        let message = "Kaydedildi. PDF oluşturuldu ve e-posta gönderildi."
-        if (data?.emailSent && data?.recipients?.length) {
-          message += `\nE-posta gönderildi: ${data.recipients.join(", ")}`
-        } else if (data?.recipients?.length && !data?.emailSent) {
-          if (data?.emailError) {
-            message = "Kaydedildi. PDF oluşturuldu. E-posta gönderilemedi: " + data.emailError
-          } else {
-            message = "Kaydedildi. PDF oluşturuldu. E-posta listesi tanımlı değil."
-          }
-        }
-        // Başarılı submit: taslağı temizle
+      if (response.ok && data?.success) {
+        // Başarılı kayıt: taslağı temizle
         clearDraftFn()
         clearDraft(siteIdForDraft)
-        alert(message)
+        setSavedReportId(data.reportId ?? null)
+        setSavedRecipients(Array.isArray(data.recipients) ? data.recipients : [])
+        setSavedFormData(formData)
+        // Formu sıfırla
         setFormData(initialFormData)
         setActiveStep(0)
+        // E-posta onay dialogunu göster
+        setShowEmailConfirmDialog(true)
       } else {
-        alert(t("error_sending_report"))
+        alert(data?.error || t("error_sending_report"))
       }
     } catch (error) {
-      console.error("Error sending report:", error)
+      console.error("Error saving report:", error)
       alert(t("error_sending_report"))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  // Step 3: E-posta gönder
+  const handleConfirmEmail = async () => {
+    setShowEmailConfirmDialog(false)
+    if (!savedReportId || !savedFormData) return
+    setIsSendingEmail(true)
+    try {
+      const response = await fetch("/api/send-report/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportId: savedReportId, formData: savedFormData }),
+      })
+      const data = response.ok ? await response.json().catch(() => ({})) : null
+      if (data?.emailSent) {
+        alert(`E-posta gönderildi: ${(data.recipients ?? []).join(", ")}`)
+      } else {
+        alert(data?.error || data?.emailError || "E-posta gönderilemedi.")
+      }
+    } catch (error) {
+      console.error("Error sending email:", error)
+      alert("E-posta gönderilemedi.")
+    } finally {
+      setIsSendingEmail(false)
+      setSavedReportId(null)
+      setSavedFormData(null)
     }
   }
 
@@ -734,6 +776,68 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowPrevDayPlannedDialog(false)} variant="contained">Tamam</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Adım 1: Kaydet onayı */}
+      <Dialog open={showSaveConfirmDialog} onClose={() => !isSaving && setShowSaveConfirmDialog(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>Raporu Kaydet</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Raporu kaydetmek istiyor musunuz?
+          </Typography>
+          <Typography variant="body2" sx={{ color: "text.secondary", mt: 1 }}>
+            Kaydettikten sonra e-posta göndermek isteyip istemediğiniz sorulacak.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setShowSaveConfirmDialog(false)} disabled={isSaving}>İptal</Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmSave}
+            disabled={isSaving}
+            sx={{ background: "var(--icsp-lacivert)", minWidth: 120 }}
+          >
+            {isSaving ? <CircularProgress size={20} color="inherit" /> : "Evet, Kaydet"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Adım 2: E-posta gönder onayı */}
+      <Dialog open={showEmailConfirmDialog} onClose={() => !isSendingEmail && setShowEmailConfirmDialog(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>✅ Rapor Kaydedildi</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontWeight: 500, mb: 1 }}>
+            Rapor başarıyla kaydedildi.
+          </Typography>
+          {savedRecipients.length > 0 ? (
+            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+              E-posta alıcıları: <strong>{savedRecipients.join(", ")}</strong>
+            </Typography>
+          ) : (
+            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+              Tanımlı e-posta alıcısı bulunamadı.
+            </Typography>
+          )}
+          <Typography variant="body2" sx={{ mt: 1.5 }}>
+            Raporu e-posta ile göndermek ister misiniz?
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => { setShowEmailConfirmDialog(false); setSavedReportId(null); setSavedFormData(null) }}
+            disabled={isSendingEmail}
+          >
+            Hayır, Gönderme
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmEmail}
+            disabled={isSendingEmail || savedRecipients.length === 0}
+            sx={{ background: "var(--icsp-lacivert)", minWidth: 140 }}
+          >
+            {isSendingEmail ? <CircularProgress size={20} color="inherit" /> : "Evet, E-posta Gönder"}
+          </Button>
         </DialogActions>
       </Dialog>
     </Container>

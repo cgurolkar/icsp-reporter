@@ -85,6 +85,9 @@ async function _doInitializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'work_reports' AND column_name = 'next_day_planned') THEN
           ALTER TABLE work_reports ADD COLUMN next_day_planned TEXT;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'work_reports' AND column_name = 'daily_images') THEN
+          ALTER TABLE work_reports ADD COLUMN daily_images JSONB DEFAULT '[]';
+        END IF;
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'daily_* columns: %', SQLERRM;
       END $$
     `)
@@ -648,8 +651,8 @@ export async function saveWorkReport(reportData: any) {
         total_completed_piles, remaining_piles, steel_lowered_piles, concrete_poured,
         engineer_count, foreman_count, operator_count, oiler_count, welder_count, other_count, personnel_total,
         crane_count, loader_count, truck_count, pickup_count, car_count, service_count, vehicles_total,
-        daily_fuel_usage, expenses, pile_details, notes, daily_notes, daily_image1, daily_image2, next_day_planned
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)
+        daily_fuel_usage, expenses, pile_details, notes, daily_notes, daily_image1, daily_image2, next_day_planned, daily_images
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40)
       RETURNING id
     `, [
       reportData.date,
@@ -691,6 +694,7 @@ export async function saveWorkReport(reportData: any) {
       reportData.dailyImage1 ?? null,
       reportData.dailyImage2 ?? null,
       reportData.nextDayPlanned ?? null,
+      JSON.stringify(Array.isArray(reportData.dailyImages) ? reportData.dailyImages : []),
     ])
 
     const reportId = result.rows[0].id

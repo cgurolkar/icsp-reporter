@@ -19,6 +19,8 @@ export async function POST(request: NextRequest) {
   }
   try {
     const raw = await request.json()
+    // skipEmail: true → save but don't send email (two-step flow)
+    const skipEmail = raw.skipEmail === true
     // Normalize to avoid undefined access and "Failed to generate report"
     const basicInfo = raw.basicInfo ?? {}
     const machineSelection = raw.machineSelection ?? {}
@@ -137,8 +139,18 @@ export async function POST(request: NextRequest) {
       pileDetails: formData.pileDetails,
       notes: formData.notes,
       dailyNotes: formData.dailyInfo?.notes ?? null,
-      dailyImage1: (formData.dailyInfo?.image1 && String(formData.dailyInfo.image1).startsWith("data:")) ? formData.dailyInfo.image1 : null,
-      dailyImage2: (formData.dailyInfo?.image2 && String(formData.dailyInfo.image2).startsWith("data:")) ? formData.dailyInfo.image2 : null,
+      ...((): { dailyImage1: string | null; dailyImage2: string | null; dailyImages: string[] } => {
+        // Support both new images[] array and legacy image1/image2 fields
+        const imgs: string[] = Array.isArray(formData.dailyInfo?.images)
+          ? formData.dailyInfo.images.filter((s: unknown) => typeof s === "string" && s.startsWith("data:"))
+          : [formData.dailyInfo?.image1, formData.dailyInfo?.image2]
+              .filter((s): s is string => typeof s === "string" && s.startsWith("data:"))
+        return {
+          dailyImage1: imgs[0] ?? null,
+          dailyImage2: imgs[1] ?? null,
+          dailyImages: imgs,
+        }
+      })(),
       nextDayPlanned: (formData.dailyInfo?.nextDayPlannedWork && String(formData.dailyInfo.nextDayPlannedWork).trim()) ? String(formData.dailyInfo.nextDayPlannedWork).trim() : null,
       selectedMachine: formData.machineSelection.selectedMachine,
       additionalMachines: formData.machineSelection.additionalMachines,
@@ -249,6 +261,18 @@ export async function POST(request: NextRequest) {
       fs.writeFileSync(filePath, fullHtml, "utf-8")
     } catch (saveErr) {
       console.warn("Report HTML save to disk failed:", saveErr)
+    }
+
+    // If skipEmail flag is set, return early without sending email
+    if (skipEmail) {
+      return NextResponse.json({
+        success: true,
+        message: "Rapor kaydedildi.",
+        reportId,
+        recipients: settings.emails,
+        emailSent: false,
+        skipped: true,
+      })
     }
 
     let emailSent = false
