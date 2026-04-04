@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect, useRef } from "react"
 import {
@@ -99,32 +99,26 @@ export default function IdariBelgelerPage() {
       alert("Dosya 5MB'dan küçük olmalı.")
       return
     }
-    const reader = new FileReader()
-    reader.onload = async () => {
-      const base64 = reader.result as string
-      setSaving(true)
-      const res = await fetch(`/api/idari/personel/${selectedPersonelId}/belgeler`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          belge_tipi: form.belge_tipi,
-          gecerlilik_tarihi: form.gecerlilik_tarihi || null,
-          evrak_base64: base64,
-        }),
-      })
-      setSaving(false)
-      if (res.ok) {
-        setDialogOpen(false)
-        setForm({ belge_tipi: "", gecerlilik_tarihi: "" })
-        input.value = ""
-        const list = await fetch(`/api/idari/personel/${selectedPersonelId}/belgeler`).then((r) => (r.ok ? r.json() : []))
-        setBelgeler(list)
-      } else {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || "Yüklenemedi.")
-      }
+    setSaving(true)
+    const formData = new FormData()
+    formData.append("belge_tipi", form.belge_tipi)
+    if (form.gecerlilik_tarihi) formData.append("gecerlilik_tarihi", form.gecerlilik_tarihi)
+    formData.append("file", file)
+    const res = await fetch(`/api/idari/personel/${selectedPersonelId}/belgeler`, {
+      method: "POST",
+      body: formData,
+    })
+    setSaving(false)
+    if (res.ok) {
+      setDialogOpen(false)
+      setForm({ belge_tipi: "", gecerlilik_tarihi: "" })
+      input.value = ""
+      const list = await fetch(`/api/idari/personel/${selectedPersonelId}/belgeler`).then((r) => (r.ok ? r.json() : []))
+      setBelgeler(list)
+    } else {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error || "Yüklenemedi.")
     }
-    reader.readAsDataURL(file)
   }
 
   const isGecikmis = (tarih: string | null) => {

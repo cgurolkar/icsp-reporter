@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
@@ -131,30 +131,25 @@ export default function IdariPersonelDetailPage() {
       alert("Dosya 5MB'dan küçük olmalı.")
       return
     }
-    const reader = new FileReader()
-    reader.onload = async () => {
-      setBelgeSaving(true)
-      const res = await fetch(`/api/idari/personel/${id}/belgeler`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          belge_tipi: belgeForm.belge_tipi,
-          gecerlilik_tarihi: belgeForm.gecerlilik_tarihi || null,
-          evrak_base64: reader.result,
-        }),
-      })
-      setBelgeSaving(false)
-      if (res.ok) {
-        setBelgeDialogOpen(false)
-        setBelgeForm({ belge_tipi: "", gecerlilik_tarihi: "" })
-        e.target.value = ""
-        loadPersonel()
-      } else {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || "Yüklenemedi.")
-      }
+    setBelgeSaving(true)
+    const formData = new FormData()
+    formData.append("belge_tipi", belgeForm.belge_tipi)
+    if (belgeForm.gecerlilik_tarihi) formData.append("gecerlilik_tarihi", belgeForm.gecerlilik_tarihi)
+    formData.append("file", file)
+    const res = await fetch(`/api/idari/personel/${id}/belgeler`, {
+      method: "POST",
+      body: formData,
+    })
+    setBelgeSaving(false)
+    if (res.ok) {
+      setBelgeDialogOpen(false)
+      setBelgeForm({ belge_tipi: "", gecerlilik_tarihi: "" })
+      e.target.value = ""
+      loadPersonel()
+    } else {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error || "Yüklenemedi.")
     }
-    reader.readAsDataURL(file)
   }
 
   const handleAddAtama = async () => {

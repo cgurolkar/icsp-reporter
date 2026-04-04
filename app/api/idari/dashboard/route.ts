@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
 
     // Yaklaşan / süresi dolan belge uyarıları
     const uyariRes = await client.query(
-      `SELECT COUNT(*) AS cnt FROM personel_belgeler
+      `SELECT COUNT(*) AS cnt FROM personel_belgeleri
        WHERE gecerlilik_tarihi IS NOT NULL AND gecerlilik_tarihi <= CURRENT_DATE + INTERVAL '30 days'`
     )
     const uyariSayisi = parseInt(uyariRes.rows[0]?.cnt ?? "0", 10)
