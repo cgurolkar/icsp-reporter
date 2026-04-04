@@ -34,7 +34,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error: `SMTP bağlantı doğrulaması başarısız: ${verify.error}. 587 kullanın (SMTP_SECURE=false). Sertifika host ile uyuşmuyorsa .env: SMTP_TLS_SERVERNAME=natrohost.com. Şifrede @ vb. için SMTP_PASSWORD="...".`,
+        error:
+          "SMTP bağlantı / TLS doğrulaması başarısız. Natro/kurumsaleposta: SMTP_TLS_SERVERNAME=natrohost.com; Docker kullanıyorsanız compose içinde bu değişkeni geçirin. 587 + SMTP_SECURE=false veya 465 + SMTP_SECURE=true deneyin.",
+        detail: verify.error,
       },
       { status: 500 },
     )
@@ -46,6 +48,9 @@ export async function POST(request: NextRequest) {
   if (result.sent) {
     return NextResponse.json({ ok: true, message: `Test e-postası ${to} adresine gönderildi.` })
   } else {
-    return NextResponse.json({ ok: false, error: result.error || "Gönderme başarısız." }, { status: 500 })
+    return NextResponse.json(
+      { ok: false, error: "Test e-postası gönderilemedi.", detail: result.error || undefined },
+      { status: 500 },
+    )
   }
 }

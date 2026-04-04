@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Günlük Çalışma Raporu — 2026-04-04</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm 14mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #1e293b; background: #fff; line-height: 1.4; }
+
+    /* HEADER */
+    .header { background: linear-gradient(135deg, #1a237e 0%, #283593 100%); color: #fff; padding: 14px 18px; border-radius: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+    .header-left .title { font-size: 17px; font-weight: 700; letter-spacing: 0.5px; }
+    .header-left .subtitle { font-size: 11px; opacity: 0.8; margin-top: 2px; }
+    .header-right { text-align: right; }
+    .header-right .date { font-size: 13px; font-weight: 600; }
+    .header-right .project { font-size: 11px; opacity: 0.85; margin-top: 3px; }
+
+    /* SECTION */
+    .section { margin-bottom: 10px; }
+    .section-header { display: flex; align-items: center; gap: 6px; background: #1a237e; color: #fff; padding: 5px 10px; border-radius: 4px 4px 0 0; font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; }
+    .section-body { border: 1px solid #c7d2e8; border-top: none; border-radius: 0 0 4px 4px; background: #fff; padding: 8px; }
+
+    /* STAT CARDS */
+    .stat-grid { display: grid; gap: 6px; }
+    .stat-grid-4 { grid-template-columns: repeat(4, 1fr); }
+    .stat-grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .stat-grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .stat-card { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; text-align: center; background: #f8fafc; }
+    .stat-card.highlight { border-color: #1a237e; background: #eef2ff; }
+    .stat-card.green { border-color: #16a34a; background: #f0fdf4; }
+    .stat-card.orange { border-color: #d97706; background: #fffbeb; }
+    .stat-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; font-weight: 600; margin-bottom: 3px; }
+    .stat-value { font-size: 18px; font-weight: 800; color: #1a237e; line-height: 1; }
+    .stat-card.green .stat-value { color: #16a34a; }
+    .stat-card.orange .stat-value { color: #d97706; }
+    .stat-unit { font-size: 9px; color: #94a3b8; margin-top: 2px; }
+
+    /* TABLES */
+    table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+    th { background: #e8eaf6; color: #1a237e; font-weight: 700; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; padding: 5px 7px; text-align: center; border: 1px solid #c7d2e8; }
+    td { padding: 5px 7px; border: 1px solid #e2e8f0; vertical-align: middle; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    .td-center { text-align: center; font-weight: 600; }
+    .td-total { background: #e8eaf6 !important; font-weight: 700; text-align: center; color: #1a237e; }
+
+    /* PROGRESS BAR */
+    .progress-wrap { margin: 6px 0 0; }
+    .progress-label { display: flex; justify-content: space-between; font-size: 9px; color: #64748b; margin-bottom: 3px; }
+    .progress-bar { height: 8px; background: #e2e8f0; border-radius: 99px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #16a34a, #22c55e); border-radius: 99px; transition: width 0.3s; }
+
+    /* TWO COLUMN */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    /* NOTES */
+    .notes-box { border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px; min-height: 36px; background: #fafbff; white-space: pre-wrap; color: #334155; font-size: 10.5px; line-height: 1.5; }
+    .notes-box.orange { border-color: #fde68a; background: #fffbeb; }
+
+    /* IMAGES */
+    .img-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .img-row img { max-width: 240px; max-height: 160px; object-fit: contain; border: 1px solid #e2e8f0; border-radius: 4px; }
+
+    /* MACHINE TAG */
+    .machine-tag { display: inline-block; background: #1a237e; color: #fff; padding: 2px 8px; border-radius: 99px; font-size: 9px; font-weight: 700; letter-spacing: 0.3px; }
+    .machine-tag.secondary { background: #475569; }
+
+    /* FOOTER */
+    .footer { margin-top: 14px; padding-top: 8px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; font-size: 9px; color: #94a3b8; }
+
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .page { page-break-after: always; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-left">
+      <div class="title">GÜNLÜK ÇALIŞMA RAPORU</div>
+      <div class="subtitle">Daily Work Report</div>
+    </div>
+    <div class="header-right">
+      <div class="date">4 Nisan 2026 Cumartesi</div>
+      <div class="project">North Light Shaqlawa</div>
+    </div>
+  </div>
+
+  <!-- MAKİNE + ÜRETİM ÖZET STATS -->
+  <div style="margin-bottom:8px;padding:6px 10px;border:1px solid #c7d2e8;border-radius:6px;background:#f8fafc;display:flex;gap:12px;flex-wrap:wrap;">
+    <div style="font-size:10px;color:#475569;"><strong>İşe başlama tarihi:</strong> Sun Apr 13</div>
+    <div style="font-size:10px;color:#475569;"><strong>Geçen gün:</strong> —</div>
+    
+    
+    
+  </div>
+  <div class="stat-grid stat-grid-4" style="margin-bottom:10px;">
+    <div class="stat-card highlight">
+      <div class="stat-label">Günlük Kazık</div>
+      <div class="stat-value">—</div>
+      <div class="stat-unit">adet</div>
+    </div>
+    <div class="stat-card highlight">
+      <div class="stat-label">Toplam İmalat</div>
+      <div class="stat-value">—</div>
+      <div class="stat-unit">metre</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Tamamlanan</div>
+      <div class="stat-value">—</div>
+      <div class="stat-unit">kazık</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Kalan Kazık</div>
+      <div class="stat-value">—</div>
+      <div class="stat-unit">adet</div>
+    </div>
+  </div>
+
+  
+
+  <div class="two-col">
+    <!-- SOL KOLON -->
+    <div>
+      <!-- MAKİNE BİLGİLERİ -->
+      <div class="section">
+        <div class="section-header">🔧 Makine Bilgileri</div>
+        <div class="section-body">
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;">
+            <span class="machine-tag">SANY SR235</span>
+            
+          </div>
+          <table>
+                <thead><tr><th>Makine</th><th>İmalat (m)</th><th>Boş Foraj</th><th>Ön Foraj</th><th>Beton</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td style="font-weight:600;">SANY SR235</td>
+                    <td class="td-center" style="font-weight:700;color:#1a237e;">—</td>
+                    <td class="td-center">0</td>
+                    <td class="td-center">0</td>
+                    <td class="td-center">—</td>
+                  </tr>
+                  
+                </tbody>
+              </table>
+        </div>
+      </div>
+
+      <!-- ÜRETİM ÖZETİ -->
+      <div class="section">
+        <div class="section-header">📊 Üretim Özeti</div>
+        <div class="section-body">
+          <table>
+            <tbody>
+              <tr><td style="color:#475569;font-weight:600;">Toplam İmalat</td><td class="td-center" style="color:#1a237e;font-weight:700;">— m</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Toplam Kazık</td><td class="td-center" style="font-weight:700;">— adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Günlük Yapılan</td><td class="td-center" style="color:#16a34a;font-weight:700;">— adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Tamamlanan (Kümülatif)</td><td class="td-center" style="font-weight:700;">— adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Kalan Kazık</td><td class="td-center" style="color:#d97706;font-weight:700;">— adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Demir İndirilen</td><td class="td-center" style="font-weight:700;">— adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Beton Dökülen</td><td class="td-center" style="font-weight:700;">— adet</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SAĞ KOLON -->
+    <div>
+      <!-- PERSONEL -->
+      <div class="section">
+        <div class="section-header">👷 Personel</div>
+        <div class="section-body">
+          <div class="stat-grid stat-grid-4" style="margin-bottom:6px;">
+            <div class="stat-card"><div class="stat-label">Müh.</div><div class="stat-value" style="font-size:16px;">0</div></div>
+            <div class="stat-card"><div class="stat-label">Formen</div><div class="stat-value" style="font-size:16px;">0</div></div>
+            <div class="stat-card"><div class="stat-label">Operatör</div><div class="stat-value" style="font-size:16px;">0</div></div>
+            <div class="stat-card highlight"><div class="stat-label">Toplam</div><div class="stat-value" style="font-size:16px;">0</div></div>
+          </div>
+          <div class="stat-grid stat-grid-3">
+            <div class="stat-card"><div class="stat-label">Yağcı</div><div class="stat-value" style="font-size:14px;">0</div></div>
+            <div class="stat-card"><div class="stat-label">Kaynakçı</div><div class="stat-value" style="font-size:14px;">0</div></div>
+            <div class="stat-card"><div class="stat-label">Diğer</div><div class="stat-value" style="font-size:14px;">0</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ARAÇ GEREÇ -->
+      <div class="section">
+        <div class="section-header">🚛 Araç — Gereç</div>
+        <div class="section-body">
+          <table>
+            <thead><tr><th>Vinç</th><th>Loader</th><th>Kamyon</th><th>Pick-up</th><th>Binek</th><th>Servis</th><th>Toplam</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="td-center">0</td>
+                <td class="td-center">0</td>
+                <td class="td-center">0</td>
+                <td class="td-center">0</td>
+                <td class="td-center">0</td>
+                <td class="td-center">0</td>
+                <td class="td-total">0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- YAKIT -->
+      
+      <div class="section">
+        <div class="section-header">⛽ Yakıt</div>
+        <div class="section-body">
+          <table>
+            <thead><tr><th>Makine</th><th>Devir</th><th>Gelen</th><th>Kalan</th><th>Kullanılan</th></tr></thead>
+            <tbody>
+              
+              <tr>
+                <td style="font-weight:600;">SANY SR235</td>
+                <td class="td-center">—</td>
+                <td class="td-center">—</td>
+                <td class="td-center">—</td>
+                <td class="td-center" style="font-weight:700;color:#1a237e;">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+    </div>
+  </div>
+
+  <!-- OPERATÖR GİRİŞLERİ -->
+  
+
+  <!-- KAZIK DETAYLARI -->
+  
+
+  <!-- GÜNLÜK BİLGİLER -->
+  
+
+  <!-- BAKIM / NOTLAR -->
+  
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <span>ICSP Reporter — Günlük Çalışma Raporu</span>
+    <span>2026-04-04 · North Light Shaqlawa</span>
+  </div>
+
+</div>
+</body>
+</html><!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Harcamalar — 2026-04-04</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm 14mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #1e293b; background: #fff; line-height: 1.4; }
+    .header { background: linear-gradient(135deg, #1a237e 0%, #283593 100%); color: #fff; padding: 14px 18px; border-radius: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+    .header-left .title { font-size: 17px; font-weight: 700; }
+    .header-left .subtitle { font-size: 11px; opacity: 0.8; margin-top: 2px; }
+    .header-right { text-align: right; font-size: 12px; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+    th { background: #e8eaf6; color: #1a237e; font-weight: 700; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; padding: 6px 8px; text-align: center; border: 1px solid #c7d2e8; }
+    td { padding: 5px 8px; border: 1px solid #e2e8f0; vertical-align: middle; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    .total-row td { background: #e8eaf6 !important; font-weight: 700; font-size: 12px; color: #1a237e; }
+    .amount { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .cat-badge { display: inline-block; padding: 1px 7px; border-radius: 99px; font-size: 9px; font-weight: 700; }
+    .cat-santiye { background: #dbeafe; color: #1d4ed8; }
+    .cat-makine { background: #fce7f3; color: #9d174d; }
+    .cat-personel { background: #d1fae5; color: #065f46; }
+    .cat-yakit { background: #fef3c7; color: #92400e; }
+    .cat-diger { background: #f1f5f9; color: #475569; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 6px; margin-bottom: 10px; }
+    .summary-card { border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 9px; text-align: center; background: #f8fafc; }
+    .summary-label { font-size: 9px; color: #64748b; font-weight: 600; text-transform: uppercase; margin-bottom: 2px; }
+    .summary-value { font-size: 13px; font-weight: 700; color: #1a237e; }
+    .footer { margin-top: 14px; padding-top: 8px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 9px; color: #94a3b8; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-left">
+      <div class="title">HARCAMALAR</div>
+      <div class="subtitle">Expenses</div>
+    </div>
+    <div class="header-right">
+      <div>4 Nisan 2026</div>
+      <div style="opacity:0.85;font-weight:400;margin-top:2px;">North Light Shaqlawa</div>
+    </div>
+  </div>
+
+  
+
+  <table>
+    <thead>
+      <tr><th style="width:6%;">#</th><th style="width:16%;">Kategori</th><th>Açıklama</th><th style="width:22%;text-align:right;">Tutar (IQD)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:20px;">Harcama kaydedilmemiş</td></tr>
+      
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <span>ICSP Reporter — Harcama Raporu</span>
+    <span>2026-04-04</span>
+  </div>
+
+</body>
+</html>

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import pool from "@/lib/database"
+import pool, { initializeDatabase } from "@/lib/database"
 import { verifyPassword, hashPassword, createToken, setSessionCookie, type Role } from "@/lib/auth"
 
 const ALLOWED_ROLES: Role[] = ["super_admin", "admin", "manager", "user", "personel", "operator"]
@@ -26,6 +26,9 @@ export async function POST(request: NextRequest) {
     if (!username || !password) {
       return NextResponse.json({ error: "Kullanıcı adı ve şifre gerekli." }, { status: 400 })
     }
+
+    // Login sayfası DB init tetiklemez; eksik sütunlar (must_change_password vb.) olunca SELECT patlıyordu
+    await initializeDatabase()
 
     const client = await pool.connect()
     let row: { id: number; username: string; password_hash: string; role: string; site_id: number | null; must_change_password: boolean; module_permissions: Record<string, string> | null } | null = null

@@ -427,14 +427,24 @@ function AdminPanel() {
     setTestEmailMsg(null)
     try {
       const res = await fetch("/api/admin/test-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) })
-      const data = await res.json()
-      if (data.ok) {
+      let data: { ok?: boolean; message?: string; error?: string; detail?: string } = {}
+      try {
+        data = await res.json()
+      } catch {
+        setTestEmailMsg({ ok: false, text: `Sunucu yanıtı okunamadı (HTTP ${res.status}).` })
+        return
+      }
+      if (res.ok && data.ok) {
         setTestEmailMsg({ ok: true, text: data.message || "Test e-postası gönderildi." })
       } else {
-        setTestEmailMsg({ ok: false, text: data.error || "Gönderilemedi." })
+        const parts = [data.error, data.detail].filter((s): s is string => Boolean(s && String(s).trim()))
+        setTestEmailMsg({
+          ok: false,
+          text: parts.length > 0 ? parts.join(" — ") : `İstek başarısız (HTTP ${res.status}).`,
+        })
       }
     } catch {
-      setTestEmailMsg({ ok: false, text: "Bağlantı hatası." })
+      setTestEmailMsg({ ok: false, text: "İstek gönderilemedi (ağ veya tarayıcı)." })
     } finally {
       setTestEmailLoading(false)
     }
