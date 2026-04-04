@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import fs from "fs"
 import path from "path"
-import { saveWorkReport, initializeDatabase, getSiteReportEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativeTotalProduction } from "@/lib/database"
+import { saveWorkReport, initializeDatabase, getMergedNotificationEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativeTotalProduction } from "@/lib/database"
 import { isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
 import { getSessionFromRequest, canDoDataEntry } from "@/lib/auth"
@@ -227,11 +227,8 @@ export async function POST(request: NextRequest) {
       console.warn("Notification publish failed:", notifErr)
     }
 
-    // E-posta listesi: önce şantiye bazlı, yoksa varsayılan
-    const siteEmails = await getSiteReportEmails(siteIdForDb)
-    const settings = siteEmails.length > 0
-      ? { emails: siteEmails, users: [], customFields: [] }
-      : await getDefaultEmailSettings()
+    // E-posta: SMTP_USER + global admin listesi (Postgres) + şantiye email_list
+    const reportRecipients = await getMergedNotificationEmails({ siteId: siteIdForDb })
 
     // Rapor HTML içeriği (e-posta gövdesi / yazdırma için) — hesaplanan kalan/günlük kazık kullanılsın
     const mainReportContent = generatePDFMainReport(formData, {
@@ -269,7 +266,7 @@ export async function POST(request: NextRequest) {
         success: true,
         message: "Rapor kaydedildi.",
         reportId,
-        recipients: settings.emails,
+        recipients: reportRecipients,
         emailSent: false,
         skipped: true,
       })
@@ -278,7 +275,7 @@ export async function POST(request: NextRequest) {
     let emailSent = false
     let emailError: string | undefined
 
-    if (settings.emails.length > 0 && isEmailSendEnabled()) {
+    if (reportRecipients.length > 0 && isEmailSendEnabled()) {
       // Harcama toplamını hesapla
       const expenseTotal = Array.isArray(formData.expenses)
         ? formData.expenses.reduce((s: number, e: { amount?: string | number }) => s + (parseFloat(String(e.amount ?? "0")) || 0), 0)
@@ -325,22 +322,22 @@ export async function POST(request: NextRequest) {
       })
 
       const result = await sendReportEmail({
-        to: settings.emails,
+        to: reportRecipients,
         subject: emailSubject,
         html: emailHtml,
       })
       emailSent = result.sent
       emailError = result.error
       if (result.sent) {
-        console.log(`Report ${reportId}: email sent to ${settings.emails.join(", ")}`)
+        console.log(`Report ${reportId}: email sent to ${reportRecipients.join(", ")}`)
       } else if (result.error) {
         console.warn(`Report ${reportId}: email failed -`, result.error)
       }
     } else {
-      if (settings.emails.length === 0) {
+      if (reportRecipients.length === 0) {
         console.log(`Report ${reportId}: no recipients configured, email skipped`)
       } else {
-        console.log(`Report ${reportId}: SMTP not configured (ENABLE_EMAIL_SEND / SMTP_*), email skipped. Recipients would be: ${settings.emails.join(", ")}`)
+        console.log(`Report ${reportId}: SMTP not configured (ENABLE_EMAIL_SEND / SMTP_*), email skipped. Recipients would be: ${reportRecipients.join(", ")}`)
       }
     }
 
@@ -373,7 +370,7 @@ export async function POST(request: NextRequest) {
       success: true,
       message: "Report generated and saved successfully",
       reportId: reportId,
-      recipients: settings.emails,
+      recipients: reportRecipients,
       emailSent,
       emailError: emailError ?? undefined,
       operatorEmailSent,
@@ -388,14 +385,6 @@ export async function POST(request: NextRequest) {
       { error: "Failed to generate report", detail: message },
       { status: 500 }
     )
-  }
-}
-
-async function getDefaultEmailSettings() {
-  return {
-    emails: ["admin@company.com", "manager@company.com"],
-    users: ["admin"],
-    customFields: [],
   }
 }
 

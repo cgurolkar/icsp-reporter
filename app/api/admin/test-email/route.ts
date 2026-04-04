@@ -1,11 +1,13 @@
 /**
  * E-posta yapılandırmasını test eder.
  * POST /api/admin/test-email
- * Body: { to?: string }  — boşsa SMTP_USER'a gönderir
+ * Body: { to?: string }  — isteğe bağlı ek alıcı
+ * Alıcılar: SMTP_USER + global_admin_settings (Postgres) (+ body.to), tekilleştirilmiş.
  */
 
 import { type NextRequest, NextResponse } from "next/server"
 import { getSessionFromRequest, canManageIdariCentral } from "@/lib/auth"
+import { getMergedNotificationEmails } from "@/lib/database"
 import { isEmailSendEnabled, sendReportEmail, verifySmtpConnection } from "@/lib/email"
 import { buildTestEmail } from "@/lib/email-templates"
 
@@ -22,11 +24,20 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}))
-  const smtpUser = process.env.SMTP_USER || ""
-  const to = body.to?.trim() || smtpUser
+  const extra = body.to?.trim()
+  const recipients = await getMergedNotificationEmails({
+    siteId: null,
+    extraRecipients: extra ? [extra] : [],
+  })
 
-  if (!to) {
-    return NextResponse.json({ ok: false, error: "Alıcı e-posta adresi belirtilmedi ve SMTP_USER tanımlı değil." }, { status: 400 })
+  if (recipients.length === 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Alıcı yok: SMTP_USER tanımlayın veya admin panelinde en az bir e-posta ekleyin.",
+      },
+      { status: 400 },
+    )
   }
 
   const verify = await verifySmtpConnection()
@@ -43,10 +54,14 @@ export async function POST(request: NextRequest) {
   }
 
   const { subject, html } = buildTestEmail()
-  const result = await sendReportEmail({ to: [to], subject, html })
+  const result = await sendReportEmail({ to: recipients, subject, html })
 
   if (result.sent) {
-    return NextResponse.json({ ok: true, message: `Test e-postası ${to} adresine gönderildi.` })
+    return NextResponse.json({
+      ok: true,
+      message: `Test e-postası gönderildi: ${recipients.join(", ")}`,
+      recipients,
+    })
   } else {
     return NextResponse.json(
       { ok: false, error: "Test e-postası gönderilemedi.", detail: result.error || undefined },

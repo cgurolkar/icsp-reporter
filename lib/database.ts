@@ -567,6 +567,22 @@ async function _doInitializeDatabase() {
       )
     `)
 
+    // Genel admin paneli ayarları (e-posta listesi vb.) — tek satır id=1
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS global_admin_settings (
+        id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+        emails JSONB NOT NULL DEFAULT '["admin@company.com", "manager@company.com"]'::jsonb,
+        users JSONB NOT NULL DEFAULT '["admin", "manager"]'::jsonb,
+        custom_fields JSONB NOT NULL DEFAULT '["Extra Field 1", "Extra Field 2"]'::jsonb,
+        total_piles VARCHAR(64) NOT NULL DEFAULT '100',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    await client.query(`
+      INSERT INTO global_admin_settings (id) VALUES (1)
+      ON CONFLICT (id) DO NOTHING
+    `)
+
     await seedIdariInitialData(client)
 
     // ---------- Performans indeksleri ----------
@@ -1514,6 +1530,113 @@ export async function getSiteReportEmails(siteId: number | null): Promise<string
     if (site?.email_list && Array.isArray(site.email_list)) return site.email_list as string[]
   }
   return []
+}
+
+export type GlobalAdminPanelSettings = {
+  emails: string[]
+  users: string[]
+  customFields: string[]
+  totalPiles: string
+}
+
+const GLOBAL_ADMIN_DEFAULTS: GlobalAdminPanelSettings = {
+  emails: ["admin@company.com", "manager@company.com"],
+  users: ["admin", "manager"],
+  customFields: ["Extra Field 1", "Extra Field 2"],
+  totalPiles: "100",
+}
+
+function parseJsonStringArray(val: unknown): string[] {
+  if (Array.isArray(val)) return val.map((x) => String(x).trim()).filter(Boolean)
+  if (val != null && typeof val === "object") return []
+  return []
+}
+
+function uniqueEmailAddresses(addresses: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of addresses) {
+    const t = String(raw ?? "").trim()
+    if (!t) continue
+    const k = t.toLowerCase()
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(t)
+  }
+  return out
+}
+
+export async function getGlobalAdminPanelSettings(): Promise<GlobalAdminPanelSettings> {
+  await initializeDatabase()
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `SELECT emails, users, custom_fields, total_piles FROM global_admin_settings WHERE id = 1`
+    )
+    const row = r.rows[0]
+    if (!row) {
+      return {
+        emails: [...GLOBAL_ADMIN_DEFAULTS.emails],
+        users: [...GLOBAL_ADMIN_DEFAULTS.users],
+        customFields: [...GLOBAL_ADMIN_DEFAULTS.customFields],
+        totalPiles: GLOBAL_ADMIN_DEFAULTS.totalPiles,
+      }
+    }
+    return {
+      emails: parseJsonStringArray(row.emails),
+      users: parseJsonStringArray(row.users),
+      customFields: parseJsonStringArray(row.custom_fields),
+      totalPiles: String(row.total_piles ?? GLOBAL_ADMIN_DEFAULTS.totalPiles),
+    }
+  } finally {
+    client.release()
+  }
+}
+
+export async function saveGlobalAdminPanelSettings(data: {
+  emails: string[]
+  users: string[]
+  customFields: string[]
+  totalPiles: string
+}): Promise<GlobalAdminPanelSettings> {
+  await initializeDatabase()
+  const client = await pool.connect()
+  try {
+    await client.query(
+      `INSERT INTO global_admin_settings (id, emails, users, custom_fields, total_piles, updated_at)
+       VALUES (1, $1::jsonb, $2::jsonb, $3::jsonb, $4, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET
+         emails = EXCLUDED.emails,
+         users = EXCLUDED.users,
+         custom_fields = EXCLUDED.custom_fields,
+         total_piles = EXCLUDED.total_piles,
+         updated_at = CURRENT_TIMESTAMP`,
+      [
+        JSON.stringify(data.emails.filter((e) => e?.trim())),
+        JSON.stringify(data.users.filter((u) => u?.trim())),
+        JSON.stringify(data.customFields.filter((f) => f?.trim())),
+        data.totalPiles,
+      ]
+    )
+    return await getGlobalAdminPanelSettings()
+  } finally {
+    client.release()
+  }
+}
+
+/**
+ * Rapor / günlük özet bildirimleri: SMTP_USER + global_admin_settings.emails + sites.email_list + isteğe bağlı ek adresler (tekilleştirilmiş).
+ */
+export async function getMergedNotificationEmails(options: {
+  siteId: number | null
+  extraRecipients?: string[]
+}): Promise<string[]> {
+  await initializeDatabase()
+  const smtp = process.env.SMTP_USER?.trim() || ""
+  const global = await getGlobalAdminPanelSettings()
+  const siteEmails = await getSiteReportEmails(options.siteId)
+  const extra = (options.extraRecipients ?? []).map((e) => String(e).trim()).filter(Boolean)
+  return uniqueEmailAddresses([smtp, ...global.emails, ...siteEmails, ...extra])
 }
 
 export async function getSuperAdminEmails(): Promise<string[]> {

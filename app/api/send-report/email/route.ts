@@ -4,16 +4,12 @@
  * Body: { reportId, formData }
  */
 import { type NextRequest, NextResponse } from "next/server"
-import { getSiteReportEmails, getSiteById, getOperatorEntriesBySiteAndDate, getCumulativeTotalProduction, getSuperAdminEmails } from "@/lib/database"
+import { getMergedNotificationEmails, getSiteById, getOperatorEntriesBySiteAndDate, getCumulativeTotalProduction, getSuperAdminEmails } from "@/lib/database"
 import { isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
 import { getSessionFromRequest, canDoDataEntry } from "@/lib/auth"
 import { buildReportNotificationEmail, buildOperatorReportEmail } from "@/lib/email-templates"
 import { detectReportAnomalies } from "@/lib/anomaly-detection"
-
-async function getDefaultEmailSettings() {
-  return { emails: ["admin@company.com", "manager@company.com"], users: ["admin"], customFields: [] }
-}
 
 export async function POST(request: NextRequest) {
   const session = await getSessionFromRequest(request)
@@ -74,13 +70,9 @@ export async function POST(request: NextRequest) {
     const dailyPileForDb = currentProductionSummary?.dailyPileCount?.trim() || (concretePouredSum ? String(concretePouredSum) : "")
     const totalPileForDb = currentProductionSummary?.totalPileCount?.trim() || dailyPileForDb
 
-    // E-posta listesi
-    const siteEmails = await getSiteReportEmails(siteIdForDb)
-    const settings = siteEmails.length > 0
-      ? { emails: siteEmails, users: [], customFields: [] }
-      : await getDefaultEmailSettings()
+    const reportRecipients = await getMergedNotificationEmails({ siteId: siteIdForDb })
 
-    if (settings.emails.length === 0) {
+    if (reportRecipients.length === 0) {
       return NextResponse.json({ success: false, error: "E-posta alıcısı tanımlı değil." })
     }
     if (!isEmailSendEnabled()) {
@@ -138,7 +130,7 @@ export async function POST(request: NextRequest) {
       reportUrl,
     })
 
-    const result = await sendReportEmail({ to: settings.emails, subject: emailSubject, html: emailHtml })
+    const result = await sendReportEmail({ to: reportRecipients, subject: emailSubject, html: emailHtml })
 
     // Operatör raporu ayrıca super admin'e
     if (operatorEntries.length > 0) {
@@ -158,7 +150,7 @@ export async function POST(request: NextRequest) {
       success: result.sent,
       emailSent: result.sent,
       emailError: result.error,
-      recipients: settings.emails,
+      recipients: reportRecipients,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

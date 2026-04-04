@@ -6,7 +6,7 @@
 
 import { type NextRequest, NextResponse } from "next/server"
 import { getSessionFromRequest, canManageIdariCentral } from "@/lib/auth"
-import { initializeDatabase, getWorkReportsFiltered, getAllSites } from "@/lib/database"
+import { initializeDatabase, getWorkReportsFiltered, getAllSites, getMergedNotificationEmails } from "@/lib/database"
 import { isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { buildDailySummaryEmail } from "@/lib/email-templates"
 import { detectDailyAnomalies } from "@/lib/anomaly-detection"
@@ -84,8 +84,8 @@ export async function POST(request: NextRequest) {
 
     const { subject, html } = buildDailySummaryEmail(summaryData)
 
-    // Alıcılar: istekten gelen > varsayılan admin listesi
-    const to = recipients.length > 0 ? recipients : ["admin@company.com"]
+    // SMTP_USER + Postgres global liste + şantiye yok; istekteki recipients ek alıcı (tekilleştirilir)
+    const to = await getMergedNotificationEmails({ siteId: null, extraRecipients: recipients })
 
     let emailSent = false
     let emailError: string | undefined
