@@ -1,6 +1,7 @@
 import tls from "node:tls"
 import nodemailer from "nodemailer"
 import type SMTPTransport from "nodemailer/lib/smtp-transport"
+import type { Attachment } from "nodemailer/lib/mailer"
 
 const getEnv = (key: string) => process.env[key]?.trim() ?? ""
 
@@ -91,11 +92,23 @@ export async function verifySmtpConnection(): Promise<{ ok: true } | { ok: false
   }
 }
 
+/** Tam raporu e-posta eki olarak (HTML; tarayıcıda açılıp PDF’e yazdırılabilir). */
+export function fullReportHtmlAttachment(reportId: number, dateYmd: string, fullHtml: string): Attachment {
+  const safe = (dateYmd || "").slice(0, 10).replace(/[^\d-]/g, "") || "tarih"
+  return {
+    filename: `gunluk-rapor-${reportId}-${safe}.html`,
+    content: Buffer.from(fullHtml, "utf-8"),
+    contentType: "text/html; charset=utf-8",
+  }
+}
+
 export interface SendReportEmailOptions {
   to: string[]
   subject: string
   html: string
   from?: string
+  /** Örn. tam rapor HTML (PDF yerine yazdırılabilir HTML; istemci: Yazdır → PDF) */
+  attachments?: Attachment[]
 }
 
 /**
@@ -109,13 +122,18 @@ export async function sendReportEmail(options: SendReportEmailOptions): Promise<
   }
 
   const from = options.from || getEnv("SMTP_FROM") || getEnv("SMTP_USER") || "rapor@localhost"
+  const recipients = options.to.map((a) => String(a).trim()).filter(Boolean)
+  const primary = recipients[0]
+  const bccRest = recipients.slice(1)
 
   try {
     await transporter.sendMail({
       from,
-      to: options.to.join(", "),
+      to: primary,
+      ...(bccRest.length > 0 ? { bcc: bccRest.join(", ") } : {}),
       subject: options.subject,
       html: options.html,
+      attachments: options.attachments,
     })
     return { sent: true }
   } catch (err) {

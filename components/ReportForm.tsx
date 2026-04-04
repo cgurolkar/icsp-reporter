@@ -84,8 +84,6 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
   const [isSendingEmail, setIsSendingEmail] = useState(false)
   const [savedReportId, setSavedReportId] = useState<number | null>(null)
   const [savedRecipients, setSavedRecipients] = useState<string[]>([])
-  // Snapshot of formData at time of save (needed for email step)
-  const [savedFormData, setSavedFormData] = useState<FormData | null>(null)
   const { t } = useLanguage()
   const stepsToUse = isRestricted ? stepsRestricted : steps
 
@@ -341,7 +339,6 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
         clearDraft(siteIdForDraft)
         setSavedReportId(data.reportId ?? null)
         setSavedRecipients(Array.isArray(data.recipients) ? data.recipients : [])
-        setSavedFormData(formData)
         // Formu sıfırla
         setFormData(initialFormData)
         setActiveStep(0)
@@ -361,13 +358,13 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
   // Step 3: E-posta gönder
   const handleConfirmEmail = async () => {
     setShowEmailConfirmDialog(false)
-    if (!savedReportId || !savedFormData) return
+    if (!savedReportId) return
     setIsSendingEmail(true)
     try {
       const response = await fetch("/api/send-report/email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reportId: savedReportId, formData: savedFormData }),
+        body: JSON.stringify({ reportId: savedReportId }),
       })
       const data = response.ok ? await response.json().catch(() => ({})) : null
       if (data?.emailSent) {
@@ -381,7 +378,6 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     } finally {
       setIsSendingEmail(false)
       setSavedReportId(null)
-      setSavedFormData(null)
     }
   }
 
@@ -825,7 +821,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button
-            onClick={() => { setShowEmailConfirmDialog(false); setSavedReportId(null); setSavedFormData(null) }}
+            onClick={() => { setShowEmailConfirmDialog(false); setSavedReportId(null) }}
             disabled={isSendingEmail}
           >
             Hayır, Gönderme

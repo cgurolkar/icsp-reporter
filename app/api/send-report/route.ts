@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import fs from "fs"
 import path from "path"
 import { saveWorkReport, initializeDatabase, getMergedNotificationEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativeTotalProduction } from "@/lib/database"
-import { isEmailSendEnabled, sendReportEmail } from "@/lib/email"
+import { fullReportHtmlAttachment, isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
 import { getSessionFromRequest, canDoDataEntry } from "@/lib/auth"
 import { buildReportNotificationEmail, buildOperatorReportEmail } from "@/lib/email-templates"
@@ -319,12 +319,14 @@ export async function POST(request: NextRequest) {
         dailyNotes: formData.dailyInfo?.notes,
         anomalies,
         reportUrl,
+        attachedFullReport: true,
       })
 
       const result = await sendReportEmail({
         to: reportRecipients,
         subject: emailSubject,
         html: emailHtml,
+        attachments: [fullReportHtmlAttachment(reportId, formData.basicInfo.date, fullHtml)],
       })
       emailSent = result.sent
       emailError = result.error

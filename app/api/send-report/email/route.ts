@@ -1,15 +1,26 @@
 /**
  * POST /api/send-report/email
- * E-posta gönderme — sadece email; rapor zaten kaydedilmiş olmalı.
- * Body: { reportId, formData }
+ * Rapor zaten kayıtlı olmalı. Rapor içeriği veritabanından okunur (küçük istek gövdesi, görseller kayıplı olmaz).
+ * Body: { reportId: number }
  */
 import { type NextRequest, NextResponse } from "next/server"
-import { getMergedNotificationEmails, getSiteById, getOperatorEntriesBySiteAndDate, getCumulativeTotalProduction, getSuperAdminEmails } from "@/lib/database"
-import { isEmailSendEnabled, sendReportEmail } from "@/lib/email"
+import {
+  getMergedNotificationEmails,
+  getSiteById,
+  getOperatorEntriesBySiteAndDate,
+  getCumulativeTotalProduction,
+  getSuperAdminEmails,
+  getWorkReportById,
+  initializeDatabase,
+} from "@/lib/database"
+import { fullReportHtmlAttachment, isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
-import { getSessionFromRequest, canDoDataEntry } from "@/lib/auth"
+import { canViewAllSites, canDoDataEntry, getSessionFromRequest } from "@/lib/auth"
 import { buildReportNotificationEmail, buildOperatorReportEmail } from "@/lib/email-templates"
 import { detectReportAnomalies } from "@/lib/anomaly-detection"
+import { formDataFromDbReport } from "@/lib/report-db-formdata"
+
+export const dynamic = "force-dynamic"
 
 export async function POST(request: NextRequest) {
   const session = await getSessionFromRequest(request)
@@ -17,58 +28,76 @@ export async function POST(request: NextRequest) {
   if (!canDoDataEntry(session.role)) return NextResponse.json({ error: "Yetkiniz yok." }, { status: 403 })
 
   try {
+    await initializeDatabase()
     const body = await request.json()
     const reportId: number = Number(body.reportId)
-    const raw = body.formData ?? {}
     if (!reportId || Number.isNaN(reportId)) {
       return NextResponse.json({ error: "Geçersiz rapor ID." }, { status: 400 })
     }
 
-    const basicInfo = raw.basicInfo ?? {}
-    const machineSelection = raw.machineSelection ?? {}
-    const fuel = raw.fuel ?? {}
-    const basicInfoMachines = Array.isArray(basicInfo.machines) ? basicInfo.machines : []
-    const additionalMachines = Array.isArray(machineSelection.additionalMachines) ? machineSelection.additionalMachines : []
-    const fuelMachines = Array.isArray(fuel.machines) ? fuel.machines : []
-    const productionSummary = Array.isArray(raw.productionSummary) ? raw.productionSummary : []
-    const currentIndex = typeof machineSelection.currentMachineIndex === "number" ? machineSelection.currentMachineIndex : 0
-    const formData = {
-      ...raw,
-      basicInfo: { ...basicInfo, machines: basicInfoMachines },
-      machineSelection: { ...machineSelection, additionalMachines },
-      fuel: { ...fuel, machines: fuelMachines },
-      productionSummary,
+    const data = await getWorkReportById(reportId)
+    if (!data?.report) {
+      return NextResponse.json({ error: "Rapor bulunamadı." }, { status: 404 })
     }
 
-    const rawSiteId = basicInfo.siteId
-    const siteId = rawSiteId == null || rawSiteId === "" ? null : Number(rawSiteId)
+    const rawReport = data.report as Record<string, unknown>
+    const siteId = rawReport.site_id != null ? Number(rawReport.site_id) : null
     const siteIdForDb = siteId != null && !Number.isNaN(siteId) ? siteId : null
 
-    let projectName = (basicInfo.project ?? "").trim()
+    if (!canViewAllSites(session.role, session) && session.siteId !== siteIdForDb) {
+      return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
+    }
+
+    const formData = formDataFromDbReport({
+      report: rawReport,
+      machines: (data.machines || []) as Record<string, unknown>[],
+      fuelRecords: (data.fuelRecords || []) as Record<string, unknown>[],
+    })
+
+    const basicInfoMachines = Array.isArray(formData.basicInfo.machines) ? formData.basicInfo.machines : []
+    const productionSummary = Array.isArray(formData.productionSummary) ? formData.productionSummary : []
+    const currentIndex = typeof formData.machineSelection?.currentMachineIndex === "number" ? formData.machineSelection.currentMachineIndex : 0
+    const currentMachine = basicInfoMachines[currentIndex]
+    const currentProductionSummary = productionSummary[currentIndex]
+
+    let projectName = (formData.basicInfo.project ?? "").trim()
     let site: Awaited<ReturnType<typeof getSiteById>> = null
     if (siteIdForDb) {
       site = await getSiteById(siteIdForDb)
       if (site?.name) projectName = site.name
     }
 
-    const operatorEntries = siteIdForDb && basicInfo.date
-      ? await getOperatorEntriesBySiteAndDate(siteIdForDb, basicInfo.date)
-      : []
+    const reportDateStr =
+      rawReport.date instanceof Date
+        ? rawReport.date.toISOString().slice(0, 10)
+        : typeof rawReport.date === "string"
+          ? rawReport.date.slice(0, 10)
+          : String(formData.basicInfo.date || "").slice(0, 10)
+
+    const operatorEntries =
+      siteIdForDb && reportDateStr ? await getOperatorEntriesBySiteAndDate(siteIdForDb, reportDateStr) : []
 
     const projectStartDate = site?.project_start_date ? String(site.project_start_date).slice(0, 10) : null
-    const reportDateStr = (basicInfo.date ?? "").slice(0, 10)
-    const daysElapsed = projectStartDate && reportDateStr
-      ? Math.max(0, Math.floor((new Date(`${reportDateStr}T00:00:00Z`).getTime() - new Date(`${projectStartDate}T00:00:00Z`).getTime()) / 86400000) + 1)
-      : null
-    const cumulativeTotalProduction = siteIdForDb && reportDateStr
-      ? await getCumulativeTotalProduction(siteIdForDb, reportDateStr)
-      : null
+    const daysElapsed =
+      projectStartDate && reportDateStr
+        ? Math.max(
+            0,
+            Math.floor(
+              (new Date(`${reportDateStr}T00:00:00Z`).getTime() - new Date(`${projectStartDate}T00:00:00Z`).getTime()) /
+                86400000,
+            ) + 1,
+          )
+        : null
+    const cumulativeTotalProduction =
+      siteIdForDb && reportDateStr ? await getCumulativeTotalProduction(siteIdForDb, reportDateStr) : null
 
-    const currentMachine = basicInfoMachines[currentIndex]
-    const currentProductionSummary = productionSummary[currentIndex]
+    const concretePoured = parseInt(String(rawReport.concrete_poured ?? ""), 10) || 0
     const concretePouredSum = productionSummary.reduce((s: number, m: { concretePoured?: string }) => s + (parseInt(m?.concretePoured ?? "", 10) || 0), 0)
-    const dailyPileForDb = currentProductionSummary?.dailyPileCount?.trim() || (concretePouredSum ? String(concretePouredSum) : "")
-    const totalPileForDb = currentProductionSummary?.totalPileCount?.trim() || dailyPileForDb
+    const dailyPileForDb =
+      currentProductionSummary?.dailyPileCount?.toString().trim() ||
+      (concretePouredSum ? String(concretePouredSum) : "") ||
+      (concretePoured ? String(concretePoured) : "")
+    const totalPileForDb = currentProductionSummary?.totalPileCount?.toString().trim() || dailyPileForDb
 
     const reportRecipients = await getMergedNotificationEmails({ siteId: siteIdForDb })
 
@@ -91,6 +120,7 @@ export async function POST(request: NextRequest) {
       operatorEntries,
     })
     const expensesPageContent = generatePDFExpensesPage(formData)
+    const fullHtml = mainReportContent + expensesPageContent
 
     const expenseTotal = Array.isArray(formData.expenses)
       ? formData.expenses.reduce((s: number, e: { amount?: string | number }) => s + (parseFloat(String(e.amount ?? "0")) || 0), 0)
@@ -100,8 +130,14 @@ export async function POST(request: NextRequest) {
       machineHours: currentMachine?.machineHours,
       dailyPileCount: dailyPileForDb,
       personnelTotal: formData.personnel?.total,
-      remainingPiles: currentProductionSummary?.remainingPiles,
+      dailyFuelUsage:
+        formData.fuel?.dailyUsage ||
+        ((formData.fuel?.machines || []).reduce((s: number, m: { used?: string }) => s + (parseFloat(m?.used ?? "") || 0), 0) || null),
       expenseTotal: expenseTotal || null,
+      remainingPiles: currentProductionSummary?.remainingPiles,
+      notes: formData.notes,
+      dailyNotes: formData.dailyInfo?.notes,
+      selectedMachineName: formData.machineSelection?.selectedMachine?.name,
     })
 
     const appUrl = process.env.NEXTAUTH_URL || process.env.APP_URL || ""
@@ -109,7 +145,7 @@ export async function POST(request: NextRequest) {
 
     const { subject: emailSubject, html: emailHtml } = buildReportNotificationEmail({
       reportId,
-      date: basicInfo.date,
+      date: reportDateStr || formData.basicInfo.date,
       siteName: projectName || site?.name || "Şantiye",
       siteCode: site?.code,
       project: projectName,
@@ -122,22 +158,30 @@ export async function POST(request: NextRequest) {
       engineerCount: formData.personnel?.engineer,
       machineHours: currentMachine?.machineHours,
       selectedMachineName: formData.machineSelection?.selectedMachine?.name,
-      dailyFuelUsage: formData.fuel?.dailyUsage || ((formData.fuel?.machines || []).reduce((s: number, m: { used?: string }) => s + (parseFloat(m?.used ?? "") || 0), 0) || null),
+      dailyFuelUsage:
+        formData.fuel?.dailyUsage ||
+        ((formData.fuel?.machines || []).reduce((s: number, m: { used?: string }) => s + (parseFloat(m?.used ?? "") || 0), 0) || null),
       expenseTotal: expenseTotal || null,
       notes: formData.notes,
       dailyNotes: formData.dailyInfo?.notes,
       anomalies,
       reportUrl,
+      attachedFullReport: true,
     })
 
-    const result = await sendReportEmail({ to: reportRecipients, subject: emailSubject, html: emailHtml })
+    const result = await sendReportEmail({
+      to: reportRecipients,
+      subject: emailSubject,
+      html: emailHtml,
+      attachments: [fullReportHtmlAttachment(reportId, reportDateStr || String(formData.basicInfo.date), fullHtml)],
+    })
 
-    // Operatör raporu ayrıca super admin'e
     if (operatorEntries.length > 0) {
       const superAdminEmails = await getSuperAdminEmails()
       if (superAdminEmails.length > 0) {
         const opMail = buildOperatorReportEmail({
-          reportId, date: basicInfo.date,
+          reportId,
+          date: reportDateStr || formData.basicInfo.date,
           siteName: projectName || site?.name || "Şantiye",
           operatorEntries,
           reportUrl,

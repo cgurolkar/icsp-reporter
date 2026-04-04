@@ -1,6 +1,6 @@
 /**
  * Temiz, mobil uyumlu e-posta HTML şablonları.
- * Tam rapor HTML'i göndermek yerine özet bildirimler gönderir.
+ * Özet gövde + isteğe bağlı tam rapor eki (HTML, ayrıca eklenir).
  */
 
 export interface ReportNotificationData {
@@ -31,6 +31,8 @@ export interface ReportNotificationData {
   anomalies?: AnomalyItem[]
   // Rapor URL (opsiyonel)
   reportUrl?: string
+  /** Tam rapor HTML dosyası eklendiğinde kısa kullanım notu */
+  attachedFullReport?: boolean
 }
 
 export interface AnomalyItem {
@@ -203,6 +205,12 @@ export function buildReportNotificationEmail(data: ReportNotificationData): { su
     <div style="background:#f8fafc;border-left:3px solid ${COLORS.accent};padding:12px 16px;border-radius:0 8px 8px 0;font-size:13px;color:${COLORS.textPrimary};line-height:1.6;">
       ${escapeHtml(data.dailyNotes || data.notes || "")}
     </div>
+  </div>
+  ` : ""}
+
+  ${data.attachedFullReport ? `
+  <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:#065f46;line-height:1.55;">
+    <strong>Tam rapor ektedir</strong> (HTML dosyası). İndirip çift tıklayarak tarayıcıda açın; yazdırmak veya PDF kaydetmek için <strong>Yazdır → PDF olarak kaydet</strong> kullanın.
   </div>
   ` : ""}
 
