@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
   Container,
   Paper,
@@ -40,8 +40,10 @@ import {
   Radio,
   RadioGroup,
   FormLabel,
+  AppBar,
+  Toolbar,
 } from "@mui/material"
-import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility, Notifications, NotificationsActive, Close } from "@mui/icons-material"
+import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility, Notifications, NotificationsActive, Close, Engineering, ArrowBack } from "@mui/icons-material"
 import Badge from "@mui/material/Badge"
 import Snackbar from "@mui/material/Snackbar"
 import Alert from "@mui/material/Alert"
@@ -117,10 +119,28 @@ function normalizeModulePerms(raw: unknown): Record<string, ModPermLevel> {
   return base
 }
 
+type SseNotification = {
+  id: string
+  type: string
+  title: string
+  message: string
+  siteName?: string
+  siteCode?: string | null
+  reportId?: number
+  date?: string
+  anomalyCount?: number
+  machineName?: string
+  timestamp: number
+}
+
 function AdminPanel() {
   const { user } = useAuth()
   const currentRole = String(user?.role ?? "")
   const isSuperAdmin = currentRole === "super_admin"
+  const isSuperAdminRef = useRef(isSuperAdmin)
+  useEffect(() => {
+    isSuperAdminRef.current = isSuperAdmin
+  }, [isSuperAdmin])
   const [tabValue, setTabValue] = useState(0)
   const [emails, setEmails] = useState<string[]>([])
   const [users, setUsers] = useState<string[]>([])
@@ -134,9 +154,11 @@ function AdminPanel() {
   const [error, setError] = useState("")
 
   // SSE bildirimleri
-  const [notifications, setNotifications] = useState<{ id: string; type: string; title: string; message: string; siteName?: string; anomalyCount?: number; timestamp: number }[]>([])
+  const [notifications, setNotifications] = useState<SseNotification[]>([])
   const [notifDrawerOpen, setNotifDrawerOpen] = useState(false)
   const [newNotifSnack, setNewNotifSnack] = useState<{ open: boolean; message: string; severity: "info" | "warning" }>({ open: false, message: "", severity: "info" })
+  /** Super admin: yeni rapor geldiğinde modal popup */
+  const [notifPopup, setNotifPopup] = useState<SseNotification | null>(null)
   const unreadCount = notifications.filter(n => n.timestamp > (typeof window !== "undefined" ? parseInt(localStorage.getItem("notif_last_read") || "0", 10) : 0)).length
 
   // E-posta araçları
@@ -212,7 +234,25 @@ function AdminPanel() {
   const [reportEditForm, setReportEditForm] = useState<{ date: string; project: string; notes: string; totalProductionSummary: string; dailyPileCount: string; remainingPiles: string; dailyFuelUsage: string; personnelTotal: string }>({ date: "", project: "", notes: "", totalProductionSummary: "", dailyPileCount: "", remainingPiles: "", dailyFuelUsage: "", personnelTotal: "" })
   const [reportDeleteId, setReportDeleteId] = useState<number | null>(null)
 
+  // Super admin — operatör girişleri sekmesi
+  const [operatorEntriesList, setOperatorEntriesList] = useState<Record<string, unknown>[]>([])
+  const [operatorEntriesLoading, setOperatorEntriesLoading] = useState(false)
+  const [opFilterStart, setOpFilterStart] = useState("")
+  const [opFilterEnd, setOpFilterEnd] = useState("")
+  const [opFilterSiteId, setOpFilterSiteId] = useState("")
+  const [opDetailOpen, setOpDetailOpen] = useState(false)
+  const [opDetailRow, setOpDetailRow] = useState<Record<string, unknown> | null>(null)
+
+  /** Rapor önizleme: aynı sayfada tam ekran iframe */
+  const [reportPreviewId, setReportPreviewId] = useState<number | null>(null)
+
   const { t } = useLanguage()
+
+  const openReportPreview = (id: number) => {
+    setReportPreviewId(id)
+    setNotifPopup(null)
+    setNotifDrawerOpen(false)
+  }
 
   useEffect(() => {
     loadSettings()
@@ -249,20 +289,63 @@ function AdminPanel() {
     if (tabValue === 4) loadReportList()
   }, [tabValue])
 
+  useEffect(() => {
+    if (!isSuperAdmin && tabValue === 5) setTabValue(0)
+  }, [isSuperAdmin, tabValue])
+
+  const loadOperatorEntries = async () => {
+    setOperatorEntriesLoading(true)
+    try {
+      const params = new URLSearchParams({ limit: "200" })
+      if (opFilterStart) params.set("startDate", opFilterStart)
+      if (opFilterEnd) params.set("endDate", opFilterEnd)
+      if (opFilterSiteId) params.set("siteId", opFilterSiteId)
+      const res = await fetch(`/api/admin/operator-entries?${params}`)
+      const data = await res.json().catch(() => ({}))
+      setOperatorEntriesList(Array.isArray(data.entries) ? data.entries : [])
+    } catch {
+      setOperatorEntriesList([])
+    } finally {
+      setOperatorEntriesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (tabValue === 5 && isSuperAdmin) loadOperatorEntries()
+  }, [tabValue, isSuperAdmin])
+
   // SSE bağlantısı
   useEffect(() => {
     const es = new EventSource("/api/notifications/stream")
     es.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data)
-        if (data.type === "connected") return
+        const raw = JSON.parse(event.data) as SseNotification & { type: string; _replay?: boolean }
+        if (raw.type === "connected") return
+        const isReplay = raw._replay === true
+        const n: SseNotification = {
+          id: raw.id,
+          type: raw.type,
+          title: raw.title,
+          message: raw.message,
+          siteName: raw.siteName,
+          siteCode: raw.siteCode,
+          reportId: raw.reportId,
+          date: raw.date,
+          anomalyCount: raw.anomalyCount,
+          machineName: raw.machineName,
+          timestamp: raw.timestamp,
+        }
         setNotifications((prev) => {
-          // Tekrar önleme
-          if (prev.some((n) => n.id === data.id)) return prev
-          return [data, ...prev].slice(0, 50)
+          if (prev.some((x) => x.id === n.id)) return prev
+          return [n, ...prev].slice(0, 50)
         })
-        const severity = data.anomalyCount > 0 ? "warning" : "info"
-        setNewNotifSnack({ open: true, message: `${data.title}: ${data.message}`, severity })
+        if (isReplay) return
+        const severity = (n.anomalyCount ?? 0) > 0 ? "warning" : "info"
+        if (isSuperAdminRef.current && (n.type === "new_report" || n.type === "anomaly" || n.type === "operator_entry")) {
+          setNotifPopup(n)
+        } else {
+          setNewNotifSnack({ open: true, message: `${n.title}: ${n.message}`, severity })
+        }
       } catch {}
     }
     es.onerror = () => {
@@ -638,6 +721,37 @@ function AdminPanel() {
 
   return (
     <Box sx={{ minHeight: "100vh", background: "#f5f5f5", py: { xs: 1, sm: 3 } }}>
+      {reportPreviewId != null && (
+        <Box
+          sx={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 2000,
+            bgcolor: "#fff",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <AppBar position="static" elevation={1} sx={{ bgcolor: "#1a237e" }}>
+            <Toolbar>
+              <IconButton edge="start" color="inherit" onClick={() => setReportPreviewId(null)} aria-label="Geri" size="large">
+                <ArrowBack />
+              </IconButton>
+              <Typography variant="h6" sx={{ flexGrow: 1, ml: 1, fontWeight: 600 }}>
+                Rapor önizleme
+              </Typography>
+            </Toolbar>
+          </AppBar>
+          <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>
+            <iframe
+              title="Rapor önizleme"
+              src={`/api/reports/${reportPreviewId}/preview`}
+              style={{ flex: 1, border: "none", width: "100%", height: "100%" }}
+            />
+          </Box>
+        </Box>
+      )}
+
       <Container maxWidth="lg" sx={{ px: { xs: 1, sm: 2, md: 3 } }}>
         <Paper
           elevation={0}
@@ -696,6 +810,7 @@ function AdminPanel() {
             <Tab label={t("user_management")} />
             <Tab label="Şantiyeler" />
             <Tab label="Raporlar" />
+            {isSuperAdmin && <Tab label="Operatör girişleri" icon={<Engineering />} iconPosition="start" />}
           </Tabs>
         </Box>
 
@@ -1282,7 +1397,7 @@ function AdminPanel() {
                       <TableCell>{[r.daily_pile_count, r.total_pile_count, r.concrete_poured].find((v) => v != null && String(v).trim() !== "") ?? "—"}</TableCell>
                       <TableCell>{r.remaining_piles != null && String(r.remaining_piles).trim() !== "" ? r.remaining_piles : "—"}</TableCell>
                       <TableCell>
-                        <IconButton size="small" onClick={() => window.open(`/api/reports/${r.id}/preview`, "_blank")} title="Görüntüle" sx={{ color: "#1976d2" }}>
+                        <IconButton size="small" onClick={() => openReportPreview(Number(r.id))} title="Görüntüle" sx={{ color: "#1976d2" }}>
                           <Visibility />
                         </IconButton>
                         <IconButton
@@ -1318,6 +1433,122 @@ function AdminPanel() {
             </Table>
           </Paper>
         </TabPanel>
+
+        {isSuperAdmin && (
+          <TabPanel value={tabValue} index={5}>
+            <Typography variant="h6" sx={{ color: "#1a237e", fontWeight: 600, mb: 1 }}>
+              Operatör makine girişleri
+            </Typography>
+            <Typography variant="body2" sx={{ color: "#64748b", mb: 2 }}>
+              Operatörlerin uygulamada kaydettiği makine / saha girişleri (günlük çalışma raporundan ayrı listedir).
+            </Typography>
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, alignItems: "center", mb: 2 }}>
+              <TextField
+                size="small"
+                type="date"
+                label="Başlangıç"
+                value={opFilterStart}
+                onChange={(e) => setOpFilterStart(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                sx={{ background: "#fff", minWidth: 160 }}
+              />
+              <TextField
+                size="small"
+                type="date"
+                label="Bitiş"
+                value={opFilterEnd}
+                onChange={(e) => setOpFilterEnd(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                sx={{ background: "#fff", minWidth: 160 }}
+              />
+              <FormControl size="small" sx={{ minWidth: 200, background: "#fff" }}>
+                <InputLabel>Şantiye</InputLabel>
+                <Select value={opFilterSiteId} label="Şantiye" onChange={(e) => setOpFilterSiteId(e.target.value)}>
+                  <MenuItem value="">Tümü</MenuItem>
+                  {dbSites.map((s: { id: number; name: string; code: string }) => (
+                    <MenuItem key={s.id} value={String(s.id)}>
+                      {s.name} ({s.code})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Button variant="contained" onClick={() => loadOperatorEntries()} disabled={operatorEntriesLoading}>
+                {operatorEntriesLoading ? "Yükleniyor..." : "Listele"}
+              </Button>
+            </Box>
+            <Paper sx={{ background: "#fff", border: "1px solid var(--icsp-nav-border)", overflow: "auto" }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600 }}>Tarih</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Şantiye</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Operatör</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Makine</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Saat / motor</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Kazık / üretim</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Yakıt</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Detay</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {operatorEntriesLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={8}>Yükleniyor...</TableCell>
+                    </TableRow>
+                  ) : operatorEntriesList.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8}>Kayıt yok.</TableCell>
+                    </TableRow>
+                  ) : (
+                    operatorEntriesList.map((row) => {
+                      const id = Number(row.id)
+                      const rd = row.report_date instanceof Date ? row.report_date.toISOString().slice(0, 10) : String(row.report_date ?? "").slice(0, 10)
+                      const motor = [row.motor_saat_binis, row.motor_saat_inis].filter(Boolean).join(" → ") || "—"
+                      const hours = [row.start_time, row.end_time].filter(Boolean).join("–") || String(row.machine_hours ?? "—")
+                      const pile = [row.daily_pile_count, row.total_production, row.concrete_poured].find((v) => v != null && String(v).trim() !== "") ?? "—"
+                      return (
+                        <TableRow key={id}>
+                          <TableCell>{rd || "—"}</TableCell>
+                          <TableCell>
+                            {String(row.site_name ?? "—")}
+                            {row.site_code ? (
+                              <Typography component="span" variant="caption" sx={{ color: "#94a3b8", display: "block" }}>
+                                {String(row.site_code)}
+                              </Typography>
+                            ) : null}
+                          </TableCell>
+                          <TableCell>{String(row.operator_username ?? row.user_id ?? "—")}</TableCell>
+                          <TableCell>{String(row.machine_name ?? "—")}</TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{hours}</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {motor}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>{String(pile)}</TableCell>
+                          <TableCell>{String(row.used_fuel ?? "—")}</TableCell>
+                          <TableCell>
+                            <IconButton
+                              size="small"
+                              title="Tüm alanlar"
+                              onClick={() => {
+                                setOpDetailRow(row)
+                                setOpDetailOpen(true)
+                              }}
+                              sx={{ color: "#1976d2" }}
+                            >
+                              <Visibility />
+                            </IconButton>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </Paper>
+          </TabPanel>
+        )}
 
         {/* Ayarları kaydet butonu yalnızca E-posta Ayarları sekmesinde görünür */}
         {tabValue === 1 && (
@@ -1955,6 +2186,76 @@ function AdminPanel() {
       </Paper>
       </Container>
 
+      {/* Super admin: yeni rapor popup */}
+      <Dialog open={notifPopup != null} onClose={() => setNotifPopup(null)} maxWidth="sm" fullWidth>
+        {notifPopup && (
+          <>
+            <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1, color: "#1a237e", fontWeight: 700 }}>
+              <NotificationsActive color="primary" />
+              {notifPopup.title}
+            </DialogTitle>
+            <DialogContent>
+              {(notifPopup.anomalyCount ?? 0) > 0 && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  {notifPopup.anomalyCount} adet dikkat uyarısı
+                </Alert>
+              )}
+              <Typography variant="body1" sx={{ mb: 1 }}>
+                {notifPopup.message}
+              </Typography>
+              {notifPopup.siteName && (
+                <Typography variant="body2" color="text.secondary">
+                  Şantiye: {notifPopup.siteName}
+                  {notifPopup.siteCode ? ` (${notifPopup.siteCode})` : ""}
+                </Typography>
+              )}
+              {notifPopup.type === "operator_entry" && notifPopup.machineName && (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Makine: {notifPopup.machineName}
+                </Typography>
+              )}
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+              <Button onClick={() => setNotifPopup(null)}>Kapat</Button>
+              {notifPopup.reportId != null && (
+                <Button variant="contained" onClick={() => openReportPreview(notifPopup.reportId!)}>
+                  Raporu aç
+                </Button>
+              )}
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
+
+      {/* Operatör girişi satır detayı */}
+      <Dialog open={opDetailOpen} onClose={() => setOpDetailOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ color: "#1a237e", fontWeight: 600 }}>Operatör girişi detayı</DialogTitle>
+        <DialogContent dividers>
+          {opDetailRow && (
+            <Table size="small">
+              <TableBody>
+                {Object.entries(opDetailRow)
+                  .filter(([, v]) => v != null && String(v).trim() !== "")
+                  .map(([k, v]) => {
+                    let str = typeof v === "object" ? JSON.stringify(v) : String(v)
+                    if (str.length > 200) str = `${str.slice(0, 200)}…`
+                    const label = k.replace(/_/g, " ")
+                    return (
+                      <TableRow key={k}>
+                        <TableCell sx={{ fontWeight: 600, width: 200, verticalAlign: "top" }}>{label}</TableCell>
+                        <TableCell sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{str}</TableCell>
+                      </TableRow>
+                    )
+                  })}
+              </TableBody>
+            </Table>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpDetailOpen(false)}>Kapat</Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Bildirim drawer */}
       <Drawer anchor="right" open={notifDrawerOpen} onClose={() => setNotifDrawerOpen(false)} PaperProps={{ sx: { width: { xs: "100%", sm: 380 }, p: 2 } }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
@@ -1972,10 +2273,20 @@ function AdminPanel() {
               <ListItem key={n.id} divider alignItems="flex-start" sx={{ py: 1.5, px: 0 }}>
                 <ListItemText
                   primary={
-                    <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                    <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap" }}>
                       <Typography variant="body2" sx={{ fontWeight: 600 }}>{n.title}</Typography>
                       {n.anomalyCount && n.anomalyCount > 0 && (
                         <Chip label={`${n.anomalyCount} uyarı`} size="small" sx={{ background: "#fef3c7", color: "#92400e", fontSize: "0.65rem" }} />
+                      )}
+                      {n.reportId != null && (
+                        <Button
+                          size="small"
+                          variant="text"
+                          sx={{ minWidth: 0, p: 0, fontSize: "0.75rem" }}
+                          onClick={() => openReportPreview(n.reportId!)}
+                        >
+                          Raporu aç
+                        </Button>
                       )}
                     </Box>
                   }

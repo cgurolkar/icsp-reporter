@@ -5,7 +5,7 @@
 
 export interface AdminNotification {
   id: string
-  type: "new_report" | "anomaly" | "info"
+  type: "new_report" | "anomaly" | "info" | "operator_entry"
   title: string
   message: string
   siteName?: string
@@ -13,6 +13,8 @@ export interface AdminNotification {
   reportId?: number
   date?: string
   anomalyCount?: number
+  /** Operatör makine girişi bildirimi */
+  machineName?: string
   timestamp: number
 }
 

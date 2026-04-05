@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
@@ -101,6 +101,22 @@ function activeSiteId(row: PersonelRow): number | null {
   return active?.site_id ?? null
 }
 
+/** Görev metninden öncelik seviyesi (veritabanı sıralaması ile uyumlu). */
+function gorevOncelikLabel(g: string): string {
+  const s = String(g || "").trim()
+  if (!s) return "—"
+  if (/proje/i.test(s) && /(müdür|mudur)/i.test(s)) return "1"
+  if (/şantiye.*şef|santiye.*sef/i.test(s)) return "2"
+  if (/mühendis|muhendis/i.test(s)) return "3"
+  if (/formen|foreman/i.test(s)) return "4"
+  if (/operatör|operator/i.test(s)) return "5"
+  if (/satın.*alma|satin.*alma/i.test(s)) return "6"
+  if (/yağcı|yagci/i.test(s)) return "7"
+  if (/teknisyen/i.test(s)) return "8"
+  if (/işçi|isci|işci/i.test(s)) return "9"
+  return "•"
+}
+
 // Personal photo / avatar component
 function PersonelAvatar({ foto_yolu, ad, soyad, size = 40 }: { foto_yolu?: string | null; ad: string; soyad: string; size?: number }) {
   if (foto_yolu) {
@@ -139,6 +155,7 @@ export default function IdariPersonelPage() {
   const [viewMode, setViewMode] = useState<"list" | "grid">("list")
   const [sortBy, setSortBy] = useState("ad_soyad")
   const [sortDir, setSortDir] = useState<SortDir>("asc")
+  const siteIdPrevForSortRef = useRef<string>("")
 
   // İzin dialog state
   const [izinDialogOpen, setIzinDialogOpen] = useState(false)
@@ -214,6 +231,17 @@ export default function IdariPersonelPage() {
   }
 
   useEffect(() => { loadSites() }, [])
+
+  /** Şantiye filtresi ilk seçildiğinde: görev hiyerarşisine göre sırala (proje müdürü → … → işçi). */
+  useEffect(() => {
+    const prev = siteIdPrevForSortRef.current
+    if (siteId && !prev) {
+      setSortBy("gorev_oncelik")
+      setSortDir("asc")
+    }
+    siteIdPrevForSortRef.current = siteId
+  }, [siteId])
+
   useEffect(() => { setPage(0); loadList(0) }, [siteId, gorev, search, tabValue, sortBy, sortDir])
   useEffect(() => { loadList(page) }, [page])
 
@@ -424,6 +452,11 @@ export default function IdariPersonelPage() {
               ))}
             </Select>
           </FormControl>
+          {siteId ? (
+            <Typography variant="caption" color="text.secondary" sx={{ alignSelf: "center", maxWidth: 280 }}>
+              Şantiye seçili: liste varsayılan olarak görev önem sırasına göre (Proje Müdürü → Şantiye Şefi → Mühendis → …) gelir; tablodan başka sıralama da seçebilirsiniz.
+            </Typography>
+          ) : null}
           <FormControl size="small" sx={{ minWidth: 180 }}>
             <InputLabel>Görev</InputLabel>
             <Select value={gorev} label="Görev" onChange={(e) => setGorev(e.target.value)}>
@@ -477,6 +510,7 @@ export default function IdariPersonelPage() {
                   <TableCell sx={{ width: 48 }}></TableCell>
                   <SortableTh label="Ad Soyad" sortKey="ad_soyad" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
                   <SortableTh label="Görev" sortKey="gorev" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
+                  <SortableTh label="Öncelik" sortKey="gorev_oncelik" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
                   <SortableTh label="TC / Pasaport" sortKey="kimlik" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
                   <SortableTh label="Görev Yeri" sortKey="gorev_yeri" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
                   <SortableTh label="Günlük / Aylık" sortKey="ucret" sortBy={sortBy} sortDir={sortDir} align="right" onSort={handleListSort} />
@@ -486,7 +520,7 @@ export default function IdariPersonelPage() {
               <TableBody>
                 {list.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 3 }}>Kayıt yok</TableCell>
+                    <TableCell colSpan={8} align="center" sx={{ py: 3 }}>Kayıt yok</TableCell>
                   </TableRow>
                 ) : (
                   list.map((row) => (
@@ -496,6 +530,9 @@ export default function IdariPersonelPage() {
                       </TableCell>
                       <TableCell>{row.ad} {row.soyad}</TableCell>
                       <TableCell>{row.gorev}</TableCell>
+                      <TableCell sx={{ color: "text.secondary", fontSize: "0.85rem", fontWeight: 600 }} title="Görev hiyerarşisindeki sıra (düşük = üst kademe)">
+                        {gorevOncelikLabel(row.gorev)}
+                      </TableCell>
                       <TableCell>{row.tc_kimlik ? `TC: ${row.tc_kimlik}` : row.pasaport_no ? `Pasaport: ${row.pasaport_no}` : "—"}</TableCell>
                       <TableCell>
                         <Typography variant="body2" color={activeGorevYeri(row) !== "—" ? "primary" : "text.secondary"}>

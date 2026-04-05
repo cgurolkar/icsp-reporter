@@ -4,7 +4,7 @@ import { getSessionFromRequest } from "@/lib/auth"
 import { canAccessIdari, canManageIdariCentral } from "@/lib/auth"
 import { initializeDatabase, getPersoneller, getPersonellerCount, createPersonel, upsertPersonelAtama } from "@/lib/database"
 
-const PERSONEL_SORT_KEYS = new Set(["ad_soyad", "gorev", "kimlik", "gorev_yeri", "ucret"])
+const PERSONEL_SORT_KEYS = new Set(["ad_soyad", "gorev", "gorev_oncelik", "kimlik", "gorev_yeri", "ucret"])
 
 const PersonelSchema = z.object({
   ad: z.string().min(1).max(100).trim(),

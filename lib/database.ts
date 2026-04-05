@@ -913,6 +913,76 @@ export async function saveOperatorEntry(data: {
   }
 }
 
+/** Super admin: tüm şantiyelerdeki operatör makine girişleri listesi */
+export async function getAdminOperatorEntriesList(options: {
+  startDate?: string
+  endDate?: string
+  siteId?: number | null
+  limit?: number
+}): Promise<Record<string, unknown>[]> {
+  const client = await pool.connect()
+  try {
+    const limit = Math.min(Math.max(options.limit ?? 200, 1), 500)
+    let q = `
+      SELECT
+        oe.id,
+        oe.site_id,
+        oe.report_date,
+        oe.user_id,
+        oe.machine_id,
+        oe.machine_name,
+        oe.machine_hours,
+        oe.start_time,
+        oe.end_time,
+        oe.motor_saat_binis,
+        oe.motor_saat_inis,
+        oe.used_fuel,
+        oe.work_done,
+        oe.note,
+        oe.daily_pile_count,
+        oe.total_production,
+        oe.empty_borehole,
+        oe.pre_borehole,
+        oe.concrete_poured,
+        oe.elmas_miktar,
+        oe.elmas_degisim_yok,
+        oe.bentonit_miktar,
+        oe.kullanilan_malzeme,
+        oe.malzeme_ihtiyaci,
+        oe.servis_ihtiyaci,
+        oe.notes,
+        oe.created_at,
+        u.username AS operator_username,
+        s.name AS site_name,
+        s.code AS site_code
+      FROM operator_entries oe
+      LEFT JOIN users u ON u.id = oe.user_id
+      LEFT JOIN sites s ON s.id = oe.site_id
+      WHERE 1=1
+    `
+    const params: (string | number)[] = []
+    let i = 1
+    if (options.startDate) {
+      q += ` AND oe.report_date >= $${i++}`
+      params.push(options.startDate.slice(0, 10))
+    }
+    if (options.endDate) {
+      q += ` AND oe.report_date <= $${i++}`
+      params.push(options.endDate.slice(0, 10))
+    }
+    if (options.siteId != null && options.siteId > 0) {
+      q += ` AND oe.site_id = $${i++}`
+      params.push(options.siteId)
+    }
+    q += ` ORDER BY oe.report_date DESC, oe.id DESC LIMIT $${i}`
+    params.push(limit)
+    const r = await client.query(q, params)
+    return r.rows
+  } finally {
+    client.release()
+  }
+}
+
 /** Ülke kodu veya ismine göre IANA timezone döndürür (basit eşleme). */
 export function getTimezoneForCountry(country: string | null | undefined): string {
   if (!country || !String(country).trim()) return "Europe/Istanbul"
@@ -1763,11 +1833,28 @@ export async function deleteWorkReport(id: number) {
 
 const GOREV_YERI_ORDER_SUBQ = `(SELECT s2.name FROM personel_atama pa2 LEFT JOIN sites s2 ON s2.id = pa2.site_id WHERE pa2.personel_id = p.id AND (pa2.bitis_tarihi IS NULL OR pa2.bitis_tarihi >= CURRENT_DATE) ORDER BY pa2.baslangic_tarihi DESC NULLS LAST LIMIT 1)`
 
+/** Görev metnine göre şantiye hiyerarşisi (düşük sayı = üst kademe). */
+const PERSONEL_GOREV_RANK_SQL = `(CASE
+  WHEN p.gorev ~* 'proje.*(müdür|mudur)|project.*manager' THEN 1
+  WHEN p.gorev ~* 'şantiye.*şef|santiye.*sef' THEN 2
+  WHEN p.gorev ~* 'mühendis|muhendis' THEN 3
+  WHEN p.gorev ~* 'formen|foreman' THEN 4
+  WHEN p.gorev ~* 'operatör|operator' THEN 5
+  WHEN p.gorev ~* 'satın.*alma|satin.*alma' THEN 6
+  WHEN p.gorev ~* 'yağcı|yagci' THEN 7
+  WHEN p.gorev ~* 'teknisyen' THEN 8
+  WHEN p.gorev ~* 'işçi|isci|işci' THEN 99
+  ELSE 50
+END)`
+
 function personelOrderClause(sortBy?: string | null, sortDir?: string | null): string {
   const dir = sortDir?.toLowerCase() === "desc" ? "DESC" : "ASC"
   const key = String(sortBy || "").trim() || "ad_soyad"
   let order: string
   switch (key) {
+    case "gorev_oncelik":
+      order = `${PERSONEL_GOREV_RANK_SQL} ${dir} NULLS LAST, p.soyad ASC, p.ad ASC`
+      break
     case "gorev":
       order = `p.gorev ${dir} NULLS LAST`
       break

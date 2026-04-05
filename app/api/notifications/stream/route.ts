@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       // Catch-up: son bildirimleri gönder
       const recent = getRecentNotifications(10)
       for (const n of recent.reverse()) {
-        const data = `data: ${JSON.stringify(n)}\n\n`
+        const data = `data: ${JSON.stringify({ ...n, _replay: true })}\n\n`
         controller.enqueue(encoder.encode(data))
       }
 

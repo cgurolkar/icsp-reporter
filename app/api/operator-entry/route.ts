@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSessionFromRequest, canDoMachineEntry, canViewAllSites } from "@/lib/auth"
-import { saveOperatorEntry, getOperatorEntriesBySiteAndDate, initializeDatabase } from "@/lib/database"
+import { saveOperatorEntry, getOperatorEntriesBySiteAndDate, initializeDatabase, getSiteById } from "@/lib/database"
+import { publishNotification } from "@/lib/notification-bus"
 
 /** Şantiye + tarih için operatör girişlerini listele (bilgi girişinde Makine Detayları için) */
 export async function GET(request: NextRequest) {
@@ -87,6 +88,23 @@ export async function POST(request: NextRequest) {
       image2: typeof body.image2 === "string" ? body.image2 : null,
       notes: typeof body.notes === "string" ? body.notes.trim() : "",
     })
+
+    try {
+      const site = await getSiteById(siteId)
+      const siteLabel = site?.name ? String(site.name) : "Şantiye"
+      publishNotification({
+        type: "operator_entry",
+        title: `Operatör girişi: ${siteLabel}`,
+        message: `${session.username} — ${machineName} (${reportDate})`,
+        siteName: siteLabel,
+        siteCode: site?.code != null ? String(site.code) : null,
+        date: reportDate,
+        machineName,
+      })
+    } catch {
+      /* bildirim isteğe bağlı */
+    }
+
     return NextResponse.json({ success: true, message: "Makine girişi kaydedildi." })
   } catch (error) {
     console.error("Operator entry error:", error)
