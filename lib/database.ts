@@ -1381,6 +1381,94 @@ export async function getLastReportRemainingBySite(siteId: number | null) {
   }
 }
 
+export type RecalculateRemainingPilesRow = {
+  id: number
+  date: string
+  oldRemaining: string | null
+  newRemaining: string
+}
+
+/**
+ * Şantiye kartında toplam kazık, "devam eden proje" ve rapor öncesi yapılan kazık güncellendikten sonra
+ * o şantiyeye ait tüm raporların `remaining_piles` değerini tarih sırasıyla yeniden yazar.
+ * Mantık `app/api/send-report/route.ts` ile uyumludur.
+ */
+export async function recalculateRemainingPilesForSite(siteId: number): Promise<{
+  skippedReason?: "NO_TOTAL_PILES" | "SITE_NOT_FOUND"
+  updatedCount: number
+  rows: RecalculateRemainingPilesRow[]
+}> {
+  const site = await getSiteById(siteId)
+  if (!site) {
+    return { skippedReason: "SITE_NOT_FOUND", updatedCount: 0, rows: [] }
+  }
+  const totalPiles = site.total_piles != null ? Number(site.total_piles) : null
+  if (totalPiles == null || Number.isNaN(totalPiles)) {
+    return { skippedReason: "NO_TOTAL_PILES", updatedCount: 0, rows: [] }
+  }
+  const isOngoing = site.is_ongoing === true
+  const initialPilesDone =
+    site.initial_piles_done != null && !Number.isNaN(Number(site.initial_piles_done))
+      ? Number(site.initial_piles_done)
+      : null
+
+  const client = await pool.connect()
+  const rows: RecalculateRemainingPilesRow[] = []
+  try {
+    await client.query("BEGIN")
+    const result = await client.query<{
+      id: number
+      date: string
+      daily_pile_count: string | null
+      concrete_poured: string | null
+      remaining_piles: string | null
+    }>(
+      `SELECT id, date::text AS date, daily_pile_count, concrete_poured, remaining_piles
+       FROM work_reports WHERE site_id = $1 ORDER BY date ASC, id ASC`,
+      [siteId]
+    )
+    let prevRemaining: number | null = null
+    for (const row of result.rows) {
+      let cumulativeDoneBeforeToday = 0
+      if (prevRemaining != null) {
+        cumulativeDoneBeforeToday = totalPiles - prevRemaining
+      } else if (isOngoing && initialPilesDone != null) {
+        cumulativeDoneBeforeToday = initialPilesDone
+      }
+      let todayPiles = 0
+      const dailyRaw = row.daily_pile_count != null ? String(row.daily_pile_count).trim() : ""
+      const concRaw = row.concrete_poured != null ? String(row.concrete_poured).trim() : ""
+      const dailyParsed = dailyRaw ? parseInt(dailyRaw, 10) : NaN
+      if (!Number.isNaN(dailyParsed)) {
+        todayPiles = Math.max(0, dailyParsed)
+      } else {
+        const concParsed = concRaw ? parseInt(concRaw, 10) : NaN
+        if (!Number.isNaN(concParsed)) todayPiles = Math.max(0, concParsed)
+      }
+      const newRemaining = Math.max(0, totalPiles - cumulativeDoneBeforeToday - todayPiles)
+      const newRemainingStr = String(newRemaining)
+      const dateStr = (row.date || "").slice(0, 10)
+      const oldStr = row.remaining_piles != null ? String(row.remaining_piles) : null
+      if (oldStr !== newRemainingStr) {
+        await client.query(
+          `UPDATE work_reports SET remaining_piles = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+          [newRemainingStr, row.id]
+        )
+        rows.push({ id: row.id, date: dateStr, oldRemaining: oldStr, newRemaining: newRemainingStr })
+      }
+      prevRemaining = newRemaining
+    }
+    await client.query("COMMIT")
+    return { updatedCount: rows.length, rows }
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {})
+    console.error("recalculateRemainingPilesForSite:", error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
 /** Belirli bir şantiye ve tarihteki raporu getir (örn. dünkü raporun next_day_planned için) */
 export async function getReportBySiteAndDate(siteId: number, dateStr: string) {
   const client = await pool.connect()

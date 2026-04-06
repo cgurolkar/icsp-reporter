@@ -209,6 +209,7 @@ function AdminPanel() {
     assignedOperatorIds: [],
     assignedMachineOperators: [],
   })
+  const [siteRemainingRecalcLoading, setSiteRemainingRecalcLoading] = useState(false)
 
   // Dashboard
   const [dashboardStats, setDashboardStats] = useState<{
@@ -1761,7 +1762,7 @@ function AdminPanel() {
                 onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialPilesDone: e.target.value }))}
                 placeholder="Rapor öncesi kümülatif yapılan"
                 inputProps={{ min: 0 }}
-                helperText="Kalan kazık = Proje toplamı − bu değer − günlük yapılanlar"
+                helperText="Kalan kazık = Proje toplamı − bu değer − günlük yapılanlar. Değişiklikten sonra şantiyeyi kaydedin; ardından alttaki düğmeyle eski raporlardaki kalan kazıkları güncelleyin."
               />
             )}
             <Typography variant="body2" sx={{ mt: 2, mb: 1 }} color="text.secondary">
@@ -1782,8 +1783,54 @@ function AdminPanel() {
               placeholder="admin@firma.com"
             />
           </DialogContent>
-          <DialogActions sx={{ px: 3, pb: 2 }}>
+          <DialogActions sx={{ px: 3, pb: 2, flexWrap: "wrap", gap: 1 }}>
             <Button onClick={() => setSiteDialogOpen(false)}>{t("cancel")}</Button>
+            {siteDialogData.id ? (
+              <Button
+                type="button"
+                variant="outlined"
+                disabled={siteRemainingRecalcLoading || !siteDialogData.totalPiles.trim()}
+                onClick={async () => {
+                  if (!siteDialogData.id) return
+                  if (!siteDialogData.totalPiles.trim()) {
+                    alert("Proje toplam kazık sayısı tanımlı olmalı. Önce şantiyeyi kaydedin.")
+                    return
+                  }
+                  if (
+                    !confirm(
+                      "Bu şantiye için veritabanındaki tüm raporlarda kalan kazık, kayıtlı şantiye ayarına göre yeniden hesaplanacak. Devam edilsin mi?"
+                    )
+                  ) {
+                    return
+                  }
+                  setSiteRemainingRecalcLoading(true)
+                  try {
+                    const res = await fetch("/api/admin/recalculate-site-remaining", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ siteId: siteDialogData.id }),
+                    })
+                    const data = await res.json().catch(() => ({}))
+                    if (res.ok) {
+                      alert(
+                        data.updatedCount > 0
+                          ? `${data.updatedCount} raporda kalan kazık güncellendi.`
+                          : "Tüm raporlar zaten güncel görünüyor (değişen satır yok)."
+                      )
+                    } else {
+                      alert(data.error || "İşlem başarısız.")
+                    }
+                  } catch (e) {
+                    console.error(e)
+                    alert("İstek gönderilemedi.")
+                  } finally {
+                    setSiteRemainingRecalcLoading(false)
+                  }
+                }}
+              >
+                {siteRemainingRecalcLoading ? "Hesaplanıyor…" : "Kalan kazıkları yeniden hesapla"}
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="contained"
