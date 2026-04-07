@@ -2051,10 +2051,8 @@ function personelOrderClause(sortBy?: string | null, sortDir?: string | null): s
   let order: string
   switch (key) {
     case "gorev_oncelik":
-      order = `${PERSONEL_GOREV_RANK_SQL} ${dir} NULLS LAST, p.soyad ASC, p.ad ASC`
-      break
     case "gorev":
-      order = `p.gorev ${dir} NULLS LAST`
+      order = `${PERSONEL_GOREV_RANK_SQL} ${dir} NULLS LAST, p.gorev ${dir} NULLS LAST, p.soyad ASC, p.ad ASC`
       break
     case "kimlik":
       order = `COALESCE(NULLIF(TRIM(p.tc_kimlik), ''), NULLIF(TRIM(p.pasaport_no), '')) ${dir} NULLS LAST`

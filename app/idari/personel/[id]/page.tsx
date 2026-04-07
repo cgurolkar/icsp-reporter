@@ -122,6 +122,11 @@ export default function IdariPersonelDetailPage() {
 
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
   const canManage = role === "super_admin" || role === "admin" || role === "manager"
+  /** Ücret kalemleri yalnızca süper yönetici için net; diğer rollerde bulanık gösterilir. */
+  const canSeeUcretNet = role === "super_admin"
+  const ucretBlurSx = !canSeeUcretNet
+    ? { filter: "blur(8px)", userSelect: "none" as const, WebkitUserSelect: "none" as const }
+    : {}
 
   useEffect(() => {
     if (Number.isNaN(id)) return
@@ -319,10 +324,19 @@ export default function IdariPersonelDetailPage() {
               <Typography variant="body2"><strong>Kan grubu:</strong> {personel.kan_grubu ?? "—"}</Typography>
               <Typography variant="body2"><strong>Acil iletişim:</strong> {personel.acil_iletisim ?? "—"}</Typography>
               <Typography variant="body2"><strong>Acil telefon:</strong> {personel.acil_telefon ?? "—"}</Typography>
-              <Typography variant="body2"><strong>Günlük yevmiye (IQD):</strong> {fmtPara(personel.gunluk_yevmiye_iqd ?? personel.gunluk_yevmiye, "IQD")}</Typography>
-              <Typography variant="body2"><strong>Günlük yevmiye (USD):</strong> {fmtPara(personel.gunluk_yevmiye_usd, "USD")}</Typography>
-              <Typography variant="body2"><strong>Aylık maaş (IQD):</strong> {fmtPara(personel.aylik_maas_iqd ?? personel.aylik_maas, "IQD")}</Typography>
-              <Typography variant="body2"><strong>Aylık maaş (USD):</strong> {fmtPara(personel.aylik_maas_usd, "USD")}</Typography>
+              <Box sx={{ gridColumn: { xs: "1 / -1", sm: "1 / -1" } }}>
+                {!canSeeUcretNet && (
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                    Ücret bilgileri yalnızca süper yönetici hesabıyla net görüntülenir.
+                  </Typography>
+                )}
+                <Box sx={ucretBlurSx}>
+                  <Typography variant="body2"><strong>Günlük yevmiye (IQD):</strong> {fmtPara(personel.gunluk_yevmiye_iqd ?? personel.gunluk_yevmiye, "IQD")}</Typography>
+                  <Typography variant="body2"><strong>Günlük yevmiye (USD):</strong> {fmtPara(personel.gunluk_yevmiye_usd, "USD")}</Typography>
+                  <Typography variant="body2"><strong>Aylık maaş (IQD):</strong> {fmtPara(personel.aylik_maas_iqd ?? personel.aylik_maas, "IQD")}</Typography>
+                  <Typography variant="body2"><strong>Aylık maaş (USD):</strong> {fmtPara(personel.aylik_maas_usd, "USD")}</Typography>
+                </Box>
+              </Box>
               <Typography variant="body2"><strong>IBAN:</strong> {personel.iban ?? "—"}</Typography>
               <Typography variant="body2"><strong>Banka:</strong> {personel.banka_adi ?? "—"}</Typography>
             </Box>
@@ -366,6 +380,7 @@ export default function IdariPersonelDetailPage() {
           <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.5 }}>Ücret özeti (onaylı puantaj)</Typography>
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
             Veriler {finansOzet.stats_since} tarihinden itibaren listelenir (sistemde puantaj olan aylar). Yevmiye hak edişi güncel günlük tarife ile (IQD ve USD ayrı) adam-gün ile çarpılır; aylık maaş için ay içinde en az bir onaylı puantaj varsa IQD/USD tarifeleri ayrı satırlarda gösterilir.
+            {!canSeeUcretNet ? " Tutar sütunları yalnızca süper yönetici için net okunur." : ""}
           </Typography>
           {finansOzet.aylar.length === 0 ? (
             <Typography variant="body2" color="text.secondary">Bu dönemde onaylı puantaj kaydı yok.</Typography>
@@ -386,20 +401,20 @@ export default function IdariPersonelDetailPage() {
                   <TableRow key={row.ay}>
                     <TableCell>{row.ay}</TableCell>
                     <TableCell align="right">{Number(row.toplam_carpan).toLocaleString("tr-TR", { maximumFractionDigits: 2 })}</TableCell>
-                    <TableCell align="right">
+                    <TableCell align="right" sx={ucretBlurSx}>
                       {(finansOzet.gunluk_yevmiye_iqd != null && finansOzet.gunluk_yevmiye_iqd > 0) || row.yevmiye_hak_edis_iqd > 0
                         ? fmtPara(row.yevmiye_hak_edis_iqd, "IQD")
                         : "—"}
                     </TableCell>
-                    <TableCell align="right">
+                    <TableCell align="right" sx={ucretBlurSx}>
                       {(finansOzet.gunluk_yevmiye_usd != null && finansOzet.gunluk_yevmiye_usd > 0) || row.yevmiye_hak_edis_usd > 0
                         ? fmtPara(row.yevmiye_hak_edis_usd, "USD")
                         : "—"}
                     </TableCell>
-                    <TableCell align="right">
+                    <TableCell align="right" sx={ucretBlurSx}>
                       {row.aylik_maas_goster_iqd != null ? fmtPara(row.aylik_maas_goster_iqd, "IQD") : "—"}
                     </TableCell>
-                    <TableCell align="right">
+                    <TableCell align="right" sx={ucretBlurSx}>
                       {row.aylik_maas_goster_usd != null ? fmtPara(row.aylik_maas_goster_usd, "USD") : "—"}
                     </TableCell>
                   </TableRow>

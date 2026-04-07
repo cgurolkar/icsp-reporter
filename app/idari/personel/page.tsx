@@ -59,6 +59,8 @@ const GOREVLER = [
 const IZIN_TIPLERI = ["Yıllık", "Mazeret", "Sağlık", "Ücretsiz", "Diğer"]
 const CALISTIGI_BOLUM_OPTIONS = ["Şantiye", "Merkez Ofis", "Depo", "Diğer"]
 
+const PERSONEL_LIST_SORT_KEYS = new Set(["ad_soyad", "gorev", "gorev_yeri"])
+
 interface SiteItem {
   id: number
   name: string
@@ -108,46 +110,11 @@ function activeSiteId(row: PersonelRow): number | null {
   return active?.site_id ?? null
 }
 
-function formatPersonelUcretOzeti(row: PersonelRow): string {
-  const parts: string[] = []
-  const yi = row.gunluk_yevmiye_iqd != null ? Number(row.gunluk_yevmiye_iqd) : null
-  const yu = row.gunluk_yevmiye_usd != null ? Number(row.gunluk_yevmiye_usd) : null
-  const mi = row.aylik_maas_iqd != null ? Number(row.aylik_maas_iqd) : null
-  const mu = row.aylik_maas_usd != null ? Number(row.aylik_maas_usd) : null
-  const ly = row.gunluk_yevmiye != null ? Number(row.gunluk_yevmiye) : null
-  const lm = row.aylik_maas != null ? Number(row.aylik_maas) : null
-  if (yi != null && yi > 0) parts.push(`${yi.toLocaleString("tr-TR")} IQD/gün`)
-  if (yu != null && yu > 0) parts.push(`${yu.toLocaleString("tr-TR")} USD/gün`)
-  if (mi != null && mi > 0) parts.push(`${mi.toLocaleString("tr-TR")} IQD/ay`)
-  if (mu != null && mu > 0) parts.push(`${mu.toLocaleString("tr-TR")} USD/ay`)
-  if (parts.length === 0) {
-    if (ly != null && ly > 0) parts.push(`${ly.toLocaleString("tr-TR")} (gün)`)
-    else if (lm != null && lm > 0) parts.push(`${lm.toLocaleString("tr-TR")} (ay)`)
-  }
-  return parts.length ? parts.join(" · ") : "—"
-}
-
 function parseMoneyInput(s: string): number | null {
   const t = s.trim()
   if (!t) return null
   const n = parseFloat(t.replace(",", "."))
   return Number.isFinite(n) && n >= 0 ? n : null
-}
-
-/** Görev metninden öncelik seviyesi (veritabanı sıralaması ile uyumlu). */
-function gorevOncelikLabel(g: string): string {
-  const s = String(g || "").trim()
-  if (!s) return "—"
-  if (/proje/i.test(s) && /(müdür|mudur)/i.test(s)) return "1"
-  if (/şantiye.*şef|santiye.*sef/i.test(s)) return "2"
-  if (/mühendis|muhendis/i.test(s)) return "3"
-  if (/formen|foreman/i.test(s)) return "4"
-  if (/operatör|operator/i.test(s)) return "5"
-  if (/satın.*alma|satin.*alma/i.test(s)) return "6"
-  if (/yağcı|yagci/i.test(s)) return "7"
-  if (/teknisyen/i.test(s)) return "8"
-  if (/işçi|isci|işci/i.test(s)) return "9"
-  return "•"
 }
 
 // Personal photo / avatar component (dosyalar cookie ile API'den sunulur — standalone/public uyumu)
@@ -287,11 +254,15 @@ export default function IdariPersonelPage() {
 
   useEffect(() => { loadSites() }, [])
 
-  /** Şantiye filtresi ilk seçildiğinde: görev hiyerarşisine göre sırala (proje müdürü → … → işçi). */
+  useEffect(() => {
+    if (!PERSONEL_LIST_SORT_KEYS.has(sortBy)) setSortBy("ad_soyad")
+  }, [sortBy])
+
+  /** Şantiye filtresi ilk seçildiğinde: Görev kolonuna göre hiyerarşik sıra (aynı şema). */
   useEffect(() => {
     const prev = siteIdPrevForSortRef.current
     if (siteId && !prev) {
-      setSortBy("gorev_oncelik")
+      setSortBy("gorev")
       setSortDir("asc")
     }
     siteIdPrevForSortRef.current = siteId
@@ -523,8 +494,8 @@ export default function IdariPersonelPage() {
             </Select>
           </FormControl>
           {siteId ? (
-            <Typography variant="caption" color="text.secondary" sx={{ alignSelf: "center", maxWidth: 280 }}>
-              Şantiye seçili: liste varsayılan olarak görev önem sırasına göre (Proje Müdürü → Şantiye Şefi → Mühendis → …) gelir; tablodan başka sıralama da seçebilirsiniz.
+            <Typography variant="caption" color="text.secondary" sx={{ alignSelf: "center", maxWidth: 320 }}>
+              Şantiye seçili: varsayılan sıra <strong>Görev</strong> sütununa göre hiyerarşiktir (Proje Müdürü → … → İşçi). Başlıklardan başka sıralama seçebilirsiniz.
             </Typography>
           ) : null}
           <FormControl size="small" sx={{ minWidth: 180 }}>
@@ -580,10 +551,7 @@ export default function IdariPersonelPage() {
                   <TableCell sx={{ width: 48 }}></TableCell>
                   <SortableTh label="Ad Soyad" sortKey="ad_soyad" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
                   <SortableTh label="Görev" sortKey="gorev" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
-                  <SortableTh label="Öncelik" sortKey="gorev_oncelik" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
-                  <SortableTh label="TC / Pasaport" sortKey="kimlik" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
                   <SortableTh label="Görev Yeri" sortKey="gorev_yeri" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
-                  <SortableTh label="Günlük / Aylık" sortKey="ucret" sortBy={sortBy} sortDir={sortDir} align="right" onSort={handleListSort} />
                   <TableCell align="right" title="Bu ay onaylı puantaj (adam/gün)">Bu ay puantaj</TableCell>
                   <TableCell align="right">İşlem</TableCell>
                 </TableRow>
@@ -591,7 +559,7 @@ export default function IdariPersonelPage() {
               <TableBody>
                 {list.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} align="center" sx={{ py: 3 }}>Kayıt yok</TableCell>
+                    <TableCell colSpan={6} align="center" sx={{ py: 3 }}>Kayıt yok</TableCell>
                   </TableRow>
                 ) : (
                   list.map((row) => (
@@ -601,17 +569,10 @@ export default function IdariPersonelPage() {
                       </TableCell>
                       <TableCell>{row.ad} {row.soyad}</TableCell>
                       <TableCell>{row.gorev}</TableCell>
-                      <TableCell sx={{ color: "text.secondary", fontSize: "0.85rem", fontWeight: 600 }} title="Görev hiyerarşisindeki sıra (düşük = üst kademe)">
-                        {gorevOncelikLabel(row.gorev)}
-                      </TableCell>
-                      <TableCell>{row.tc_kimlik ? `TC: ${row.tc_kimlik}` : row.pasaport_no ? `Pasaport: ${row.pasaport_no}` : "—"}</TableCell>
                       <TableCell>
                         <Typography variant="body2" color={activeGorevYeri(row) !== "—" ? "primary" : "text.secondary"}>
                           {activeGorevYeri(row)}
                         </Typography>
-                      </TableCell>
-                      <TableCell align="right" sx={{ maxWidth: 220, whiteSpace: "normal" }}>
-                        <Typography variant="body2" component="span">{formatPersonelUcretOzeti(row)}</Typography>
                       </TableCell>
                       <TableCell align="right">
                         {row.ay_puantaj_carpan != null && Number(row.ay_puantaj_carpan) > 0
