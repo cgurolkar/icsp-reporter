@@ -15,7 +15,7 @@ export async function PUT(
     const userId = parseInt(params.id);
     const body = await request.json();
     const { role, siteId, modulePermissions, personelId, password, email } = body;
-    const ALLOWED_ROLES = ['super_admin', 'admin', 'manager', 'user', 'personel', 'operator'];
+    const ALLOWED_ROLES = ['super_admin', 'admin', 'manager', 'user', 'personel', 'operator', 'engineer'];
     const requestedRole = role !== undefined && ALLOWED_ROLES.includes(role) ? role : undefined;
     const roleVal = requestedRole === 'super_admin' && session.role !== 'super_admin' ? 'admin' : requestedRole;
 

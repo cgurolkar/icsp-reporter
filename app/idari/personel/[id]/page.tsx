@@ -367,6 +367,9 @@ export default function IdariPersonelDetailPage() {
               fullWidth
               InputLabelProps={{ shrink: true }}
             />
+            <Typography variant="caption" color="text.secondary">
+              Not: Yeni atama eklendiğinde, başka şantiyelerdeki aktif atamalar başlangıç tarihinden bir gün önce otomatik kapatılır.
+            </Typography>
           </Box>
         </DialogContent>
         <DialogActions>

@@ -2124,15 +2124,22 @@ export async function upsertPersonelAtama(personelId: number, siteId: number, ba
   const client = await pool.connect()
   try {
     const today = baslangicTarihi || new Date().toISOString().slice(0, 10)
-    // Close any existing active atama for this personel at other sites
+    // Yeni şantiye başlangıcından itibaren tek aktif atama kalsın:
+    // diğer şantiyelerdeki aktif atamaları bir gün önce bitir.
     await client.query(
-      `UPDATE personel_atama SET bitis_tarihi = $1 WHERE personel_id = $2 AND site_id != $3 AND (bitis_tarihi IS NULL OR bitis_tarihi > $1)`,
+      `UPDATE personel_atama
+       SET bitis_tarihi = ($1::date - INTERVAL '1 day')::date
+       WHERE personel_id = $2
+         AND site_id != $3
+         AND (bitis_tarihi IS NULL OR bitis_tarihi >= $1::date)`,
       [today, personelId, siteId]
     )
     // Upsert active atama for this site
     const exists = await client.query(
-      `SELECT id FROM personel_atama WHERE personel_id = $1 AND site_id = $2 AND (bitis_tarihi IS NULL OR bitis_tarihi >= CURRENT_DATE) LIMIT 1`,
-      [personelId, siteId]
+      `SELECT id FROM personel_atama
+       WHERE personel_id = $1 AND site_id = $2 AND (bitis_tarihi IS NULL OR bitis_tarihi >= $3::date)
+       LIMIT 1`,
+      [personelId, siteId, today]
     )
     if (exists.rowCount === 0) {
       await client.query(
@@ -2268,12 +2275,22 @@ export async function getPersonelAtamalar(personelId: number) {
 export async function addPersonelAtama(data: { personel_id: number; site_id: number; baslangic_tarihi: string; bitis_tarihi?: string | null }) {
   const client = await pool.connect()
   try {
+    const start = (data.baslangic_tarihi || '').slice(0, 10)
+    // Personel yeni şantiyeye geçtiği tarihten itibaren eski aktif atamalar sonlandırılır.
+    await client.query(
+      `UPDATE personel_atama
+       SET bitis_tarihi = ($1::date - INTERVAL '1 day')::date
+       WHERE personel_id = $2
+         AND site_id != $3
+         AND (bitis_tarihi IS NULL OR bitis_tarihi >= $1::date)`,
+      [start, data.personel_id, data.site_id]
+    )
     const r = await client.query(`
       INSERT INTO personel_atama (personel_id, site_id, baslangic_tarihi, bitis_tarihi)
       VALUES ($1, $2, $3, $4)
       ON CONFLICT (personel_id, site_id, baslangic_tarihi) DO NOTHING
       RETURNING id
-    `, [data.personel_id, data.site_id, (data.baslangic_tarihi || '').slice(0, 10), data.bitis_tarihi ? (data.bitis_tarihi as string).slice(0, 10) : null])
+    `, [data.personel_id, data.site_id, start, data.bitis_tarihi ? (data.bitis_tarihi as string).slice(0, 10) : null])
     return r.rows[0]?.id
   } finally {
     client.release()

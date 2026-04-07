@@ -64,8 +64,10 @@ export async function middleware(request: NextRequest) {
   }
 
   const role = String(session.role || "").toLowerCase()
-  const canViewReports = role === "super_admin" || role === "admin" || role === "manager" || role === "user" || role === "personel"
-  const canDoDataEntry = role === "super_admin" || role === "admin" || role === "user" || role === "personel"
+  const modulePerms = session.modulePermissions || {}
+  const hasModulePerm = (key: string) => modulePerms[key] === "view" || modulePerms[key] === "write"
+  const canViewReports = role === "super_admin" || role === "admin" || role === "manager" || role === "user" || role === "personel" || role === "engineer" || session.viewAllSites === true
+  const canDoDataEntry = role === "super_admin" || role === "admin" || role === "user" || role === "personel" || role === "engineer" || hasModulePerm("bilgi_giris")
 
   if (pathname.startsWith(ADMIN_PREFIX) && !canAccessAdmin(session.role)) {
     return NextResponse.redirect(new URL(PROJE_HOME, request.url))

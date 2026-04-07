@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
   }
-  if (!canDoDataEntry(session.role)) {
+  if (!canDoDataEntry(session.role, session)) {
     return NextResponse.json({ error: "Bilgi girişi yetkiniz yok." }, { status: 403 })
   }
   try {
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     const rawSiteId = formData.basicInfo?.siteId
     const siteId = rawSiteId == null || rawSiteId === "" ? null : Number(rawSiteId)
     const siteIdForDb = siteId != null && !Number.isNaN(siteId) ? siteId : null
-    if (session.role === "user" || session.role === "personel") {
+    if (session.role === "user" || session.role === "personel" || session.role === "engineer") {
       if (session.siteId == null) {
         return NextResponse.json({ error: "Size atanmış şantiye yok. Bilgi girişi yapamazsınız." }, { status: 403 })
       }

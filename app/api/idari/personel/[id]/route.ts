@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSessionFromRequest } from "@/lib/auth"
-import { canAccessIdari, canManageIdariCentral } from "@/lib/auth"
+import { canAccessIdari, canWriteIdariModule } from "@/lib/auth"
 import { initializeDatabase, getPersonelById, updatePersonel, deletePersonel, upsertPersonelAtama } from "@/lib/database"
 
 export async function GET(
@@ -31,7 +31,7 @@ export async function PUT(
 ) {
   const session = await getSessionFromRequest(request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
-  if (!canManageIdariCentral(session.role)) return NextResponse.json({ error: "Düzenleme yetkiniz yok." }, { status: 403 })
+  if (!canWriteIdariModule(session, "personel")) return NextResponse.json({ error: "Düzenleme yetkiniz yok." }, { status: 403 })
 
   const id = parseInt((await params).id, 10)
   if (Number.isNaN(id)) return NextResponse.json({ error: "Geçersiz ID." }, { status: 400 })
@@ -75,7 +75,7 @@ export async function DELETE(
 ) {
   const session = await getSessionFromRequest(_request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
-  if (!canManageIdariCentral(session.role)) return NextResponse.json({ error: "Silme yetkiniz yok." }, { status: 403 })
+  if (!canWriteIdariModule(session, "personel")) return NextResponse.json({ error: "Silme yetkiniz yok." }, { status: 403 })
 
   const id = parseInt((await params).id, 10)
   if (Number.isNaN(id)) return NextResponse.json({ error: "Geçersiz ID." }, { status: 400 })

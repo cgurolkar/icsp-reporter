@@ -10,7 +10,7 @@ const SECRET = process.env.AUTH_SECRET || process.env.JWT_SECRET || "icsp-dev-se
 const SECRET_BYTES = new TextEncoder().encode(SECRET)
 const MAX_AGE = 60 * 60 * 24 * 7 // 7 days
 
-export type Role = "super_admin" | "admin" | "manager" | "user" | "personel" | "operator"
+export type Role = "super_admin" | "admin" | "manager" | "user" | "personel" | "operator" | "engineer"
 
 export interface SessionUser {
   id: number

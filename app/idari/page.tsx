@@ -69,7 +69,7 @@ export default function IdariDashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(true)
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
-  const isUserRole = role === "user" || role === "personel"
+  const isUserRole = role === "user" || role === "personel" || role === "engineer"
 
   useEffect(() => {
     const params = new URLSearchParams()

@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSessionFromRequest } from "@/lib/auth"
-import { canAccessIdari, canManageIdariCentral } from "@/lib/auth"
+import { canAccessIdari, canManageIdariCentral, canWriteIdariModule } from "@/lib/auth"
 import { initializeDatabase, getEnvanter, getEnvanterCount, createEnvanter } from "@/lib/database"
 
 const ENVANTER_SORT_KEYS = new Set([
@@ -34,8 +34,15 @@ export async function GET(request: NextRequest) {
     const sortDirRaw = searchParams.get("sortDir")?.toLowerCase()
     const sortDir = sortDirRaw === "desc" || sortDirRaw === "asc" ? (sortDirRaw as "asc" | "desc") : undefined
 
+    const restrictedToOwnSite = !canManageIdariCentral(session.role)
+    if (restrictedToOwnSite && session.siteId == null) {
+      return NextResponse.json({ error: "Size atanmış şantiye yok." }, { status: 403 })
+    }
+    const effectiveSiteId = restrictedToOwnSite
+      ? session.siteId ?? undefined
+      : (siteId && !Number.isNaN(siteId) ? siteId : undefined)
     const opts = {
-      siteId: siteId && !Number.isNaN(siteId) ? siteId : undefined,
+      siteId: effectiveSiteId,
       yer,
       search,
       limit: limit && !Number.isNaN(limit) ? limit : undefined,
@@ -54,13 +61,21 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getSessionFromRequest(request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
-  if (!canManageIdariCentral(session.role)) return NextResponse.json({ error: "Envanter ekleme yetkiniz yok." }, { status: 403 })
+  if (!canWriteIdariModule(session, "envanter")) return NextResponse.json({ error: "Envanter ekleme yetkiniz yok." }, { status: 403 })
   try {
     const body = await request.json()
     const kod = String(body?.kod ?? "").trim()
     const malzeme_adi = String(body?.malzeme_adi ?? "").trim()
     if (!kod || !malzeme_adi) return NextResponse.json({ error: "Kod ve malzeme adı gerekli." }, { status: 400 })
     await initializeDatabase()
+    const restrictedToOwnSite = !canManageIdariCentral(session.role)
+    if (restrictedToOwnSite && session.siteId == null) {
+      return NextResponse.json({ error: "Size atanmış şantiye yok." }, { status: 403 })
+    }
+    const requestedSiteId = body.site_id != null ? Number(body.site_id) : null
+    if (restrictedToOwnSite && requestedSiteId != null && requestedSiteId !== session.siteId) {
+      return NextResponse.json({ error: "Sadece atanmış olduğunuz şantiye için kayıt yapabilirsiniz." }, { status: 403 })
+    }
     const id = await createEnvanter({
       kod,
       malzeme_adi,
@@ -69,7 +84,7 @@ export async function POST(request: NextRequest) {
       fotograf_yolu: body.fotograf_yolu ?? null,
       fiyat: body.fiyat != null ? Number(body.fiyat) : null,
       yer: body.yer ?? null,
-      site_id: body.site_id ?? null,
+      site_id: restrictedToOwnSite ? session.siteId : (body.site_id ?? null),
       durum: body.durum ?? 'aktif',
     })
     return NextResponse.json({ id })

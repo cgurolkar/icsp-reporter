@@ -108,6 +108,7 @@ function roleLabelTr(role: string): string {
     user: "İdari / Kullanıcı",
     personel: "Personel",
     operator: "Operatör",
+    engineer: "Mühendis",
   }
   return m[role] || role
 }
@@ -2227,6 +2228,7 @@ function AdminPanel() {
                 <MenuItem value="user">İdari / Kullanıcı</MenuItem>
                 <MenuItem value="personel">Personel</MenuItem>
                 <MenuItem value="operator">Operatör</MenuItem>
+                <MenuItem value="engineer">Mühendis</MenuItem>
               </Select>
             </FormControl>
 

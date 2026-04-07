@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic"
 export async function POST(request: NextRequest) {
   const session = await getSessionFromRequest(request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
-  if (!canDoDataEntry(session.role)) return NextResponse.json({ error: "Yetkiniz yok." }, { status: 403 })
+  if (!canDoDataEntry(session.role, session)) return NextResponse.json({ error: "Yetkiniz yok." }, { status: 403 })
 
   try {
     await initializeDatabase()

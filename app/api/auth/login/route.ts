@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import pool, { initializeDatabase } from "@/lib/database"
 import { verifyPassword, hashPassword, createToken, setSessionCookie, type Role } from "@/lib/auth"
 
-const ALLOWED_ROLES: Role[] = ["super_admin", "admin", "manager", "user", "personel", "operator"]
+const ALLOWED_ROLES: Role[] = ["super_admin", "admin", "manager", "user", "personel", "operator", "engineer"]
 
 function isBcryptHash(hash: string): boolean {
   return typeof hash === "string" && (hash.startsWith("$2a$") || hash.startsWith("$2b$") || hash.startsWith("$2y$"))

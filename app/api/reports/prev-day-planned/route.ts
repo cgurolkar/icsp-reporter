@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   if (!Number.isInteger(siteId) || siteId < 1) {
     return NextResponse.json({ error: "Geçerli siteId gerekli." }, { status: 400 })
   }
-  if ((session.role === "user" || session.role === "personel") && session.siteId !== siteId) {
+  if ((session.role === "user" || session.role === "personel" || session.role === "engineer") && session.siteId !== siteId) {
     return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   }
   const yesterday = new Date()

@@ -27,7 +27,7 @@ export default function IdariLayout({ children }: { children: React.ReactNode })
   const router = useRouter()
   const { user } = useAuth()
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
-  const canAccessIdari = ["super_admin", "admin", "manager", "user", "personel"].includes(role)
+  const canAccessIdari = ["super_admin", "admin", "manager", "user", "personel", "engineer"].includes(role)
 
   useEffect(() => {
     if (user && !canAccessIdari) router.replace("/proje")
@@ -67,7 +67,7 @@ export default function IdariLayout({ children }: { children: React.ReactNode })
           </Typography>
           <Box sx={{ display: "flex", gap: 0.5, flexWrap: { xs: "nowrap", sm: "wrap" }, overflowX: { xs: "auto", sm: "visible" }, WebkitOverflowScrolling: "touch", pb: { xs: 0.5, sm: 0 } }}>
             {navItems.filter((item) => {
-              const isUserRole = role === "user" || role === "personel"
+              const isUserRole = role === "user" || role === "personel" || role === "engineer"
               const USER_ALLOWED = ["/idari", "/idari/personel", "/idari/envanter", "/idari/makineler", "/idari/harcamalar"]
               if (isUserRole) return USER_ALLOWED.includes(item.href)
               if (item.href === "/idari/puantaj-onay") return role === "super_admin" || role === "admin" || role === "manager"

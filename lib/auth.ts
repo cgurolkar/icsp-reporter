@@ -52,11 +52,13 @@ export function canAccessAdmin(role: Role): boolean {
 
 export function canViewReports(role: Role): boolean {
   // admin ve manager tüm şantiyeleri görebilir; user ve personel kendi şantiyelerini görebilir
-  return role === "super_admin" || role === "admin" || role === "manager" || role === "user" || role === "personel"
+  return role === "super_admin" || role === "admin" || role === "manager" || role === "user" || role === "personel" || role === "engineer"
 }
 
-export function canDoDataEntry(role: Role): boolean {
-  return role === "super_admin" || role === "admin" || role === "user" || role === "personel"
+export function canDoDataEntry(role: Role, session?: SessionUser | null): boolean {
+  if (role === "super_admin" || role === "admin" || role === "user" || role === "personel" || role === "engineer") return true
+  if (session) return canAccessModule(session, "bilgi_giris", "write")
+  return false
 }
 
 /** Sadece makine bilgisi girişi (operatör) */
@@ -87,7 +89,7 @@ export function canAccessModule(session: SessionUser, moduleKey: string, level: 
 
 /** İdari modüle erişim (operator hariç) — extended by module permissions */
 export function canAccessIdari(role: Role, session?: SessionUser | null): boolean {
-  if (role === "super_admin" || role === "admin" || role === "manager" || role === "user" || role === "personel") return true
+  if (role === "super_admin" || role === "admin" || role === "manager" || role === "user" || role === "personel" || role === "engineer") return true
   // A user with any idari module permission (view or write) can access the idari area
   if (session) {
     const idariModules = ["personel", "envanter", "harcamalar", "puantaj", "bilgi_giris", "makineler"]
@@ -99,6 +101,12 @@ export function canAccessIdari(role: Role, session?: SessionUser | null): boolea
 /** Personel/özlük/finans girişi (merkez İK/idari) */
 export function canManageIdariCentral(role: Role): boolean {
   return role === "super_admin" || role === "admin" || role === "manager"
+}
+
+/** Modül bazlı yazma izni (role write yetkileriyle birlikte). */
+export function canWriteIdariModule(session: SessionUser, moduleKey: string): boolean {
+  if (canManageIdariCentral(session.role)) return true
+  return canAccessModule(session, moduleKey, "write")
 }
 
 /** Puantaj girişi: sadece o şantiyenin sorumlusu veya admin */
