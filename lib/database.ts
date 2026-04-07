@@ -1,4 +1,4 @@
-import { Pool } from 'pg'
+import { Pool, type PoolClient } from 'pg'
 import { expenseAmountsToUsdIqd, type ExpenseCurrency } from './expense-fx'
 import { getAppStatsSinceSqlDate } from './app-stats'
 
@@ -2627,6 +2627,206 @@ export async function createIslem(data: {
 }
 
 // ---------- Envanter Hareket ----------
+function envanterHareketContribution(tipi: string, adet: number): number {
+  return tipi === 'gelen' ? adet : -adet
+}
+
+function parseEnvanterSiteId(v: unknown): number | null {
+  if (v == null || v === '') return null
+  const n = parseInt(String(v), 10)
+  return Number.isFinite(n) ? n : null
+}
+
+type EnvanterHareketSt = { adet: number; yer: string | null; site_id: number | null }
+
+function forwardEnvanterHareketOne(
+  st: EnvanterHareketSt,
+  h: { hareket_tipi: string; adet: unknown; hedef_yer: string | null; site_id: unknown },
+): EnvanterHareketSt {
+  const n = parseInt(String(h.adet), 10)
+  let adet = st.adet
+  if (h.hareket_tipi === 'gelen') adet += n
+  else adet = Math.max(0, adet - n)
+  return {
+    adet,
+    yer: h.hedef_yer ?? st.yer,
+    site_id: parseEnvanterSiteId(h.site_id) ?? st.site_id,
+  }
+}
+
+function undoEnvanterHareketOne(
+  st: EnvanterHareketSt,
+  h: {
+    hareket_tipi: string
+    adet: unknown
+    hedef_yer: string | null
+    kaynak_yer: string | null
+    site_id: unknown
+  },
+): EnvanterHareketSt {
+  const n = parseInt(String(h.adet), 10)
+  let adet = st.adet
+  if (h.hareket_tipi === 'gelen') adet -= n
+  else adet += n
+  let yer = st.yer
+  if (h.hedef_yer != null) {
+    const ky = h.kaynak_yer != null ? String(h.kaynak_yer).trim() : ''
+    if (ky) yer = ky
+  }
+  let site_id = st.site_id
+  if (parseEnvanterSiteId(h.site_id) != null) {
+    site_id = null
+  }
+  return { adet, yer, site_id }
+}
+
+/** Tüm hareketleri kronolojik sırayla yeniden uygula; envanter satırı ile tutarlılık (yer / şantiye) için kullanılır. */
+export async function recalculateEnvanterFromHareketler(client: PoolClient, envanterId: number) {
+  const evR = await client.query(`SELECT adet, yer, site_id FROM envanter WHERE id = $1 FOR UPDATE`, [envanterId])
+  if (!evR.rows[0]) throw new Error('Envanter bulunamadı')
+  const hR = await client.query(
+    `SELECT id, hareket_tipi, adet, hedef_yer, kaynak_yer, site_id
+     FROM envanter_hareket WHERE envanter_id = $1
+     ORDER BY tarih ASC, id ASC`,
+    [envanterId],
+  )
+  const rows = hR.rows
+  let st: EnvanterHareketSt = {
+    adet: parseInt(String(evR.rows[0].adet ?? '0'), 10),
+    yer: evR.rows[0].yer != null ? String(evR.rows[0].yer) : null,
+    site_id: parseEnvanterSiteId(evR.rows[0].site_id),
+  }
+  if (rows.length === 0) return
+  for (const h of [...rows].reverse()) {
+    st = undoEnvanterHareketOne(st, h)
+  }
+  for (const h of rows) {
+    st = forwardEnvanterHareketOne(st, h)
+  }
+  await client.query(
+    `UPDATE envanter SET adet = $1, yer = $2, site_id = $3, updated_at = NOW() WHERE id = $4`,
+    [st.adet, st.yer, st.site_id, envanterId],
+  )
+}
+
+export async function deleteEnvanterHareketById(envanterId: number, hareketId: number): Promise<boolean> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const r = await client.query(
+      `SELECT id, hareket_tipi, adet FROM envanter_hareket WHERE id = $1 AND envanter_id = $2`,
+      [hareketId, envanterId],
+    )
+    if (!r.rows[0]) {
+      await client.query('ROLLBACK')
+      return false
+    }
+    const tip = String(r.rows[0].hareket_tipi)
+    const n = parseInt(String(r.rows[0].adet), 10)
+    const c = envanterHareketContribution(tip, n)
+    await client.query(`UPDATE envanter SET adet = adet - ($1::int) WHERE id = $2`, [c, envanterId])
+    await client.query(`DELETE FROM envanter_hareket WHERE id = $1`, [hareketId])
+    await recalculateEnvanterFromHareketler(client, envanterId)
+    await client.query('COMMIT')
+    return true
+  } catch (e) {
+    try {
+      await client.query('ROLLBACK')
+    } catch {
+      /* ignore */
+    }
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
+export async function updateEnvanterHareketById(
+  envanterId: number,
+  hareketId: number,
+  patch: Partial<{
+    hareket_tipi: 'gelen' | 'giden'
+    kaynak_yer: string | null
+    hedef_yer: string | null
+    site_id: number | null
+    tarih: string
+    adet: number
+    notlar: string | null
+  }>,
+): Promise<{ ok: true } | {ok: false; error: 'not_found' | 'no_changes' | 'invalid_adet' | 'negative_stock'}> {
+  if (Object.keys(patch).length === 0) {
+    return { ok: false, error: 'no_changes' }
+  }
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const oldR = await client.query(
+      `SELECT * FROM envanter_hareket WHERE id = $1 AND envanter_id = $2 FOR UPDATE`,
+      [hareketId, envanterId],
+    )
+    if (!oldR.rows[0]) {
+      await client.query('ROLLBACK')
+      return { ok: false, error: 'not_found' }
+    }
+    const o = oldR.rows[0]
+    const oldTip = String(o.hareket_tipi)
+    const oldN = parseInt(String(o.adet), 10)
+    const newTip = patch.hareket_tipi ?? (oldTip as 'gelen' | 'giden')
+    const newN = patch.adet != null ? patch.adet : oldN
+    if (!Number.isFinite(newN) || newN < 1) {
+      await client.query('ROLLBACK')
+      return { ok: false, error: 'invalid_adet' }
+    }
+    const newKaynak = patch.kaynak_yer !== undefined ? patch.kaynak_yer : o.kaynak_yer
+    const newHedef = patch.hedef_yer !== undefined ? patch.hedef_yer : o.hedef_yer
+    const newSite = 'site_id' in patch ? patch.site_id : parseEnvanterSiteId(o.site_id)
+    const newTarih = patch.tarih != null ? String(patch.tarih).slice(0, 10) : String(o.tarih).slice(0, 10)
+    const newNotlar = patch.notlar !== undefined ? patch.notlar : o.notlar
+
+    const same =
+      oldTip === newTip &&
+      oldN === newN &&
+      (o.kaynak_yer ?? null) === (newKaynak ?? null) &&
+      (o.hedef_yer ?? null) === (newHedef ?? null) &&
+      parseEnvanterSiteId(o.site_id) === newSite &&
+      String(o.tarih).slice(0, 10) === newTarih &&
+      (o.notlar ?? null) === (newNotlar ?? null)
+    if (same) {
+      await client.query('ROLLBACK')
+      return { ok: false, error: 'no_changes' }
+    }
+
+    const cOld = envanterHareketContribution(oldTip, oldN)
+    const cNew = envanterHareketContribution(newTip, newN)
+    await client.query(`UPDATE envanter SET adet = adet - ($1::int) + ($2::int) WHERE id = $3`, [cOld, cNew, envanterId])
+
+    await client.query(
+      `UPDATE envanter_hareket SET
+        hareket_tipi = $1, kaynak_yer = $2, hedef_yer = $3, site_id = $4, tarih = $5, adet = $6, notlar = $7
+       WHERE id = $8`,
+      [newTip, newKaynak ?? null, newHedef ?? null, newSite, newTarih, newN, newNotlar, hareketId],
+    )
+
+    await recalculateEnvanterFromHareketler(client, envanterId)
+    const chk = await client.query(`SELECT adet FROM envanter WHERE id = $1`, [envanterId])
+    if (parseInt(String(chk.rows[0]?.adet ?? '0'), 10) < 0) {
+      await client.query('ROLLBACK')
+      return { ok: false, error: 'negative_stock' }
+    }
+    await client.query('COMMIT')
+    return { ok: true }
+  } catch (e) {
+    try {
+      await client.query('ROLLBACK')
+    } catch {
+      /* ignore */
+    }
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
 export async function getEnvanterHareketler(envanterI: number) {
   const client = await pool.connect()
   try {

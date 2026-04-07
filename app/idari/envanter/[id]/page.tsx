@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
 import {
@@ -19,14 +19,27 @@ import {
   TableBody,
   TableRow,
   TableCell,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  TextField,
+  IconButton,
+  Tooltip,
 } from "@mui/material"
-import { ArrowBack, Inventory2, ArrowDownward, ArrowUpward } from "@mui/icons-material"
+import { ArrowBack, Inventory2, ArrowDownward, ArrowUpward, Edit, Delete } from "@mui/icons-material"
+import { useAuth } from "@/contexts/auth-context"
 
 interface HareketRow {
   id: number
   hareket_tipi: "gelen" | "giden"
   kaynak_yer?: string | null
   hedef_yer?: string | null
+  site_id?: number | null
   site_name?: string | null
   tarih: string
   adet: number
@@ -51,6 +64,10 @@ interface EnvanterDetail {
   hareketler?: HareketRow[]
 }
 
+interface SiteItem { id: number; name: string; code: string }
+
+const SABIT_YERLER = ["Bağdat Depo", "Erbil Depo 1", "Erbil Depo 2", "Satın Alınanlar"]
+
 const DURUM_RENK: Record<string, "success"|"default"|"warning"|"error"> = {
   aktif: "success", depoda: "default", yolda: "warning", bakimda: "warning", hurda: "error",
 }
@@ -63,8 +80,40 @@ export default function IdariEnvanterDetailPage() {
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"))
   const params = useParams()
   const id = typeof params?.id === "string" ? parseInt(params.id, 10) : NaN
+  const { user } = useAuth()
+  const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
+  const canManageHareket = role === "super_admin" || role === "admin" || role === "manager"
+
   const [item, setItem] = useState<EnvanterDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [sites, setSites] = useState<SiteItem[]>([])
+
+  const [hareketDialogOpen, setHareketDialogOpen] = useState(false)
+  const [hareketSaving, setHareketSaving] = useState(false)
+  const [editingHareketId, setEditingHareketId] = useState<number | null>(null)
+  const [hareketForm, setHareketForm] = useState({
+    hareket_tipi: "gelen" as "gelen" | "giden",
+    kaynak_yer: "",
+    hedef_yer: "",
+    site_id: "",
+    tarih: new Date().toISOString().slice(0, 10),
+    adet: "1",
+    notlar: "",
+  })
+
+  const reloadDetail = useCallback(() => {
+    if (Number.isNaN(id)) return
+    fetch(`/api/idari/envanter/${id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: EnvanterDetail | null) => {
+        if (data != null) setItem(data)
+      })
+      .catch(() => {})
+  }, [id])
+
+  useEffect(() => {
+    fetch("/api/sites").then((r) => (r.ok ? r.json() : [])).then(setSites).catch(() => setSites([]))
+  }, [])
 
   useEffect(() => {
     if (Number.isNaN(id)) return
@@ -75,6 +124,64 @@ export default function IdariEnvanterDetailPage() {
       .catch(() => setItem(null))
       .finally(() => setLoading(false))
   }, [id])
+
+  const openEditHareket = (h: HareketRow) => {
+    const matchSite = h.site_id != null ? sites.find((s) => s.id === h.site_id) : undefined
+    const hedefVal = (h.hedef_yer && String(h.hedef_yer).trim()) ? String(h.hedef_yer) : (matchSite?.name ?? "")
+    setEditingHareketId(h.id)
+    setHareketForm({
+      hareket_tipi: h.hareket_tipi,
+      kaynak_yer: h.kaynak_yer ?? "",
+      hedef_yer: hedefVal,
+      site_id: h.site_id != null ? String(h.site_id) : (matchSite ? String(matchSite.id) : ""),
+      tarih: String(h.tarih).slice(0, 10),
+      adet: String(h.adet),
+      notlar: h.notlar ?? "",
+    })
+    setHareketDialogOpen(true)
+  }
+
+  const closeHareketDialog = () => {
+    setHareketDialogOpen(false)
+    setEditingHareketId(null)
+  }
+
+  const handleHareketSave = async () => {
+    if (Number.isNaN(id) || editingHareketId == null) return
+    setHareketSaving(true)
+    const res = await fetch(`/api/idari/envanter/${id}/hareket/${editingHareketId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        hareket_tipi: hareketForm.hareket_tipi,
+        kaynak_yer: hareketForm.kaynak_yer || null,
+        hedef_yer: hareketForm.hedef_yer || null,
+        site_id: hareketForm.site_id ? parseInt(hareketForm.site_id, 10) : null,
+        tarih: hareketForm.tarih,
+        adet: parseInt(hareketForm.adet, 10) || 1,
+        notlar: hareketForm.notlar || null,
+      }),
+    })
+    setHareketSaving(false)
+    if (res.ok) {
+      closeHareketDialog()
+      reloadDetail()
+    } else {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error || "Kaydedilemedi.")
+    }
+  }
+
+  const handleDeleteHareket = async (hareketId: number) => {
+    if (Number.isNaN(id)) return
+    if (!confirm("Bu hareket kaydını silmek istediğinize emin misiniz? Envanter adedi ve konumu yeniden hesaplanır.")) return
+    const res = await fetch(`/api/idari/envanter/${id}/hareket/${hareketId}`, { method: "DELETE" })
+    if (res.ok) reloadDetail()
+    else {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error || "Silinemedi.")
+    }
+  }
 
   if (Number.isNaN(id)) {
     return (
@@ -185,6 +292,7 @@ export default function IdariEnvanterDetailPage() {
                   <TableCell align="right"><strong>Adet</strong></TableCell>
                   <TableCell><strong>Not</strong></TableCell>
                   <TableCell><strong>Giren</strong></TableCell>
+                  {canManageHareket && <TableCell align="right"><strong>İşlem</strong></TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -210,6 +318,20 @@ export default function IdariEnvanterDetailPage() {
                     <TableCell align="right">{h.adet}</TableCell>
                     <TableCell>{h.notlar ?? "—"}</TableCell>
                     <TableCell>{h.olusturan ?? "—"}</TableCell>
+                    {canManageHareket && (
+                      <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
+                        <Tooltip title="Düzenle">
+                          <IconButton size="small" onClick={() => openEditHareket(h)} aria-label="Hareketi düzenle">
+                            <Edit fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Sil">
+                          <IconButton size="small" onClick={() => handleDeleteHareket(h.id)} sx={{ color: "error.main" }} aria-label="Hareketi sil">
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -217,6 +339,98 @@ export default function IdariEnvanterDetailPage() {
           </Box>
         )}
       </Paper>
+
+      <Dialog open={hareketDialogOpen} onClose={closeHareketDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Typography variant="subtitle1" fontWeight={600}>Hareketi düzenle</Typography>
+          <Typography variant="body2" color="text.secondary">{item.malzeme_adi}</Typography>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+            <FormControl fullWidth required>
+              <InputLabel>Hareket Türü</InputLabel>
+              <Select
+                value={hareketForm.hareket_tipi}
+                label="Hareket Türü"
+                onChange={(e) => setHareketForm((f) => ({ ...f, hareket_tipi: e.target.value as "gelen" | "giden" }))}
+              >
+                <MenuItem value="gelen">Gelen</MenuItem>
+                <MenuItem value="giden">Giden</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControl fullWidth>
+              <InputLabel>Nereden</InputLabel>
+              <Select
+                value={hareketForm.kaynak_yer}
+                label="Nereden"
+                onChange={(e) => setHareketForm((f) => ({ ...f, kaynak_yer: e.target.value }))}
+              >
+                <MenuItem value="">— Seçin —</MenuItem>
+                {hareketForm.hareket_tipi === "gelen" && <MenuItem value="Satın alındı">Satın alındı</MenuItem>}
+                {SABIT_YERLER.map((y) => <MenuItem key={y} value={y}>{y}</MenuItem>)}
+                {sites.map((s) => <MenuItem key={s.id} value={s.name}>{s.name} (Şantiye)</MenuItem>)}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth>
+              <InputLabel>Nereye</InputLabel>
+              <Select
+                value={hareketForm.hedef_yer}
+                label="Nereye"
+                onChange={(e) => {
+                  const val = e.target.value
+                  const matchSite = sites.find((s) => s.name === val)
+                  setHareketForm((f) => ({
+                    ...f,
+                    hedef_yer: val,
+                    site_id: matchSite ? String(matchSite.id) : f.site_id,
+                  }))
+                }}
+              >
+                <MenuItem value="">— Seçin —</MenuItem>
+                {SABIT_YERLER.map((y) => <MenuItem key={y} value={y}>{y}</MenuItem>)}
+                {sites.map((s) => <MenuItem key={s.id} value={s.name}>{s.name} (Şantiye)</MenuItem>)}
+              </Select>
+            </FormControl>
+            <Box sx={{ display: "flex", gap: 2 }}>
+              <TextField
+                label="Adet"
+                type="number"
+                value={hareketForm.adet}
+                onChange={(e) => setHareketForm((f) => ({ ...f, adet: e.target.value }))}
+                inputProps={{ min: 1 }}
+                sx={{ width: 110 }}
+              />
+              <TextField
+                label="Tarih"
+                type="date"
+                value={hareketForm.tarih}
+                onChange={(e) => setHareketForm((f) => ({ ...f, tarih: e.target.value.slice(0, 10) }))}
+                InputLabelProps={{ shrink: true }}
+                sx={{ flex: 1 }}
+              />
+            </Box>
+            <TextField
+              label="Not"
+              value={hareketForm.notlar}
+              onChange={(e) => setHareketForm((f) => ({ ...f, notlar: e.target.value }))}
+              fullWidth
+              multiline
+              rows={2}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeHareketDialog} disabled={hareketSaving}>İptal</Button>
+          <Button
+            variant="contained"
+            onClick={handleHareketSave}
+            disabled={hareketSaving || !hareketForm.tarih || parseInt(hareketForm.adet, 10) < 1}
+            sx={{ background: "var(--icsp-lacivert)" }}
+          >
+            {hareketSaving ? "Kaydediliyor..." : "Kaydet"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }
