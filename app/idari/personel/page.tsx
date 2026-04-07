@@ -83,8 +83,13 @@ interface PersonelRow {
   ise_giris_tarihi?: string | null
   isten_cikis_tarihi?: string | null
   calistigi_bolum?: string | null
+  /** Eski tek alan (DB geçişi); yeni kayıtlar IQD/USD sütunlarında */
   gunluk_yevmiye?: number | null
   aylik_maas?: number | null
+  gunluk_yevmiye_usd?: number | null
+  gunluk_yevmiye_iqd?: number | null
+  aylik_maas_usd?: number | null
+  aylik_maas_iqd?: number | null
   foto_yolu?: string | null
   atamalar?: AtamaRow[] | null
   /** Takvim ayındaki onaylı puantaj adam/gün toplamı */
@@ -101,6 +106,32 @@ function activeSiteId(row: PersonelRow): number | null {
   if (!row.atamalar || row.atamalar.length === 0) return null
   const active = row.atamalar.find((a) => !a.bitis_tarihi || new Date(a.bitis_tarihi) >= new Date())
   return active?.site_id ?? null
+}
+
+function formatPersonelUcretOzeti(row: PersonelRow): string {
+  const parts: string[] = []
+  const yi = row.gunluk_yevmiye_iqd != null ? Number(row.gunluk_yevmiye_iqd) : null
+  const yu = row.gunluk_yevmiye_usd != null ? Number(row.gunluk_yevmiye_usd) : null
+  const mi = row.aylik_maas_iqd != null ? Number(row.aylik_maas_iqd) : null
+  const mu = row.aylik_maas_usd != null ? Number(row.aylik_maas_usd) : null
+  const ly = row.gunluk_yevmiye != null ? Number(row.gunluk_yevmiye) : null
+  const lm = row.aylik_maas != null ? Number(row.aylik_maas) : null
+  if (yi != null && yi > 0) parts.push(`${yi.toLocaleString("tr-TR")} IQD/gün`)
+  if (yu != null && yu > 0) parts.push(`${yu.toLocaleString("tr-TR")} USD/gün`)
+  if (mi != null && mi > 0) parts.push(`${mi.toLocaleString("tr-TR")} IQD/ay`)
+  if (mu != null && mu > 0) parts.push(`${mu.toLocaleString("tr-TR")} USD/ay`)
+  if (parts.length === 0) {
+    if (ly != null && ly > 0) parts.push(`${ly.toLocaleString("tr-TR")} (gün)`)
+    else if (lm != null && lm > 0) parts.push(`${lm.toLocaleString("tr-TR")} (ay)`)
+  }
+  return parts.length ? parts.join(" · ") : "—"
+}
+
+function parseMoneyInput(s: string): number | null {
+  const t = s.trim()
+  if (!t) return null
+  const n = parseFloat(t.replace(",", "."))
+  return Number.isFinite(n) && n >= 0 ? n : null
 }
 
 /** Görev metninden öncelik seviyesi (veritabanı sıralaması ile uyumlu). */
@@ -207,8 +238,10 @@ export default function IdariPersonelPage() {
     sigorta_durumu: "",
     iban: "",
     banka_adi: "",
-    gunluk_yevmiye: "",
-    aylik_maas: "",
+    gunluk_yevmiye_iqd: "",
+    gunluk_yevmiye_usd: "",
+    aylik_maas_iqd: "",
+    aylik_maas_usd: "",
     site_id: "",
     foto_base64: "" as string,
   })
@@ -284,7 +317,8 @@ export default function IdariPersonelPage() {
       ad: "", soyad: "", gorev: "İşçi", tc_kimlik: "", pasaport_no: "",
       calistigi_bolum: "", dogum_tarihi: "", kan_grubu: "", acil_iletisim: "",
       acil_telefon: "", ise_giris_tarihi: "", isten_cikis_tarihi: "",
-      sigorta_durumu: "", iban: "", banka_adi: "", gunluk_yevmiye: "", aylik_maas: "",
+      sigorta_durumu: "", iban: "", banka_adi: "",
+      gunluk_yevmiye_iqd: "", gunluk_yevmiye_usd: "", aylik_maas_iqd: "", aylik_maas_usd: "",
       site_id: "",
       foto_base64: "",
     })
@@ -309,8 +343,18 @@ export default function IdariPersonelPage() {
       sigorta_durumu: "",
       iban: "",
       banka_adi: "",
-      gunluk_yevmiye: row.gunluk_yevmiye != null ? String(row.gunluk_yevmiye) : "",
-      aylik_maas: row.aylik_maas != null ? String(row.aylik_maas) : "",
+      gunluk_yevmiye_iqd: row.gunluk_yevmiye_iqd != null
+        ? String(row.gunluk_yevmiye_iqd)
+        : row.gunluk_yevmiye != null
+          ? String(row.gunluk_yevmiye)
+          : "",
+      gunluk_yevmiye_usd: row.gunluk_yevmiye_usd != null ? String(row.gunluk_yevmiye_usd) : "",
+      aylik_maas_iqd: row.aylik_maas_iqd != null
+        ? String(row.aylik_maas_iqd)
+        : row.aylik_maas != null
+          ? String(row.aylik_maas)
+          : "",
+      aylik_maas_usd: row.aylik_maas_usd != null ? String(row.aylik_maas_usd) : "",
       site_id: activeSiteId(row) != null ? String(activeSiteId(row)) : "",
       foto_base64: row.foto_yolu ?? "",
     })
@@ -389,8 +433,12 @@ export default function IdariPersonelPage() {
       sigorta_durumu: form.sigorta_durumu || null,
       iban: form.iban || null,
       banka_adi: form.banka_adi || null,
-      gunluk_yevmiye: form.gunluk_yevmiye ? parseFloat(form.gunluk_yevmiye) : null,
-      aylik_maas: form.aylik_maas ? parseFloat(form.aylik_maas) : null,
+      gunluk_yevmiye: null,
+      aylik_maas: null,
+      gunluk_yevmiye_iqd: parseMoneyInput(form.gunluk_yevmiye_iqd),
+      gunluk_yevmiye_usd: parseMoneyInput(form.gunluk_yevmiye_usd),
+      aylik_maas_iqd: parseMoneyInput(form.aylik_maas_iqd),
+      aylik_maas_usd: parseMoneyInput(form.aylik_maas_usd),
       foto_yolu: form.foto_base64 || null,
       site_id: form.site_id ? parseInt(form.site_id, 10) : null,
     }
@@ -562,8 +610,8 @@ export default function IdariPersonelPage() {
                           {activeGorevYeri(row)}
                         </Typography>
                       </TableCell>
-                      <TableCell align="right">
-                        {row.gunluk_yevmiye != null ? row.gunluk_yevmiye : row.aylik_maas != null ? row.aylik_maas : "—"}
+                      <TableCell align="right" sx={{ maxWidth: 220, whiteSpace: "normal" }}>
+                        <Typography variant="body2" component="span">{formatPersonelUcretOzeti(row)}</Typography>
                       </TableCell>
                       <TableCell align="right">
                         {row.ay_puantaj_carpan != null && Number(row.ay_puantaj_carpan) > 0
@@ -729,8 +777,13 @@ export default function IdariPersonelPage() {
             </FormControl>
             <TextField label="İşe giriş tarihi" type="date" value={form.ise_giris_tarihi} onChange={(e) => setForm((f) => ({ ...f, ise_giris_tarihi: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
             <TextField label="İşten çıkış tarihi" type="date" value={form.isten_cikis_tarihi} onChange={(e) => setForm((f) => ({ ...f, isten_cikis_tarihi: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
-            <TextField label="Günlük yevmiye" type="number" value={form.gunluk_yevmiye} onChange={(e) => setForm((f) => ({ ...f, gunluk_yevmiye: e.target.value }))} fullWidth />
-            <TextField label="Aylık maaş" type="number" value={form.aylik_maas} onChange={(e) => setForm((f) => ({ ...f, aylik_maas: e.target.value }))} fullWidth />
+            <Typography variant="caption" color="text.secondary">Ücret: IQD ve USD ayrı girilebilir (boş bırakılan tutarlar kaydedilmez).</Typography>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2 }}>
+              <TextField label="Günlük yevmiye (IQD)" type="number" value={form.gunluk_yevmiye_iqd} onChange={(e) => setForm((f) => ({ ...f, gunluk_yevmiye_iqd: e.target.value }))} fullWidth inputProps={{ min: 0, step: "any" }} />
+              <TextField label="Günlük yevmiye (USD)" type="number" value={form.gunluk_yevmiye_usd} onChange={(e) => setForm((f) => ({ ...f, gunluk_yevmiye_usd: e.target.value }))} fullWidth inputProps={{ min: 0, step: "any" }} />
+              <TextField label="Aylık maaş (IQD)" type="number" value={form.aylik_maas_iqd} onChange={(e) => setForm((f) => ({ ...f, aylik_maas_iqd: e.target.value }))} fullWidth inputProps={{ min: 0, step: "any" }} />
+              <TextField label="Aylık maaş (USD)" type="number" value={form.aylik_maas_usd} onChange={(e) => setForm((f) => ({ ...f, aylik_maas_usd: e.target.value }))} fullWidth inputProps={{ min: 0, step: "any" }} />
+            </Box>
             <TextField label="Acil iletişim" value={form.acil_iletisim} onChange={(e) => setForm((f) => ({ ...f, acil_iletisim: e.target.value }))} fullWidth />
             <TextField label="Acil telefon" value={form.acil_telefon} onChange={(e) => setForm((f) => ({ ...f, acil_telefon: e.target.value }))} fullWidth />
             <TextField label="IBAN" value={form.iban} onChange={(e) => setForm((f) => ({ ...f, iban: e.target.value }))} fullWidth />

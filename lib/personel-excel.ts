@@ -20,8 +20,10 @@ export const PERSONEL_TEMPLATE_HEADERS = [
   "Sigorta Durumu",
   "IBAN",
   "Banka Adı",
-  "Günlük Yevmiye",
-  "Aylık Maaş",
+  "Günlük Yevmiye (IQD)",
+  "Günlük Yevmiye (USD)",
+  "Aylık Maaş (IQD)",
+  "Aylık Maaş (USD)",
 ] as const
 
 type PersonelField =
@@ -41,8 +43,10 @@ type PersonelField =
   | "sigorta_durumu"
   | "iban"
   | "banka_adi"
-  | "gunluk_yevmiye"
-  | "aylik_maas"
+  | "gunluk_yevmiye_iqd"
+  | "gunluk_yevmiye_usd"
+  | "aylik_maas_iqd"
+  | "aylik_maas_usd"
 
 const HEADER_ALIASES: Record<string, PersonelField> = {
   ad: "ad",
@@ -77,30 +81,31 @@ const HEADER_ALIASES: Record<string, PersonelField> = {
   banka_adi: "banka_adi",
   "banka adı": "banka_adi",
   banka: "banka_adi",
-  gunluk_yevmiye: "gunluk_yevmiye",
-  "günlük yevmiye": "gunluk_yevmiye",
-  yevmiye: "gunluk_yevmiye",
-  aylik_maas: "aylik_maas",
-  "aylık maaş": "aylik_maas",
-  maas: "aylik_maas",
-  maaş: "aylik_maas",
-  "aylık ücreti": "aylik_maas",   // aylık ücreti (ı + ü)
-  "aylik ücreti": "aylik_maas",   // AYLIK ÜCRETİ normalize edilince (i + ü) → bu alias gerekli!
-  "aylik ucreti": "aylik_maas",   // aksan yok
-  "aylık ücret": "aylik_maas",
-  "aylik ucret": "aylik_maas",
-  ücret: "aylik_maas",
-  ucret: "aylik_maas",
-  "brüt maaş": "aylik_maas",
-  "brut maas": "aylik_maas",
-  "net maaş": "aylik_maas",
-  "net maas": "aylik_maas",
-  "aylık ücret": "aylik_maas",
-  "aylik ucret": "aylik_maas",
-  "günlük ücret": "gunluk_yevmiye",
-  "gunluk ucret": "gunluk_yevmiye",
-  "günlük": "gunluk_yevmiye",
-  gunluk: "gunluk_yevmiye",
+  "günlük yevmiye (iqd)": "gunluk_yevmiye_iqd",
+  "günlük yevmiye (usd)": "gunluk_yevmiye_usd",
+  "günlük yevmiye": "gunluk_yevmiye_iqd",
+  yevmiye: "gunluk_yevmiye_iqd",
+  "aylık maaş (iqd)": "aylik_maas_iqd",
+  "aylık maaş (usd)": "aylik_maas_usd",
+  aylik_maas: "aylik_maas_iqd",
+  "aylık maaş": "aylik_maas_iqd",
+  maas: "aylik_maas_iqd",
+  maaş: "aylik_maas_iqd",
+  "aylık ücreti": "aylik_maas_iqd",
+  "aylik ücreti": "aylik_maas_iqd",
+  "aylik ucreti": "aylik_maas_iqd",
+  "aylık ücret": "aylik_maas_iqd",
+  "aylik ucret": "aylik_maas_iqd",
+  ücret: "aylik_maas_iqd",
+  ucret: "aylik_maas_iqd",
+  "brüt maaş": "aylik_maas_iqd",
+  "brut maas": "aylik_maas_iqd",
+  "net maaş": "aylik_maas_iqd",
+  "net maas": "aylik_maas_iqd",
+  "günlük ücret": "gunluk_yevmiye_iqd",
+  "gunluk ucret": "gunluk_yevmiye_iqd",
+  "günlük": "gunluk_yevmiye_iqd",
+  gunluk: "gunluk_yevmiye_iqd",
   görevi: "gorev",
   gorevi: "gorev",
   unvan: "gorev",
@@ -168,8 +173,10 @@ export interface PersonelExcelRow {
   sigorta_durumu?: string | null
   iban?: string | null
   banka_adi?: string | null
-  gunluk_yevmiye?: number | null
-  aylik_maas?: number | null
+  gunluk_yevmiye_iqd?: number | null
+  gunluk_yevmiye_usd?: number | null
+  aylik_maas_iqd?: number | null
+  aylik_maas_usd?: number | null
 }
 
 function toDateStr(v: unknown): string | null {
@@ -230,7 +237,12 @@ export function parsePersonelExcel(buffer: ArrayBuffer): PersonelExcelRow[] {
         record[field] = toStr(raw)
       } else if (field === "dogum_tarihi" || field === "ise_giris_tarihi" || field === "isten_cikis_tarihi") {
         record[field] = toDateStr(raw)
-      } else if (field === "gunluk_yevmiye" || field === "aylik_maas") {
+      } else if (
+        field === "gunluk_yevmiye_iqd"
+        || field === "gunluk_yevmiye_usd"
+        || field === "aylik_maas_iqd"
+        || field === "aylik_maas_usd"
+      ) {
         record[field] = toNum(raw)
       } else {
         record[field] = toStr(raw) || null
@@ -264,8 +276,10 @@ export function parsePersonelExcel(buffer: ArrayBuffer): PersonelExcelRow[] {
       sigorta_durumu: (record.sigorta_durumu as string) || null,
       iban: (record.iban as string) || null,
       banka_adi: (record.banka_adi as string) || null,
-      gunluk_yevmiye: (record.gunluk_yevmiye as number) ?? null,
-      aylik_maas: (record.aylik_maas as number) ?? null,
+      gunluk_yevmiye_iqd: (record.gunluk_yevmiye_iqd as number) ?? null,
+      gunluk_yevmiye_usd: (record.gunluk_yevmiye_usd as number) ?? null,
+      aylik_maas_iqd: (record.aylik_maas_iqd as number) ?? null,
+      aylik_maas_usd: (record.aylik_maas_usd as number) ?? null,
     })
   }
 

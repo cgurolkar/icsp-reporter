@@ -466,7 +466,23 @@ async function _doInitializeDatabase() {
         -- Personel-User FK: operatör kullanıcıyla ilişki
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='user_id')
         THEN ALTER TABLE personeller ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL; END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='gunluk_yevmiye_usd')
+        THEN ALTER TABLE personeller ADD COLUMN gunluk_yevmiye_usd DECIMAL(12,2); END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='gunluk_yevmiye_iqd')
+        THEN ALTER TABLE personeller ADD COLUMN gunluk_yevmiye_iqd DECIMAL(12,2); END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='aylik_maas_usd')
+        THEN ALTER TABLE personeller ADD COLUMN aylik_maas_usd DECIMAL(12,2); END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='personeller' AND column_name='aylik_maas_iqd')
+        THEN ALTER TABLE personeller ADD COLUMN aylik_maas_iqd DECIMAL(12,2); END IF;
       END $$
+    `)
+    await client.query(`
+      UPDATE personeller SET gunluk_yevmiye_iqd = gunluk_yevmiye
+      WHERE gunluk_yevmiye IS NOT NULL AND gunluk_yevmiye_iqd IS NULL
+    `)
+    await client.query(`
+      UPDATE personeller SET aylik_maas_iqd = aylik_maas
+      WHERE aylik_maas IS NOT NULL AND aylik_maas_iqd IS NULL
     `)
     // Migrate foto_yolu to TEXT if it was created as VARCHAR(500)
     await client.query(`
@@ -2047,7 +2063,11 @@ function personelOrderClause(sortBy?: string | null, sortDir?: string | null): s
       order = `${GOREV_YERI_ORDER_SUBQ} ${dir} NULLS LAST`
       break
     case "ucret":
-      order = `COALESCE(p.gunluk_yevmiye, p.aylik_maas) ${dir} NULLS LAST`
+      order = `GREATEST(
+        COALESCE(p.gunluk_yevmiye_iqd, 0), COALESCE(p.gunluk_yevmiye_usd, 0),
+        COALESCE(p.aylik_maas_iqd, 0), COALESCE(p.aylik_maas_usd, 0),
+        COALESCE(p.gunluk_yevmiye, 0), COALESCE(p.aylik_maas, 0)
+      ) ${dir} NULLS LAST`
       break
     case "ad_soyad":
     default:
@@ -2216,21 +2236,30 @@ export async function createPersonel(data: {
   sigorta_durumu?: string | null
   iban?: string | null
   banka_adi?: string | null
+  /** Eski tek sütun; IQD yevmiye olarak saklanır (Excel/import uyumu) */
   gunluk_yevmiye?: number | null
   aylik_maas?: number | null
+  gunluk_yevmiye_usd?: number | null
+  gunluk_yevmiye_iqd?: number | null
+  aylik_maas_usd?: number | null
+  aylik_maas_iqd?: number | null
   foto_yolu?: string | null
 }) {
   const client = await pool.connect()
   try {
+    const gIqd = data.gunluk_yevmiye_iqd ?? data.gunluk_yevmiye ?? null
+    const gUsd = data.gunluk_yevmiye_usd ?? null
+    const aIqd = data.aylik_maas_iqd ?? data.aylik_maas ?? null
+    const aUsd = data.aylik_maas_usd ?? null
     const r = await client.query(`
-      INSERT INTO personeller (ad, soyad, tc_kimlik, pasaport_no, dogum_tarihi, kan_grubu, acil_iletisim, acil_telefon, gorev, ise_giris_tarihi, isten_cikis_tarihi, calistigi_bolum, sigorta_durumu, iban, banka_adi, gunluk_yevmiye, aylik_maas, foto_yolu)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      INSERT INTO personeller (ad, soyad, tc_kimlik, pasaport_no, dogum_tarihi, kan_grubu, acil_iletisim, acil_telefon, gorev, ise_giris_tarihi, isten_cikis_tarihi, calistigi_bolum, sigorta_durumu, iban, banka_adi, gunluk_yevmiye, aylik_maas, gunluk_yevmiye_usd, gunluk_yevmiye_iqd, aylik_maas_usd, aylik_maas_iqd, foto_yolu)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULL, NULL, $16, $17, $18, $19, $20)
       RETURNING id
     `, [
       data.ad, data.soyad, data.tc_kimlik ?? null, data.pasaport_no ?? null, data.dogum_tarihi ?? null, data.kan_grubu ?? null,
       data.acil_iletisim ?? null, data.acil_telefon ?? null, data.gorev || 'İşçi', data.ise_giris_tarihi ?? null,
       data.isten_cikis_tarihi ?? null, data.calistigi_bolum ?? null, data.sigorta_durumu ?? null, data.iban ?? null, data.banka_adi ?? null,
-      data.gunluk_yevmiye ?? null, data.aylik_maas ?? null, data.foto_yolu ?? null
+      gUsd, gIqd, aUsd, aIqd, data.foto_yolu ?? null,
     ])
     return r.rows[0].id
   } finally {
@@ -2256,11 +2285,15 @@ export async function updatePersonel(id: number, data: Partial<{
   banka_adi: string | null
   gunluk_yevmiye: number | null
   aylik_maas: number | null
+  gunluk_yevmiye_usd: number | null
+  gunluk_yevmiye_iqd: number | null
+  aylik_maas_usd: number | null
+  aylik_maas_iqd: number | null
   foto_yolu: string | null
 }>) {
   const client = await pool.connect()
   try {
-    const fields = ['ad', 'soyad', 'tc_kimlik', 'pasaport_no', 'dogum_tarihi', 'kan_grubu', 'acil_iletisim', 'acil_telefon', 'gorev', 'ise_giris_tarihi', 'isten_cikis_tarihi', 'calistigi_bolum', 'sigorta_durumu', 'iban', 'banka_adi', 'gunluk_yevmiye', 'aylik_maas', 'foto_yolu']
+    const fields = ['ad', 'soyad', 'tc_kimlik', 'pasaport_no', 'dogum_tarihi', 'kan_grubu', 'acil_iletisim', 'acil_telefon', 'gorev', 'ise_giris_tarihi', 'isten_cikis_tarihi', 'calistigi_bolum', 'sigorta_durumu', 'iban', 'banka_adi', 'gunluk_yevmiye', 'aylik_maas', 'gunluk_yevmiye_usd', 'gunluk_yevmiye_iqd', 'aylik_maas_usd', 'aylik_maas_iqd', 'foto_yolu']
     const updates: string[] = []
     const values: unknown[] = []
     let i = 1
@@ -2367,24 +2400,42 @@ export async function deletePersonelAtamaById(personelId: number, atamaId: numbe
   }
 }
 
-/** Onaylı puantaja dayalı aylık özet (APP_STATS_SINCE_DATE sonrası). Güncel yevmiye/maaş tarifesi kullanılır. */
+/** Onaylı puantaja dayalı aylık özet (APP_STATS_SINCE_DATE sonrası). Güncel yevmiye/maaş tarifesi kullanılır (IQD/USD ayrı). */
 export async function getPersonelFinansOzet(personelId: number) {
   const since = getAppStatsSinceSqlDate()
   const client = await pool.connect()
   try {
     const pr = await client.query(
-      `SELECT gunluk_yevmiye, aylik_maas FROM personeller WHERE id = $1`,
+      `SELECT gunluk_yevmiye, gunluk_yevmiye_usd, gunluk_yevmiye_iqd, aylik_maas, aylik_maas_usd, aylik_maas_iqd
+       FROM personeller WHERE id = $1`,
       [personelId]
     )
     if (!pr.rows[0]) return null
-    const gunluk_yevmiye = pr.rows[0].gunluk_yevmiye != null ? Number(pr.rows[0].gunluk_yevmiye) : null
-    const aylik_maas = pr.rows[0].aylik_maas != null ? Number(pr.rows[0].aylik_maas) : null
+    const row0 = pr.rows[0]
+    const gunluk_yevmiye_legacy = row0.gunluk_yevmiye != null ? Number(row0.gunluk_yevmiye) : null
+    const gunluk_yevmiye_usd = row0.gunluk_yevmiye_usd != null ? Number(row0.gunluk_yevmiye_usd) : null
+    const gunluk_yevmiye_iqd = row0.gunluk_yevmiye_iqd != null ? Number(row0.gunluk_yevmiye_iqd) : null
+    const aylik_maas_legacy = row0.aylik_maas != null ? Number(row0.aylik_maas) : null
+    const aylik_maas_usd = row0.aylik_maas_usd != null ? Number(row0.aylik_maas_usd) : null
+    const aylik_maas_iqd = row0.aylik_maas_iqd != null ? Number(row0.aylik_maas_iqd) : null
+
+    const effYevIqd = gunluk_yevmiye_iqd ?? (gunluk_yevmiye_usd == null || gunluk_yevmiye_usd === 0 ? gunluk_yevmiye_legacy : null)
+    const effMaasIqd = aylik_maas_iqd ?? (aylik_maas_usd == null || aylik_maas_usd === 0 ? aylik_maas_legacy : null)
+
     const r = await client.query(
       `SELECT
         date_trunc('month', pu.tarih)::date AS ay_baslangic,
         to_char(pu.tarih, 'YYYY-MM') AS ay,
         COALESCE(SUM(pu.carpan), 0)::numeric AS toplam_carpan,
-        COALESCE(SUM(CASE WHEN pr.gunluk_yevmiye IS NOT NULL AND pr.gunluk_yevmiye > 0 THEN pu.carpan * pr.gunluk_yevmiye ELSE 0 END), 0)::numeric AS yevmiye_hak_edis
+        COALESCE(SUM(CASE
+          WHEN COALESCE(pr.gunluk_yevmiye_iqd, pr.gunluk_yevmiye) IS NOT NULL
+           AND COALESCE(pr.gunluk_yevmiye_iqd, pr.gunluk_yevmiye) > 0
+          THEN pu.carpan * COALESCE(pr.gunluk_yevmiye_iqd, pr.gunluk_yevmiye)
+          ELSE 0 END), 0)::numeric AS yevmiye_hak_edis_iqd,
+        COALESCE(SUM(CASE
+          WHEN pr.gunluk_yevmiye_usd IS NOT NULL AND pr.gunluk_yevmiye_usd > 0
+          THEN pu.carpan * pr.gunluk_yevmiye_usd
+          ELSE 0 END), 0)::numeric AS yevmiye_hak_edis_usd
       FROM puantaj pu
       INNER JOIN personeller pr ON pr.id = pu.personel_id
       WHERE pu.personel_id = $1 AND pu.durum = 'onaylandi' AND pu.tarih >= $2::date
@@ -2392,22 +2443,31 @@ export async function getPersonelFinansOzet(personelId: number) {
       ORDER BY 1`,
       [personelId, since]
     )
+    const maasTarifeIqd = effMaasIqd != null && effMaasIqd > 0 ? effMaasIqd : null
+    const maasTarifeUsd = aylik_maas_usd != null && aylik_maas_usd > 0 ? aylik_maas_usd : null
+
     const aylar = r.rows.map((row: Record<string, unknown>) => {
       const tc = Number(row.toplam_carpan) || 0
-      const yh = Number(row.yevmiye_hak_edis) || 0
-      const maas_satir = aylik_maas != null && aylik_maas > 0 && tc > 0 ? aylik_maas : null
+      const yhIqd = Number(row.yevmiye_hak_edis_iqd) || 0
+      const yhUsd = Number(row.yevmiye_hak_edis_usd) || 0
+      const maasSatirIqd = maasTarifeIqd != null && tc > 0 ? maasTarifeIqd : null
+      const maasSatirUsd = maasTarifeUsd != null && tc > 0 ? maasTarifeUsd : null
       return {
         ay: String(row.ay),
         ay_baslangic: row.ay_baslangic,
         toplam_carpan: tc,
-        yevmiye_hak_edis: yh,
-        aylik_maas_goster: maas_satir,
+        yevmiye_hak_edis_iqd: yhIqd,
+        yevmiye_hak_edis_usd: yhUsd,
+        aylik_maas_goster_iqd: maasSatirIqd,
+        aylik_maas_goster_usd: maasSatirUsd,
       }
     })
     return {
       stats_since: since,
-      gunluk_yevmiye,
-      aylik_maas,
+      gunluk_yevmiye_usd: gunluk_yevmiye_usd != null && gunluk_yevmiye_usd > 0 ? gunluk_yevmiye_usd : null,
+      gunluk_yevmiye_iqd: effYevIqd != null && effYevIqd > 0 ? effYevIqd : null,
+      aylik_maas_usd: maasTarifeUsd,
+      aylik_maas_iqd: maasTarifeIqd,
       aylar,
     }
   } finally {

@@ -48,6 +48,10 @@ interface PersonelDetail {
   banka_adi?: string | null
   gunluk_yevmiye?: number | null
   aylik_maas?: number | null
+  gunluk_yevmiye_usd?: number | null
+  gunluk_yevmiye_iqd?: number | null
+  aylik_maas_usd?: number | null
+  aylik_maas_iqd?: number | null
   atamalar: { id: number; site_id: number; site_name: string; baslangic_tarihi: string; bitis_tarihi?: string | null }[]
 }
 
@@ -68,15 +72,27 @@ interface FinansOzetRow {
   ay: string
   ay_baslangic: string
   toplam_carpan: number
-  yevmiye_hak_edis: number
-  aylik_maas_goster: number | null
+  yevmiye_hak_edis_iqd: number
+  yevmiye_hak_edis_usd: number
+  aylik_maas_goster_iqd: number | null
+  aylik_maas_goster_usd: number | null
 }
 
 interface FinansOzetResp {
   stats_since: string
-  gunluk_yevmiye: number | null
-  aylik_maas: number | null
+  gunluk_yevmiye_usd: number | null
+  gunluk_yevmiye_iqd: number | null
+  aylik_maas_usd: number | null
+  aylik_maas_iqd: number | null
   aylar: FinansOzetRow[]
+}
+
+function fmtPara(n: number | null | undefined, birim: "IQD" | "USD"): string {
+  if (n == null || n <= 0) return "—"
+  const opts: Intl.NumberFormatOptions = birim === "USD"
+    ? { maximumFractionDigits: 2, minimumFractionDigits: 0 }
+    : { maximumFractionDigits: 0 }
+  return `${Number(n).toLocaleString("tr-TR", opts)} ${birim}`
 }
 
 function personelFotoSrc(personelId: number, foto_yolu: string | null | undefined): string | undefined {
@@ -303,8 +319,10 @@ export default function IdariPersonelDetailPage() {
               <Typography variant="body2"><strong>Kan grubu:</strong> {personel.kan_grubu ?? "—"}</Typography>
               <Typography variant="body2"><strong>Acil iletişim:</strong> {personel.acil_iletisim ?? "—"}</Typography>
               <Typography variant="body2"><strong>Acil telefon:</strong> {personel.acil_telefon ?? "—"}</Typography>
-              <Typography variant="body2"><strong>Günlük yevmiye:</strong> {personel.gunluk_yevmiye != null ? personel.gunluk_yevmiye : "—"}</Typography>
-              <Typography variant="body2"><strong>Aylık maaş:</strong> {personel.aylik_maas != null ? personel.aylik_maas : "—"}</Typography>
+              <Typography variant="body2"><strong>Günlük yevmiye (IQD):</strong> {fmtPara(personel.gunluk_yevmiye_iqd ?? personel.gunluk_yevmiye, "IQD")}</Typography>
+              <Typography variant="body2"><strong>Günlük yevmiye (USD):</strong> {fmtPara(personel.gunluk_yevmiye_usd, "USD")}</Typography>
+              <Typography variant="body2"><strong>Aylık maaş (IQD):</strong> {fmtPara(personel.aylik_maas_iqd ?? personel.aylik_maas, "IQD")}</Typography>
+              <Typography variant="body2"><strong>Aylık maaş (USD):</strong> {fmtPara(personel.aylik_maas_usd, "USD")}</Typography>
               <Typography variant="body2"><strong>IBAN:</strong> {personel.iban ?? "—"}</Typography>
               <Typography variant="body2"><strong>Banka:</strong> {personel.banka_adi ?? "—"}</Typography>
             </Box>
@@ -347,18 +365,20 @@ export default function IdariPersonelDetailPage() {
         <Paper sx={{ p: 2, mb: 2, borderRadius: 2 }}>
           <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.5 }}>Ücret özeti (onaylı puantaj)</Typography>
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
-            Veriler {finansOzet.stats_since} tarihinden itibaren listelenir (sistemde puantaj olan aylar). Yevmiye tutarı güncel tarifeyle çarpılır; aylık maaş için ay içinde en az bir onaylı puantaj varsa tarife satırı gösterilir.
+            Veriler {finansOzet.stats_since} tarihinden itibaren listelenir (sistemde puantaj olan aylar). Yevmiye hak edişi güncel günlük tarife ile (IQD ve USD ayrı) adam-gün ile çarpılır; aylık maaş için ay içinde en az bir onaylı puantaj varsa IQD/USD tarifeleri ayrı satırlarda gösterilir.
           </Typography>
           {finansOzet.aylar.length === 0 ? (
             <Typography variant="body2" color="text.secondary">Bu dönemde onaylı puantaj kaydı yok.</Typography>
           ) : (
-            <Table size="small">
+            <Table size="small" sx={{ minWidth: 520 }}>
               <TableHead>
                 <TableRow>
                   <TableCell><strong>Ay</strong></TableCell>
                   <TableCell align="right"><strong>Adam/gün</strong></TableCell>
-                  <TableCell align="right"><strong>Yevmiye hak edişi</strong></TableCell>
-                  <TableCell align="right"><strong>Aylık maaş (liste)</strong></TableCell>
+                  <TableCell align="right"><strong>Yevmiye IQD</strong></TableCell>
+                  <TableCell align="right"><strong>Yevmiye USD</strong></TableCell>
+                  <TableCell align="right"><strong>Maaş IQD</strong></TableCell>
+                  <TableCell align="right"><strong>Maaş USD</strong></TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -367,12 +387,20 @@ export default function IdariPersonelDetailPage() {
                     <TableCell>{row.ay}</TableCell>
                     <TableCell align="right">{Number(row.toplam_carpan).toLocaleString("tr-TR", { maximumFractionDigits: 2 })}</TableCell>
                     <TableCell align="right">
-                      {finansOzet.gunluk_yevmiye != null && finansOzet.gunluk_yevmiye > 0
-                        ? Number(row.yevmiye_hak_edis).toLocaleString("tr-TR", { maximumFractionDigits: 0 })
+                      {(finansOzet.gunluk_yevmiye_iqd != null && finansOzet.gunluk_yevmiye_iqd > 0) || row.yevmiye_hak_edis_iqd > 0
+                        ? fmtPara(row.yevmiye_hak_edis_iqd, "IQD")
                         : "—"}
                     </TableCell>
                     <TableCell align="right">
-                      {row.aylik_maas_goster != null ? Number(row.aylik_maas_goster).toLocaleString("tr-TR", { maximumFractionDigits: 0 }) : "—"}
+                      {(finansOzet.gunluk_yevmiye_usd != null && finansOzet.gunluk_yevmiye_usd > 0) || row.yevmiye_hak_edis_usd > 0
+                        ? fmtPara(row.yevmiye_hak_edis_usd, "USD")
+                        : "—"}
+                    </TableCell>
+                    <TableCell align="right">
+                      {row.aylik_maas_goster_iqd != null ? fmtPara(row.aylik_maas_goster_iqd, "IQD") : "—"}
+                    </TableCell>
+                    <TableCell align="right">
+                      {row.aylik_maas_goster_usd != null ? fmtPara(row.aylik_maas_goster_usd, "USD") : "—"}
                     </TableCell>
                   </TableRow>
                 ))}

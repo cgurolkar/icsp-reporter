@@ -24,6 +24,10 @@ const PersonelSchema = z.object({
   banka_adi: z.string().max(255).optional().nullable(),
   gunluk_yevmiye: z.number({ coerce: true }).nonnegative().optional().nullable(),
   aylik_maas: z.number({ coerce: true }).nonnegative().optional().nullable(),
+  gunluk_yevmiye_usd: z.number({ coerce: true }).nonnegative().optional().nullable(),
+  gunluk_yevmiye_iqd: z.number({ coerce: true }).nonnegative().optional().nullable(),
+  aylik_maas_usd: z.number({ coerce: true }).nonnegative().optional().nullable(),
+  aylik_maas_iqd: z.number({ coerce: true }).nonnegative().optional().nullable(),
   foto_yolu: z.string().optional().nullable(),
   site_id: z.number({ coerce: true }).int().positive().optional().nullable(),
 })
@@ -118,6 +122,10 @@ export async function POST(request: NextRequest) {
       banka_adi: data.banka_adi ?? null,
       gunluk_yevmiye: data.gunluk_yevmiye ?? null,
       aylik_maas: data.aylik_maas ?? null,
+      gunluk_yevmiye_usd: data.gunluk_yevmiye_usd ?? null,
+      gunluk_yevmiye_iqd: data.gunluk_yevmiye_iqd ?? null,
+      aylik_maas_usd: data.aylik_maas_usd ?? null,
+      aylik_maas_iqd: data.aylik_maas_iqd ?? null,
       foto_yolu: data.foto_yolu ?? null,
     })
     const targetSiteId = restrictedToOwnSite ? session.siteId : data.site_id

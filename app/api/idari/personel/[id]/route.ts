@@ -55,8 +55,12 @@ export async function PUT(
       sigorta_durumu: body.sigorta_durumu,
       iban: body.iban,
       banka_adi: body.banka_adi,
-      gunluk_yevmiye: body.gunluk_yevmiye != null ? Number(body.gunluk_yevmiye) : undefined,
-      aylik_maas: body.aylik_maas != null ? Number(body.aylik_maas) : undefined,
+      gunluk_yevmiye: body.gunluk_yevmiye !== undefined ? (body.gunluk_yevmiye == null ? null : Number(body.gunluk_yevmiye)) : undefined,
+      aylik_maas: body.aylik_maas !== undefined ? (body.aylik_maas == null ? null : Number(body.aylik_maas)) : undefined,
+      gunluk_yevmiye_usd: body.gunluk_yevmiye_usd !== undefined ? (body.gunluk_yevmiye_usd == null ? null : Number(body.gunluk_yevmiye_usd)) : undefined,
+      gunluk_yevmiye_iqd: body.gunluk_yevmiye_iqd !== undefined ? (body.gunluk_yevmiye_iqd == null ? null : Number(body.gunluk_yevmiye_iqd)) : undefined,
+      aylik_maas_usd: body.aylik_maas_usd !== undefined ? (body.aylik_maas_usd == null ? null : Number(body.aylik_maas_usd)) : undefined,
+      aylik_maas_iqd: body.aylik_maas_iqd !== undefined ? (body.aylik_maas_iqd == null ? null : Number(body.aylik_maas_iqd)) : undefined,
       foto_yolu: body.foto_yolu,
     })
     if (body.site_id) {

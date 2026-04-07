@@ -43,8 +43,10 @@ export async function POST(request: NextRequest) {
           sigorta_durumu: r.sigorta_durumu ?? null,
           iban: r.iban ?? null,
           banka_adi: r.banka_adi ?? null,
-          gunluk_yevmiye: r.gunluk_yevmiye ?? null,
-          aylik_maas: r.aylik_maas ?? null,
+          gunluk_yevmiye_iqd: r.gunluk_yevmiye_iqd ?? null,
+          gunluk_yevmiye_usd: r.gunluk_yevmiye_usd ?? null,
+          aylik_maas_iqd: r.aylik_maas_iqd ?? null,
+          aylik_maas_usd: r.aylik_maas_usd ?? null,
         })
         inserted++
       } catch (err) {
