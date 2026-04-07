@@ -69,10 +69,13 @@ export async function POST(request: NextRequest) {
       session.role === "super_admin" && body.contractUnitPrice != null && !Number.isNaN(Number(body.contractUnitPrice))
         ? Number(body.contractUnitPrice)
         : null
+    const iqdPerUsdRaw = body.iqdPerUsd
+    const iqdPerUsd =
+      iqdPerUsdRaw != null && !Number.isNaN(Number(iqdPerUsdRaw)) && Number(iqdPerUsdRaw) > 0 ? Number(iqdPerUsdRaw) : undefined
     if (!name || !code) {
       return NextResponse.json({ error: "Şantiye adı ve kod zorunludur." }, { status: 400 })
     }
-    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, timezone, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, contractUnitPrice })
+    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, timezone, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, contractUnitPrice, iqdPerUsd })
     if (session.role === "super_admin") return NextResponse.json(site)
     const { contract_unit_price, ...rest } = site as Record<string, unknown>
     return NextResponse.json(rest)

@@ -1,4 +1,6 @@
 import { Pool } from 'pg'
+import { expenseAmountsToUsdIqd, type ExpenseCurrency } from './expense-fx'
+import { getAppStatsSinceSqlDate } from './app-stats'
 
 const pool = new Pool({
   user: process.env.POSTGRES_USER || 'postgres',
@@ -320,6 +322,9 @@ async function _doInitializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'timezone') THEN
           ALTER TABLE sites ADD COLUMN timezone VARCHAR(64) DEFAULT NULL;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'iqd_per_usd') THEN
+          ALTER TABLE sites ADD COLUMN iqd_per_usd DECIMAL(14,4) DEFAULT 1320;
+        END IF;
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'sites project columns: %', SQLERRM;
       END $$
     `)
@@ -478,8 +483,24 @@ async function _doInitializeDatabase() {
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='islemler' AND column_name='work_report_id')
         THEN ALTER TABLE islemler ADD COLUMN work_report_id INTEGER REFERENCES work_reports(id) ON DELETE CASCADE; END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='islemler' AND column_name='para_birimi')
+        THEN ALTER TABLE islemler ADD COLUMN para_birimi VARCHAR(3) DEFAULT 'IQD'; END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='islemler' AND column_name='kur_iqd_per_usd')
+        THEN ALTER TABLE islemler ADD COLUMN kur_iqd_per_usd DECIMAL(14,4); END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='islemler' AND column_name='tutar_usd')
+        THEN ALTER TABLE islemler ADD COLUMN tutar_usd DECIMAL(14,2); END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='islemler' AND column_name='tutar_iqd')
+        THEN ALTER TABLE islemler ADD COLUMN tutar_iqd DECIMAL(14,2); END IF;
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'islemler work_report_id: %', SQLERRM;
       END $$
+    `)
+    await client.query(`
+      UPDATE islemler i SET
+        para_birimi = COALESCE(i.para_birimi, 'IQD'),
+        kur_iqd_per_usd = COALESCE(i.kur_iqd_per_usd, (SELECT COALESCE(s.iqd_per_usd, 1320) FROM sites s WHERE s.id = i.site_id), 1320),
+        tutar_iqd = COALESCE(i.tutar_iqd, i.tutar),
+        tutar_usd = COALESCE(i.tutar_usd, ROUND((i.tutar::numeric / NULLIF(COALESCE((SELECT s2.iqd_per_usd FROM sites s2 WHERE s2.id = i.site_id), 1320), 0)), 2))
+      WHERE i.tutar_usd IS NULL OR i.tutar_iqd IS NULL
     `)
 
     await client.query(`
@@ -1614,13 +1635,16 @@ export async function createSite(data: {
   assignedMachineOperators?: { machineId: string; personelId: number }[]
   timezone?: string | null
   contractUnitPrice?: number | null
+  /** 1 USD = kaç IQD */
+  iqdPerUsd?: number | null
 }) {
   const client = await pool.connect()
   try {
     const ops = data.assignedMachineOperators || []
+    const iqdUsd = data.iqdPerUsd != null && !Number.isNaN(Number(data.iqdPerUsd)) && Number(data.iqdPerUsd) > 0 ? Number(data.iqdPerUsd) : 1320
     const result = await client.query(
-      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators, timezone, contract_unit_price)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *`,
+      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators, timezone, contract_unit_price, iqd_per_usd)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
       [
         data.name,
         data.code,
@@ -1639,6 +1663,7 @@ export async function createSite(data: {
         JSON.stringify(ops),
         data.timezone ?? null,
         data.contractUnitPrice ?? null,
+        iqdUsd,
       ]
     )
     const newSite = result.rows[0]
@@ -1686,6 +1711,7 @@ export async function updateSite(id: number, data: {
   budget?: number | null
   timezone?: string | null
   contractUnitPrice?: number | null
+  iqdPerUsd?: number | null
 }) {
   const client = await pool.connect()
   try {
@@ -1695,6 +1721,7 @@ export async function updateSite(id: number, data: {
     if (data.name !== undefined) { updates.push(`name = $${i++}`); values.push(data.name) }
     if (data.budget !== undefined) { updates.push(`budget = $${i++}`); values.push(data.budget) }
     if (data.contractUnitPrice !== undefined) { updates.push(`contract_unit_price = $${i++}`); values.push(data.contractUnitPrice) }
+    if (data.iqdPerUsd !== undefined) { updates.push(`iqd_per_usd = $${i++}`); values.push(data.iqdPerUsd) }
     if (data.timezone !== undefined) { updates.push(`timezone = $${i++}`); values.push(data.timezone) }
     if (data.code !== undefined) { updates.push(`code = $${i++}`); values.push(data.code) }
     if (data.emailList !== undefined) { updates.push(`email_list = $${i++}`); values.push(JSON.stringify(data.emailList)) }
@@ -1985,6 +2012,9 @@ export async function deleteWorkReport(id: number) {
 
 const GOREV_YERI_ORDER_SUBQ = `(SELECT s2.name FROM personel_atama pa2 LEFT JOIN sites s2 ON s2.id = pa2.site_id WHERE pa2.personel_id = p.id AND (pa2.bitis_tarihi IS NULL OR pa2.bitis_tarihi >= CURRENT_DATE) ORDER BY pa2.baslangic_tarihi DESC NULLS LAST LIMIT 1)`
 
+/** Takvim ayı — onaylı puantaj adam-gün toplamı (liste kolonu). */
+const AY_PUANTAJ_CARPAN_SUB = `(SELECT COALESCE(SUM(pu.carpan), 0)::numeric FROM puantaj pu WHERE pu.personel_id = p.id AND pu.durum = 'onaylandi' AND pu.tarih >= date_trunc('month', CURRENT_DATE)::date AND pu.tarih < (date_trunc('month', CURRENT_DATE) + interval '1 month')::date)`
+
 /** Görev metnine göre şantiye hiyerarşisi (düşük sayı = üst kademe). */
 const PERSONEL_GOREV_RANK_SQL = `(CASE
   WHEN p.gorev ~* 'proje.*(müdür|mudur)|project.*manager' THEN 1
@@ -2053,12 +2083,12 @@ export async function getPersoneller(options: {
         : ``
 
     if (siteId != null && siteId > 0) {
-      const query = `SELECT p.*, ${atamalarSubq} FROM personeller p WHERE EXISTS (SELECT 1 FROM personel_atama pa WHERE pa.personel_id = p.id AND pa.site_id = $1 AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= CURRENT_DATE)) ${arsivFilter}${personelOrderClause(options.sortBy, options.sortDir)}`
+      const query = `SELECT p.*, ${atamalarSubq}, ${AY_PUANTAJ_CARPAN_SUB} AS ay_puantaj_carpan FROM personeller p WHERE EXISTS (SELECT 1 FROM personel_atama pa WHERE pa.personel_id = p.id AND pa.site_id = $1 AND (pa.bitis_tarihi IS NULL OR pa.bitis_tarihi >= CURRENT_DATE)) ${arsivFilter}${personelOrderClause(options.sortBy, options.sortDir)}`
       const result = await client.query(query, [siteId])
       return result.rows
     }
 
-    let query = `SELECT p.*, ${atamalarSubq} FROM personeller p WHERE 1=1 ${arsivFilter}`
+    let query = `SELECT p.*, ${atamalarSubq}, ${AY_PUANTAJ_CARPAN_SUB} AS ay_puantaj_carpan FROM personeller p WHERE 1=1 ${arsivFilter}`
     if (gorev && String(gorev).trim()) {
       query += ` AND p.gorev = $${i++}`
       params.push(String(gorev).trim())
@@ -2297,6 +2327,94 @@ export async function addPersonelAtama(data: { personel_id: number; site_id: num
   }
 }
 
+export async function updatePersonelAtamaById(
+  personelId: number,
+  atamaId: number,
+  patch: { site_id?: number; baslangic_tarihi?: string; bitis_tarihi?: string | null }
+): Promise<{ ok: true } | { ok: false; error: 'not_found' | 'duplicate' }> {
+  const client = await pool.connect()
+  try {
+    const cur = await client.query(`SELECT * FROM personel_atama WHERE id = $1 AND personel_id = $2`, [atamaId, personelId])
+    if (!cur.rows[0]) return { ok: false, error: 'not_found' }
+    const row = cur.rows[0]
+    const site_id = patch.site_id ?? row.site_id
+    const bas = String(patch.baslangic_tarihi ?? row.baslangic_tarihi).slice(0, 10)
+    const bit = patch.bitis_tarihi !== undefined
+      ? (patch.bitis_tarihi ? String(patch.bitis_tarihi).slice(0, 10) : null)
+      : row.bitis_tarihi
+    const dup = await client.query(
+      `SELECT id FROM personel_atama WHERE personel_id = $1 AND site_id = $2 AND baslangic_tarihi = $3::date AND id <> $4`,
+      [personelId, site_id, bas, atamaId]
+    )
+    if (dup.rowCount && dup.rowCount > 0) return { ok: false, error: 'duplicate' }
+    await client.query(
+      `UPDATE personel_atama SET site_id = $1, baslangic_tarihi = $2::date, bitis_tarihi = $3 WHERE id = $4 AND personel_id = $5`,
+      [site_id, bas, bit, atamaId, personelId]
+    )
+    return { ok: true }
+  } finally {
+    client.release()
+  }
+}
+
+export async function deletePersonelAtamaById(personelId: number, atamaId: number): Promise<boolean> {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(`DELETE FROM personel_atama WHERE id = $1 AND personel_id = $2`, [atamaId, personelId])
+    return (r.rowCount ?? 0) > 0
+  } finally {
+    client.release()
+  }
+}
+
+/** Onaylı puantaja dayalı aylık özet (APP_STATS_SINCE_DATE sonrası). Güncel yevmiye/maaş tarifesi kullanılır. */
+export async function getPersonelFinansOzet(personelId: number) {
+  const since = getAppStatsSinceSqlDate()
+  const client = await pool.connect()
+  try {
+    const pr = await client.query(
+      `SELECT gunluk_yevmiye, aylik_maas FROM personeller WHERE id = $1`,
+      [personelId]
+    )
+    if (!pr.rows[0]) return null
+    const gunluk_yevmiye = pr.rows[0].gunluk_yevmiye != null ? Number(pr.rows[0].gunluk_yevmiye) : null
+    const aylik_maas = pr.rows[0].aylik_maas != null ? Number(pr.rows[0].aylik_maas) : null
+    const r = await client.query(
+      `SELECT
+        date_trunc('month', pu.tarih)::date AS ay_baslangic,
+        to_char(pu.tarih, 'YYYY-MM') AS ay,
+        COALESCE(SUM(pu.carpan), 0)::numeric AS toplam_carpan,
+        COALESCE(SUM(CASE WHEN pr.gunluk_yevmiye IS NOT NULL AND pr.gunluk_yevmiye > 0 THEN pu.carpan * pr.gunluk_yevmiye ELSE 0 END), 0)::numeric AS yevmiye_hak_edis
+      FROM puantaj pu
+      INNER JOIN personeller pr ON pr.id = pu.personel_id
+      WHERE pu.personel_id = $1 AND pu.durum = 'onaylandi' AND pu.tarih >= $2::date
+      GROUP BY 1, 2
+      ORDER BY 1`,
+      [personelId, since]
+    )
+    const aylar = r.rows.map((row: Record<string, unknown>) => {
+      const tc = Number(row.toplam_carpan) || 0
+      const yh = Number(row.yevmiye_hak_edis) || 0
+      const maas_satir = aylik_maas != null && aylik_maas > 0 && tc > 0 ? aylik_maas : null
+      return {
+        ay: String(row.ay),
+        ay_baslangic: row.ay_baslangic,
+        toplam_carpan: tc,
+        yevmiye_hak_edis: yh,
+        aylik_maas_goster: maas_satir,
+      }
+    })
+    return {
+      stats_since: since,
+      gunluk_yevmiye,
+      aylik_maas,
+      aylar,
+    }
+  } finally {
+    client.release()
+  }
+}
+
 // ---------- İdari modül: Puantaj ----------
 /** O şantiyede o tarihte atanmış personel + o günkü puantaj kayıtları (işten ayrılmış / henüz işe başlamamış olanlar hariç) */
 export async function getPuantajForSiteAndDate(siteId: number, tarih: string) {
@@ -2474,12 +2592,18 @@ export async function createIslem(data: {
   aciklama?: string | null
   evrak_yolu?: string | null
   olusturan_id?: number | null
+  work_report_id?: number | null
+  para_birimi?: ExpenseCurrency
 }) {
   const client = await pool.connect()
   try {
+    const siteR = await client.query(`SELECT COALESCE(iqd_per_usd, 1320) AS r FROM sites WHERE id = $1`, [data.site_id])
+    const iqdPer = Number(siteR.rows[0]?.r) || 1320
+    const cur: ExpenseCurrency = data.para_birimi === 'USD' ? 'USD' : 'IQD'
+    const { tutar_usd, tutar_iqd, kur_iqd_per_usd } = expenseAmountsToUsdIqd(data.tutar, cur, iqdPer)
     const r = await client.query(`
-      INSERT INTO islemler (site_id, kategori_id, tutar, islem_tarihi, odeme_kaynagi, aciklama, evrak_yolu, olusturan_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO islemler (site_id, kategori_id, tutar, islem_tarihi, odeme_kaynagi, aciklama, evrak_yolu, olusturan_id, work_report_id, para_birimi, kur_iqd_per_usd, tutar_usd, tutar_iqd)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING id
     `, [
       data.site_id,
@@ -2490,6 +2614,11 @@ export async function createIslem(data: {
       data.aciklama ?? null,
       data.evrak_yolu ?? null,
       data.olusturan_id ?? null,
+      data.work_report_id ?? null,
+      cur,
+      kur_iqd_per_usd,
+      tutar_usd,
+      tutar_iqd,
     ])
     return r.rows[0]?.id
   } finally {
@@ -2560,6 +2689,19 @@ export async function getPersonelBelgeleri(personelId: number) {
       [personelId]
     )
     return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function getPersonelBelgeById(personelId: number, belgeId: number) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `SELECT id, personel_id, belge_tipi, dosya_yolu FROM personel_belgeleri WHERE id = $1 AND personel_id = $2`,
+      [belgeId, personelId]
+    )
+    return r.rows[0] ?? null
   } finally {
     client.release()
   }
@@ -2820,18 +2962,20 @@ export async function getButceRaporu(siteId: number, baslangic?: string, bitis?:
   try {
     const site = await client.query(`SELECT id, name, budget FROM sites WHERE id = $1`, [siteId])
     if (!site.rows[0]) return null
-    let query = `SELECT COALESCE(SUM(tutar), 0) AS toplam FROM islemler WHERE site_id = $1`
+    let query = `SELECT COALESCE(SUM(COALESCE(tutar_iqd, tutar)), 0) AS toplam_iqd, COALESCE(SUM(tutar_usd), 0) AS toplam_usd FROM islemler WHERE site_id = $1`
     const params: (number | string)[] = [siteId]
     let i = 2
     if (baslangic) { query += ` AND islem_tarihi >= $${i++}`; params.push((baslangic as string).slice(0, 10)) }
     if (bitis) { query += ` AND islem_tarihi <= $${i++}`; params.push((bitis as string).slice(0, 10)) }
     const sum = await client.query(query, params)
-    const toplam = parseFloat(sum.rows[0]?.toplam ?? '0')
+    const toplam = parseFloat(sum.rows[0]?.toplam_iqd ?? '0')
+    const toplam_usd = parseFloat(sum.rows[0]?.toplam_usd ?? '0')
     return {
       site_id: siteId,
       site_name: site.rows[0].name,
       budget: site.rows[0].budget != null ? parseFloat(site.rows[0].budget) : null,
       toplam,
+      toplam_usd,
       fark: site.rows[0].budget != null ? parseFloat(site.rows[0].budget) - toplam : null,
     }
   } finally {
@@ -2868,7 +3012,7 @@ export async function syncExpensesToIslemler(
   siteId: number,
   reportDate: string, // YYYY-MM-DD
   userId: number,
-  expenses: Array<{ description?: string; amount?: number; category?: string }>
+  expenses: Array<{ description?: string; amount?: number; category?: string; currency?: string }>
 ): Promise<void> {
   if (!siteId || !reportId || !Array.isArray(expenses)) return
   const validExpenses = expenses.filter(e => e && Number(e.amount) > 0)
@@ -2876,6 +3020,9 @@ export async function syncExpensesToIslemler(
 
   const client = await pool.connect()
   try {
+    const siteR = await client.query(`SELECT COALESCE(iqd_per_usd, 1320) AS r FROM sites WHERE id = $1`, [siteId])
+    const iqdPer = Number(siteR.rows[0]?.r) || 1320
+
     // Kategori kodu → id haritası
     const catRows = await client.query(`SELECT id, kod FROM harcama_kategorileri`)
     const catMap: Record<string, number> = {}
@@ -2900,10 +3047,13 @@ export async function syncExpensesToIslemler(
     for (const exp of validExpenses) {
       const catKod = categoryMapping[exp.category ?? ''] ?? 'diger'
       const katId = catMap[catKod] ?? digerKatId
+      const cur: ExpenseCurrency = exp.currency === 'USD' ? 'USD' : 'IQD'
+      const amt = Number(exp.amount)
+      const { tutar_usd, tutar_iqd, kur_iqd_per_usd } = expenseAmountsToUsdIqd(amt, cur, iqdPer)
       await client.query(
-        `INSERT INTO islemler (site_id, kategori_id, tutar, islem_tarihi, odeme_kaynagi, aciklama, olusturan_id, work_report_id)
-         VALUES ($1, $2, $3, $4, 'rapor', $5, $6, $7)`,
-        [siteId, katId, Number(exp.amount), date, exp.description ?? '', userId, reportId]
+        `INSERT INTO islemler (site_id, kategori_id, tutar, islem_tarihi, odeme_kaynagi, aciklama, olusturan_id, work_report_id, para_birimi, kur_iqd_per_usd, tutar_usd, tutar_iqd)
+         VALUES ($1, $2, $3, $4, 'rapor', $5, $6, $7, $8, $9, $10, $11)`,
+        [siteId, katId, amt, date, exp.description ?? '', userId, reportId, cur, kur_iqd_per_usd, tutar_usd, tutar_iqd]
       )
     }
   } finally {

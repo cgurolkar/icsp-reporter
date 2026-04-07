@@ -43,7 +43,7 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid site id" }, { status: 400 })
     }
     const body = await request.json()
-    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, budget, timezone, contractUnitPrice, releaseMachinesFromSite: releaseMachinesFlag } = body
+    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, budget, timezone, contractUnitPrice, iqdPerUsd, releaseMachinesFromSite: releaseMachinesFlag } = body
     const site = await updateSite(siteId, {
       ...(name !== undefined && { name }),
       ...(code !== undefined && { code }),
@@ -64,6 +64,10 @@ export async function PUT(
       ...(budget !== undefined && { budget: budget != null && !Number.isNaN(Number(budget)) ? Number(budget) : null }),
       ...(timezone !== undefined && { timezone: timezone != null ? String(timezone).trim() || null : undefined }),
       ...(session.role === "super_admin" && contractUnitPrice !== undefined && { contractUnitPrice: contractUnitPrice != null && !Number.isNaN(Number(contractUnitPrice)) ? Number(contractUnitPrice) : null }),
+      ...(iqdPerUsd !== undefined &&
+        iqdPerUsd != null &&
+        !Number.isNaN(Number(iqdPerUsd)) &&
+        Number(iqdPerUsd) > 0 && { iqdPerUsd: Number(iqdPerUsd) }),
     })
     if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
     if (isActive === false && releaseMachinesFlag === true) {

@@ -5,6 +5,7 @@ import { Save, Print } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
 import type { FormData } from "@/types/form-data"
 import type { SiteSummaryForForm } from "@/components/steps/basic-info-step"
+import { normalizeIqdPerUsd, sumExpensesFx } from "@/lib/expense-fx"
 
 interface ReviewStepProps {
   data: FormData
@@ -14,6 +15,8 @@ interface ReviewStepProps {
 
 export default function ReviewStep({ data, onSubmit, siteSummary }: ReviewStepProps) {
   const { t } = useLanguage()
+  const previewFx = normalizeIqdPerUsd(siteSummary?.iqdPerUsd)
+  const previewExpenseTotals = sumExpensesFx(data.expenses, previewFx)
 
   const handlePrint = () => {
     const printWindow = window.open("", "_blank")
@@ -171,6 +174,8 @@ export default function ReviewStep({ data, onSubmit, siteSummary }: ReviewStepPr
       ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.steelLoweredPiles) || 0), 0)
       : data.productionSummary.steelLoweredPiles
     const concretePoured = concreteSum
+    const fx = normalizeIqdPerUsd(summary?.iqdPerUsd)
+    const expTotals = sumExpensesFx(data.expenses, fx)
 
     return `
       <!-- Page 1 - Production Data -->
@@ -330,25 +335,28 @@ export default function ReviewStep({ data, onSubmit, siteSummary }: ReviewStepPr
         <table>
           <thead>
             <tr>
-              <th style="width: 10%;">#</th>
-              <th style="width: 60%;">AÇIKLAMA</th>
-              <th style="width: 30%;">TUTAR (IQD)</th>
+              <th style="width: 8%;">#</th>
+              <th style="width: 52%;">AÇIKLAMA</th>
+              <th style="width: 10%;">PB</th>
+              <th style="width: 15%;">TUTAR</th>
             </tr>
           </thead>
           <tbody>
             ${Array.from({ length: Math.max(15, data.expenses.length) }, (_, index) => {
               const expense = data.expenses[index]
+              const pb = expense?.currency === "USD" ? "USD" : "IQD"
               return `
                 <tr>
                   <td style="text-align: center; font-weight: bold;">${index + 1}.</td>
                   <td>${expense?.description || ""}</td>
+                  <td style="text-align: center;">${expense?.amount && expense.amount > 0 ? pb : ""}</td>
                   <td style="text-align: right; font-weight: bold;">${expense?.amount ? expense.amount.toLocaleString() : ""}</td>
                 </tr>
               `
             }).join("")}
             <tr style="background-color: #f0f0f0;">
-              <td colspan="2" style="text-align: center; font-weight: bold;">TOPLAM:</td>
-              <td style="text-align: right; font-weight: bold;">${data.expenses.reduce((sum, exp) => sum + exp.amount, 0).toLocaleString()} IQD</td>
+              <td colspan="2" style="text-align: center; font-weight: bold;">TOPLAM (1 USD = ${fx.toLocaleString("tr-TR")} IQD)</td>
+              <td colspan="2" style="text-align: right; font-weight: bold;">USD: ${expTotals.totalUsd.toLocaleString("tr-TR", { maximumFractionDigits: 2 })} · IQD: ${expTotals.totalIqd.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}</td>
             </tr>
           </tbody>
         </table>
@@ -398,7 +406,8 @@ export default function ReviewStep({ data, onSubmit, siteSummary }: ReviewStepPr
             ⛽ Mazot: {data.fuel.machines.length} makine kaydı
           </Typography>
           <Typography variant="body2">
-            💰 Harcamalar: {data.expenses.reduce((sum, exp) => sum + exp.amount, 0).toLocaleString()} IQD toplam
+            💰 Harcamalar: USD {previewExpenseTotals.totalUsd.toLocaleString("tr-TR", { maximumFractionDigits: 2 })} · IQD{" "}
+            {previewExpenseTotals.totalIqd.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}
           </Typography>
         </Box>
       </Box>

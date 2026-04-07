@@ -33,11 +33,12 @@ export async function GET(request: NextRequest) {
     const bugunGelen = parseInt(puantajRes.rows[0]?.cnt ?? "0", 10)
 
     // Bu ay harcama toplamı
-    let harcamaQuery = `SELECT COALESCE(SUM(tutar), 0) AS toplam FROM islemler WHERE islem_tarihi >= $1`
+    let harcamaQuery = `SELECT COALESCE(SUM(COALESCE(tutar_iqd, tutar)), 0) AS toplam_iqd, COALESCE(SUM(COALESCE(tutar_usd, 0)), 0) AS toplam_usd FROM islemler WHERE islem_tarihi >= $1`
     const harcamaParams: unknown[] = [monthStart]
     if (siteId) { harcamaQuery += ` AND site_id = $2`; harcamaParams.push(siteId) }
     const harcamaRes = await client.query(harcamaQuery, harcamaParams)
-    const buAyHarcama = parseFloat(harcamaRes.rows[0]?.toplam ?? "0")
+    const buAyHarcama = parseFloat(harcamaRes.rows[0]?.toplam_iqd ?? "0")
+    const buAyHarcamaUsd = parseFloat(harcamaRes.rows[0]?.toplam_usd ?? "0")
 
     // Envanter toplam kalem sayısı (durum yoksa veya hurda değilse say)
     const envanterRes = await client.query(
@@ -57,6 +58,7 @@ export async function GET(request: NextRequest) {
       personelSayisi,
       bugunGelen,
       buAyHarcama,
+      buAyHarcamaUsd,
       envanterSayisi,
       uyariSayisi,
     })

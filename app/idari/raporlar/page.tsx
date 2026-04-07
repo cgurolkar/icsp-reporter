@@ -29,6 +29,7 @@ interface ButceRaporu {
   site_name: string
   budget: number | null
   toplam: number
+  toplam_usd?: number
   fark: number | null
 }
 
@@ -120,7 +121,14 @@ export default function IdariRaporlarPage() {
                 </Paper>
                 <Paper variant="outlined" sx={{ p: 2 }}>
                   <Typography variant="caption" color="text.secondary">Gerçekleşen</Typography>
-                  <Typography variant="h6">{Number(butce.toplam).toLocaleString("tr-TR")}</Typography>
+                  <Typography variant="h6">
+                    IQD {Number(butce.toplam).toLocaleString("tr-TR")}
+                    {butce.toplam_usd != null && butce.toplam_usd > 0 && (
+                      <Typography component="span" variant="body2" display="block" color="text.secondary">
+                        USD {Number(butce.toplam_usd).toLocaleString("tr-TR", { maximumFractionDigits: 2 })}
+                      </Typography>
+                    )}
+                  </Typography>
                 </Paper>
                 <Paper variant="outlined" sx={{ p: 2 }}>
                   <Typography variant="caption" color="text.secondary">Kalan</Typography>

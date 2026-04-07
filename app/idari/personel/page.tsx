@@ -87,6 +87,8 @@ interface PersonelRow {
   aylik_maas?: number | null
   foto_yolu?: string | null
   atamalar?: AtamaRow[] | null
+  /** Takvim ayındaki onaylı puantaj adam/gün toplamı */
+  ay_puantaj_carpan?: number | string | null
 }
 
 function activeGorevYeri(row: PersonelRow): string {
@@ -117,12 +119,32 @@ function gorevOncelikLabel(g: string): string {
   return "•"
 }
 
-// Personal photo / avatar component
-function PersonelAvatar({ foto_yolu, ad, soyad, size = 40 }: { foto_yolu?: string | null; ad: string; soyad: string; size?: number }) {
-  if (foto_yolu) {
+// Personal photo / avatar component (dosyalar cookie ile API'den sunulur — standalone/public uyumu)
+function PersonelAvatar({
+  personelId,
+  foto_yolu,
+  ad,
+  soyad,
+  size = 40,
+}: {
+  personelId: number
+  foto_yolu?: string | null
+  ad: string
+  soyad: string
+  size?: number
+}) {
+  const src =
+    foto_yolu != null && String(foto_yolu).trim() !== ""
+      ? (() => {
+          const t = String(foto_yolu).trim()
+          if (t.startsWith("http://") || t.startsWith("https://") || t.startsWith("data:")) return t
+          return `/api/idari/personel/${personelId}/foto`
+        })()
+      : undefined
+  if (src) {
     return (
       <Avatar
-        src={foto_yolu}
+        src={src}
         sx={{ width: size, height: size }}
         alt={`${ad} ${soyad}`}
       />
@@ -514,19 +536,20 @@ export default function IdariPersonelPage() {
                   <SortableTh label="TC / Pasaport" sortKey="kimlik" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
                   <SortableTh label="Görev Yeri" sortKey="gorev_yeri" sortBy={sortBy} sortDir={sortDir} onSort={handleListSort} />
                   <SortableTh label="Günlük / Aylık" sortKey="ucret" sortBy={sortBy} sortDir={sortDir} align="right" onSort={handleListSort} />
+                  <TableCell align="right" title="Bu ay onaylı puantaj (adam/gün)">Bu ay puantaj</TableCell>
                   <TableCell align="right">İşlem</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {list.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} align="center" sx={{ py: 3 }}>Kayıt yok</TableCell>
+                    <TableCell colSpan={9} align="center" sx={{ py: 3 }}>Kayıt yok</TableCell>
                   </TableRow>
                 ) : (
                   list.map((row) => (
                     <TableRow key={row.id}>
                       <TableCell sx={{ py: 0.5 }}>
-                        <PersonelAvatar foto_yolu={row.foto_yolu} ad={row.ad} soyad={row.soyad} size={32} />
+                        <PersonelAvatar personelId={row.id} foto_yolu={row.foto_yolu} ad={row.ad} soyad={row.soyad} size={32} />
                       </TableCell>
                       <TableCell>{row.ad} {row.soyad}</TableCell>
                       <TableCell>{row.gorev}</TableCell>
@@ -541,6 +564,11 @@ export default function IdariPersonelPage() {
                       </TableCell>
                       <TableCell align="right">
                         {row.gunluk_yevmiye != null ? row.gunluk_yevmiye : row.aylik_maas != null ? row.aylik_maas : "—"}
+                      </TableCell>
+                      <TableCell align="right">
+                        {row.ay_puantaj_carpan != null && Number(row.ay_puantaj_carpan) > 0
+                          ? Number(row.ay_puantaj_carpan).toLocaleString("tr-TR", { maximumFractionDigits: 2 })
+                          : "—"}
                       </TableCell>
                       <TableCell align="right">
                         {renderActions(row)}
@@ -570,7 +598,7 @@ export default function IdariPersonelPage() {
                   <Card key={row.id} variant="outlined" sx={{ borderRadius: 2, display: "flex", flexDirection: "column" }}>
                     {/* Photo */}
                     <Box sx={{ display: "flex", justifyContent: "center", pt: 2, pb: 1 }}>
-                      <PersonelAvatar foto_yolu={row.foto_yolu} ad={row.ad} soyad={row.soyad} size={72} />
+                      <PersonelAvatar personelId={row.id} foto_yolu={row.foto_yolu} ad={row.ad} soyad={row.soyad} size={72} />
                     </Box>
                     <CardContent sx={{ pt: 0.5, pb: 0.5, flexGrow: 1, textAlign: "center" }}>
                       <Typography variant="subtitle2" fontWeight={700} sx={{ lineHeight: 1.3 }}>
@@ -587,6 +615,11 @@ export default function IdariPersonelPage() {
                           variant="outlined"
                           sx={{ mt: 0.5, fontSize: 10 }}
                         />
+                      )}
+                      {row.ay_puantaj_carpan != null && Number(row.ay_puantaj_carpan) > 0 && (
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                          Bu ay puantaj: {Number(row.ay_puantaj_carpan).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} gün
+                        </Typography>
                       )}
                     </CardContent>
                     <Divider />

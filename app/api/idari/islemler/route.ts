@@ -14,6 +14,7 @@ const IslemSchema = z.object({
   odeme_kaynagi: z.enum(["Merkez_Banka", "Santiye_Kasa"]).default("Santiye_Kasa"),
   aciklama: z.string().max(500).optional().nullable(),
   evrak_base64: z.string().optional().nullable(),
+  para_birimi: z.enum(["IQD", "USD"]).optional().default("IQD"),
 })
 
 const UPLOAD_DIR = "public/uploads/idari/evrak"
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Geçersiz veri.", details: parsed.error.flatten() }, { status: 400 })
     }
-    const { siteId, kategoriId, tutar, islem_tarihi, odeme_kaynagi, aciklama, evrak_base64 } = parsed.data
+    const { siteId, kategoriId, tutar, islem_tarihi, odeme_kaynagi, aciklama, evrak_base64, para_birimi } = parsed.data
     let evrak_yolu: string | null = null
     if (evrak_base64) {
       evrak_yolu = saveEvrak(evrak_base64, `islem_${siteId}_${Date.now()}`)
@@ -85,6 +86,7 @@ export async function POST(request: NextRequest) {
       aciklama: aciklama ?? null,
       evrak_yolu,
       olusturan_id: session.id,
+      para_birimi: para_birimi === "USD" ? "USD" : "IQD",
     })
     return NextResponse.json({ id })
   } catch (error) {

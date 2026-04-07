@@ -82,11 +82,15 @@ export interface Fuel {
 /** Harcama türü: Şantiye, Makine (Kullanılan kazık makinesi), Personel, Yakıt, Diğer */
 export type ExpenseCategory = "santiye" | "makine" | "personel" | "yakit" | "diger"
 
+/** Harcama tutarı bu para biriminde girilir; şantiye kuru ile diğer para birimine çevrilir. */
+export type ExpenseCurrency = "IQD" | "USD"
+
 export interface Expense {
   description: string
   amount: number
   /** Harcama türü (Şantiye, Makine, Personel, Yakıt, Diğer) */
   category?: ExpenseCategory
+  currency?: ExpenseCurrency
 }
 
 export interface DailyInfo {
@@ -191,7 +195,7 @@ export const initialFormData: FormData = {
     dailyUsage: "",
     remainingOnSite: "",
   },
-  expenses: [{ description: "", amount: 0, category: "diger" }],
+  expenses: [{ description: "", amount: 0, category: "diger", currency: "IQD" }],
   dailyInfo: { notes: "", nextDayPlannedWork: "", images: [] },
   productionSummary: [{
     machineId: "",

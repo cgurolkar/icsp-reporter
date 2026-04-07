@@ -19,6 +19,8 @@ export interface SiteSummaryForForm {
   projectStartDate?: string | null
   isOngoing?: boolean
   initialPilesDone?: number | null
+  /** 1 USD = kaç IQD (şantiye kuru) */
+  iqdPerUsd?: number | null
 }
 
 interface BasicInfoStepProps {
@@ -48,7 +50,7 @@ export default function BasicInfoStep({
 }: BasicInfoStepProps) {
   const { t } = useLanguage()
   const [sites, setSites] = useState<SiteOption[]>([])
-  const [siteSummary, setSiteSummary] = useState<SiteSummaryForForm>({ totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null })
+  const [siteSummary, setSiteSummary] = useState<SiteSummaryForForm>({ totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, iqdPerUsd: null })
 
   useEffect(() => {
     fetch("/api/sites")
@@ -59,14 +61,14 @@ export default function BasicInfoStep({
 
   useEffect(() => {
     if (data.siteId == null) {
-      const empty: SiteSummaryForForm = { totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null }
+      const empty: SiteSummaryForForm = { totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, iqdPerUsd: null }
       setSiteSummary(empty)
       onSiteSummaryChange?.(empty)
       return
     }
     fetch(`/api/sites/${data.siteId}/last-report`)
       .then((res) => (res.ok ? res.json() : {}))
-      .then((d: { totalPiles?: number | null; lastDate?: string | null; remainingPiles?: string | null; projectStartDate?: string | null; isOngoing?: boolean; initialPilesDone?: number | null }) => {
+      .then((d: { totalPiles?: number | null; lastDate?: string | null; remainingPiles?: string | null; projectStartDate?: string | null; isOngoing?: boolean; initialPilesDone?: number | null; iqd_per_usd?: number | null }) => {
         const next: SiteSummaryForForm = {
           totalPiles: d.totalPiles ?? null,
           lastDate: d.lastDate ?? null,
@@ -74,12 +76,13 @@ export default function BasicInfoStep({
           projectStartDate: d.projectStartDate ?? null,
           isOngoing: d.isOngoing === true,
           initialPilesDone: d.initialPilesDone ?? null,
+          iqdPerUsd: d.iqd_per_usd != null && Number(d.iqd_per_usd) > 0 ? Number(d.iqd_per_usd) : 1320,
         }
         setSiteSummary(next)
         onSiteSummaryChange?.(next)
       })
       .catch(() => {
-        const empty: SiteSummaryForForm = { totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null }
+        const empty: SiteSummaryForForm = { totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, iqdPerUsd: null }
         setSiteSummary(empty)
         onSiteSummaryChange?.(empty)
       })
@@ -154,6 +157,11 @@ export default function BasicInfoStep({
                 ))}
               </Select>
             </FormControl>
+          )}
+          {data.siteId != null && siteSummary.iqdPerUsd != null && siteSummary.iqdPerUsd > 0 && (
+            <Typography variant="body2" sx={{ color: "#e65100", gridColumn: "1 / -1" }}>
+              Proje döviz kuru: <strong>1 USD = {siteSummary.iqdPerUsd.toLocaleString("tr-TR")} IQD</strong> (harcamalarda kullanılır)
+            </Typography>
           )}
         </Box>
         {(siteSummary.totalPiles != null || siteSummary.remainingPiles != null || siteSummary.initialPilesDone != null) && (

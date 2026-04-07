@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect, useRef } from "react"
 import {
@@ -52,6 +52,9 @@ interface IslemRow {
   odeme_kaynagi: string
   aciklama?: string | null
   evrak_yolu?: string | null
+  para_birimi?: string | null
+  tutar_usd?: number | string | null
+  tutar_iqd?: number | string | null
 }
 
 interface PreviewRow {
@@ -92,6 +95,7 @@ export default function IdariHarcamalarPage() {
     siteId: "",
     kategoriId: "",
     tutar: "",
+    para_birimi: "IQD" as "IQD" | "USD",
     islem_tarihi: new Date().toISOString().slice(0, 10),
     odeme_kaynagi: "Santiye_Kasa",
     aciklama: "",
@@ -150,6 +154,7 @@ export default function IdariHarcamalarPage() {
         siteId: sid,
         kategoriId: kid,
         tutar,
+        para_birimi: form.para_birimi,
         islem_tarihi: form.islem_tarihi.slice(0, 10),
         odeme_kaynagi: form.odeme_kaynagi,
         aciklama: form.aciklama || undefined,
@@ -158,7 +163,7 @@ export default function IdariHarcamalarPage() {
     setSaving(false)
     if (res.ok) {
       setDialogOpen(false)
-      setForm({ siteId: "", kategoriId: "", tutar: "", islem_tarihi: new Date().toISOString().slice(0, 10), odeme_kaynagi: "Santiye_Kasa", aciklama: "" })
+      setForm({ siteId: "", kategoriId: "", tutar: "", para_birimi: "IQD", islem_tarihi: new Date().toISOString().slice(0, 10), odeme_kaynagi: "Santiye_Kasa", aciklama: "" })
       loadList()
     } else {
       const err = await res.json().catch(() => ({}))
@@ -239,6 +244,9 @@ export default function IdariHarcamalarPage() {
 
   const siteName = (id: string) => sites.find((s) => String(s.id) === id)?.name ?? ""
 
+  const listSumUsd = list.reduce((s, r) => s + (r.tutar_usd != null ? Number(r.tutar_usd) : 0), 0)
+  const listSumIqd = list.reduce((s, r) => s + (r.tutar_iqd != null ? Number(r.tutar_iqd) : Number(r.tutar)), 0)
+
   return (
     <Box>
       <Typography variant="h6" sx={{ color: "var(--icsp-lacivert)", fontWeight: 600, mb: 2 }}>
@@ -286,7 +294,10 @@ export default function IdariHarcamalarPage() {
                 <TableRow>
                   <TableCell><strong>Tarih</strong></TableCell>
                   <TableCell><strong>Kategori</strong></TableCell>
-                  <TableCell align="right"><strong>Tutar</strong></TableCell>
+                  <TableCell align="center"><strong>PB</strong></TableCell>
+                  <TableCell align="right"><strong>Tutar (girilen)</strong></TableCell>
+                  <TableCell align="right"><strong>USD</strong></TableCell>
+                  <TableCell align="right"><strong>IQD</strong></TableCell>
                   <TableCell><strong>Ödeme</strong></TableCell>
                   <TableCell><strong>Açıklama</strong></TableCell>
                 </TableRow>
@@ -296,7 +307,10 @@ export default function IdariHarcamalarPage() {
                   <TableRow key={row.id}>
                     <TableCell>{String(row.islem_tarihi).slice(0, 10)}</TableCell>
                     <TableCell>{row.kategori_adi}</TableCell>
+                    <TableCell align="center">{row.para_birimi === "USD" ? "USD" : "IQD"}</TableCell>
                     <TableCell align="right">{Number(row.tutar).toLocaleString("tr-TR")}</TableCell>
+                    <TableCell align="right">{row.tutar_usd != null ? Number(row.tutar_usd).toLocaleString("tr-TR", { maximumFractionDigits: 2 }) : "—"}</TableCell>
+                    <TableCell align="right">{row.tutar_iqd != null ? Number(row.tutar_iqd).toLocaleString("tr-TR", { maximumFractionDigits: 0 }) : "—"}</TableCell>
                     <TableCell>
                       {row.odeme_kaynagi === "Merkez_Banka" ? "Merkez" : row.odeme_kaynagi === "rapor" ? "Günlük Rapor" : "Şantiye Kasası"}
                     </TableCell>
@@ -304,8 +318,9 @@ export default function IdariHarcamalarPage() {
                   </TableRow>
                 ))}
                 <TableRow sx={{ backgroundColor: "#f5f5f5" }}>
-                  <TableCell colSpan={2}><strong>Toplam</strong></TableCell>
-                  <TableCell align="right"><strong>{list.reduce((s, r) => s + Number(r.tutar), 0).toLocaleString("tr-TR")}</strong></TableCell>
+                  <TableCell colSpan={4}><strong>Toplam (USD / IQD)</strong></TableCell>
+                  <TableCell align="right"><strong>{listSumUsd.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}</strong></TableCell>
+                  <TableCell align="right"><strong>{listSumIqd.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}</strong></TableCell>
                   <TableCell colSpan={2} />
                 </TableRow>
               </TableBody>
@@ -335,7 +350,14 @@ export default function IdariHarcamalarPage() {
                 ))}
               </Select>
             </FormControl>
-            <TextField label="Tutar" type="number" value={form.tutar} onChange={(e) => setForm((f) => ({ ...f, tutar: e.target.value }))} required fullWidth inputProps={{ step: 0.01 }} />
+            <FormControl fullWidth>
+              <InputLabel>Para birimi</InputLabel>
+              <Select value={form.para_birimi} label="Para birimi" onChange={(e) => setForm((f) => ({ ...f, para_birimi: e.target.value as "IQD" | "USD" }))}>
+                <MenuItem value="IQD">IQD</MenuItem>
+                <MenuItem value="USD">USD</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField label={form.para_birimi === "USD" ? "Tutar (USD)" : "Tutar (IQD)"} type="number" value={form.tutar} onChange={(e) => setForm((f) => ({ ...f, tutar: e.target.value }))} required fullWidth inputProps={{ step: 0.01 }} />
             <TextField label="Tarih" type="date" value={form.islem_tarihi} onChange={(e) => setForm((f) => ({ ...f, islem_tarihi: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
             <FormControl fullWidth>
               <InputLabel>Ödeme kaynağı</InputLabel>

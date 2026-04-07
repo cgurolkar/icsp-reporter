@@ -5,14 +5,17 @@ import type React from "react"
 import { Grid, TextField, Typography, Box, Button, IconButton, Paper, FormControl, InputLabel, Select, MenuItem } from "@mui/material"
 import { Add, Delete } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
-import type { Expense, ExpenseCategory } from "@/types/form-data"
+import type { Expense, ExpenseCategory, ExpenseCurrency } from "@/types/form-data"
+import { normalizeIqdPerUsd, sumExpensesFx } from "@/lib/expense-fx"
 
 interface ExpensesStepProps {
   data: Expense[]
   onChange: (data: Expense[]) => void
+  /** Şantiye / 1 USD = kaç IQD; yoksa varsayılan kur */
+  iqdPerUsd?: number | null
 }
 
-export default function ExpensesStep({ data, onChange }: ExpensesStepProps) {
+export default function ExpensesStep({ data, onChange, iqdPerUsd }: ExpensesStepProps) {
   const { t } = useLanguage()
 
   const expenseCategories: { value: ExpenseCategory; label: string }[] = [
@@ -23,8 +26,11 @@ export default function ExpensesStep({ data, onChange }: ExpensesStepProps) {
     { value: "diger", label: t("expense_cat_diger") },
   ]
 
+  const rate = normalizeIqdPerUsd(iqdPerUsd)
+  const { totalUsd, totalIqd } = sumExpensesFx(data, rate)
+
   const addExpense = () => {
-    onChange([...data, { description: "", amount: 0, category: "diger" }])
+    onChange([...data, { description: "", amount: 0, category: "diger", currency: "IQD" }])
   }
 
   const removeExpense = (index: number) => {
@@ -73,8 +79,6 @@ export default function ExpensesStep({ data, onChange }: ExpensesStepProps) {
     }
   }
 
-  const total = data.reduce((sum, expense) => sum + expense.amount, 0)
-
   return (
     <Box>
       <Typography variant="h6" gutterBottom sx={{ color: "#9c27b0", fontWeight: 600, mb: 3 }}>
@@ -90,7 +94,7 @@ export default function ExpensesStep({ data, onChange }: ExpensesStepProps) {
                 {index + 1}.
               </Typography>
             </Grid>
-            <Grid item xs={12} sm={3}>
+            <Grid item xs={12} sm={2}>
               <FormControl fullWidth size="small" sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "white" } }}>
                 <InputLabel>{t("expense_type")}</InputLabel>
                 <Select
@@ -104,7 +108,20 @@ export default function ExpensesStep({ data, onChange }: ExpensesStepProps) {
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} sm={5}>
+            <Grid item xs={6} sm={2}>
+              <FormControl fullWidth size="small" sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "white" } }}>
+                <InputLabel>Kur</InputLabel>
+                <Select
+                  label="Kur"
+                  value={expense.currency ?? "IQD"}
+                  onChange={(e) => updateExpense(index, "currency", e.target.value as ExpenseCurrency)}
+                >
+                  <MenuItem value="IQD">IQD</MenuItem>
+                  <MenuItem value="USD">USD</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={4}>
               <TextField
                 fullWidth
                 size="small"
@@ -128,7 +145,7 @@ export default function ExpensesStep({ data, onChange }: ExpensesStepProps) {
               <TextField
                 fullWidth
                 size="small"
-                label={t("amount_iqd")}
+                label={expense.currency === "USD" ? "Tutar (USD)" : "Tutar (IQD)"}
                 type="number"
                 value={expense.amount || ""}
                 onChange={(e) => updateExpense(index, "amount", Number.parseFloat(e.target.value) || 0)}
@@ -167,9 +184,17 @@ export default function ExpensesStep({ data, onChange }: ExpensesStepProps) {
             {t("add")} {t("expenses")}
           </Button>
 
-          <Typography variant="h6" sx={{ color: "#9c27b0", fontWeight: 600 }}>
-            {t("total")}: {total.toLocaleString()} {t("currency")}
-          </Typography>
+          <Box sx={{ textAlign: "right" }}>
+            <Typography variant="body2" sx={{ color: "#9c27b0", fontWeight: 600 }}>
+              Toplam (USD): {totalUsd.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}
+            </Typography>
+            <Typography variant="body2" sx={{ color: "#9c27b0", fontWeight: 600 }}>
+              Toplam (IQD): {totalIqd.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block">
+              Kur: 1 USD = {rate.toLocaleString("tr-TR")} IQD
+            </Typography>
+          </Box>
         </Box>
 
         <Box sx={{ mt: 2, p: 2, backgroundColor: "rgba(156, 39, 176, 0.1)", borderRadius: 1 }}>

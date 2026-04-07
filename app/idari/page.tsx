@@ -20,6 +20,7 @@ interface DashboardStats {
   personelSayisi: number
   bugunGelen: number
   buAyHarcama: number
+  buAyHarcamaUsd?: number
   envanterSayisi: number
   uyariSayisi: number
 }
@@ -117,8 +118,12 @@ export default function IdariDashboardPage() {
           loading={statsLoading}
         />
         <StatCard
-          title="Bu Ay Harcama"
-          value={stats ? `$${stats.buAyHarcama.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}` : "—"}
+          title="Bu ay harcama"
+          value={
+            stats
+              ? `USD ${(stats.buAyHarcamaUsd ?? 0).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} · IQD ${stats.buAyHarcama.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}`
+              : "—"
+          }
           icon={<AttachMoney fontSize="small" />}
           color="#e65100"
           loading={statsLoading}

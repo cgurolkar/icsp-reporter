@@ -22,8 +22,9 @@ import {
   Select,
   MenuItem,
   TextField,
+  IconButton,
 } from "@mui/material"
-import { ArrowBack, Add, Person } from "@mui/icons-material"
+import { ArrowBack, Add, Person, Edit, Delete } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
 import { useTheme, useMediaQuery } from "@mui/material"
 
@@ -63,6 +64,28 @@ interface SiteItem {
   name: string
 }
 
+interface FinansOzetRow {
+  ay: string
+  ay_baslangic: string
+  toplam_carpan: number
+  yevmiye_hak_edis: number
+  aylik_maas_goster: number | null
+}
+
+interface FinansOzetResp {
+  stats_since: string
+  gunluk_yevmiye: number | null
+  aylik_maas: number | null
+  aylar: FinansOzetRow[]
+}
+
+function personelFotoSrc(personelId: number, foto_yolu: string | null | undefined): string | undefined {
+  if (!foto_yolu) return undefined
+  const t = foto_yolu.trim()
+  if (t.startsWith("http://") || t.startsWith("https://") || t.startsWith("data:")) return t
+  return `/api/idari/personel/${personelId}/foto`
+}
+
 export default function IdariPersonelDetailPage() {
   const params = useParams()
   const theme = useTheme()
@@ -74,7 +97,9 @@ export default function IdariPersonelDetailPage() {
   const [belgeler, setBelgeler] = useState<BelgeRow[]>([])
   const [belgeTipleri, setBelgeTipleri] = useState<{ id: number; kod: string; ad: string }[]>([])
   const [atamaDialogOpen, setAtamaDialogOpen] = useState(false)
+  const [editingAtamaId, setEditingAtamaId] = useState<number | null>(null)
   const [atamaForm, setAtamaForm] = useState({ site_id: "", baslangic_tarihi: "", bitis_tarihi: "" })
+  const [finansOzet, setFinansOzet] = useState<FinansOzetResp | null>(null)
   const [belgeDialogOpen, setBelgeDialogOpen] = useState(false)
   const [belgeForm, setBelgeForm] = useState({ belge_tipi: "", gecerlilik_tarihi: "" })
   const [belgeSaving, setBelgeSaving] = useState(false)
@@ -103,6 +128,14 @@ export default function IdariPersonelDetailPage() {
       .then((r) => (r.ok ? r.json() : []))
       .then((data: BelgeRow[]) => setBelgeler(data))
       .catch(() => setBelgeler([]))
+  }, [id])
+
+  useEffect(() => {
+    if (Number.isNaN(id)) return
+    fetch(`/api/idari/personel/${id}/finans-ozet`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: FinansOzetResp | null) => setFinansOzet(d))
+      .catch(() => setFinansOzet(null))
   }, [id])
 
   useEffect(() => {
@@ -152,28 +185,60 @@ export default function IdariPersonelDetailPage() {
     }
   }
 
-  const handleAddAtama = async () => {
+  const closeAtamaDialog = () => {
+    setAtamaDialogOpen(false)
+    setEditingAtamaId(null)
+    setAtamaForm({ site_id: "", baslangic_tarihi: "", bitis_tarihi: "" })
+  }
+
+  const handleSaveAtama = async () => {
     const site_id = parseInt(atamaForm.site_id, 10)
     if (!site_id || !atamaForm.baslangic_tarihi.trim()) {
       alert("Şantiye ve başlangıç tarihi gerekli.")
       return
     }
-    const res = await fetch(`/api/idari/personel/${id}/atama`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        site_id,
-        baslangic_tarihi: atamaForm.baslangic_tarihi.slice(0, 10),
-        bitis_tarihi: atamaForm.bitis_tarihi ? atamaForm.bitis_tarihi.slice(0, 10) : null,
-      }),
-    })
+    const body = {
+      site_id,
+      baslangic_tarihi: atamaForm.baslangic_tarihi.slice(0, 10),
+      bitis_tarihi: atamaForm.bitis_tarihi ? atamaForm.bitis_tarihi.slice(0, 10) : null,
+    }
+    const res =
+      editingAtamaId != null
+        ? await fetch(`/api/idari/personel/${id}/atama/${editingAtamaId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          })
+        : await fetch(`/api/idari/personel/${id}/atama`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          })
     if (res.ok) {
-      setAtamaDialogOpen(false)
-      setAtamaForm({ site_id: "", baslangic_tarihi: "", bitis_tarihi: "" })
+      closeAtamaDialog()
       loadPersonel()
+      fetch(`/api/idari/personel/${id}/finans-ozet`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: FinansOzetResp | null) => setFinansOzet(d))
+        .catch(() => {})
     } else {
       const err = await res.json().catch(() => ({}))
-      alert(err.error || "Atama eklenemedi.")
+      alert(err.error || (editingAtamaId != null ? "Atama güncellenemedi." : "Atama eklenemedi."))
+    }
+  }
+
+  const handleDeleteAtama = async (atamaId: number) => {
+    if (!confirm("Bu şantiye atamasını silmek istediğinize emin misiniz?")) return
+    const res = await fetch(`/api/idari/personel/${id}/atama/${atamaId}`, { method: "DELETE" })
+    if (res.ok) {
+      loadPersonel()
+      fetch(`/api/idari/personel/${id}/finans-ozet`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: FinansOzetResp | null) => setFinansOzet(d))
+        .catch(() => {})
+    } else {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error || "Silinemedi.")
     }
   }
 
@@ -195,6 +260,8 @@ export default function IdariPersonelDetailPage() {
     )
   }
 
+  const fotoSrc = personelFotoSrc(id, personel.foto_yolu)
+
   return (
     <Box>
       <Button component={Link} href="/idari/personel" startIcon={<ArrowBack />} sx={{ mb: 2 }}>
@@ -214,8 +281,8 @@ export default function IdariPersonelDetailPage() {
               p: 2,
             }}
           >
-            {personel.foto_yolu ? (
-              <Box component="img" src={personel.foto_yolu} alt="" sx={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 1 }} />
+            {fotoSrc ? (
+              <Box component="img" src={fotoSrc} alt="" sx={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 1 }} />
             ) : (
               <Person sx={{ fontSize: 80, color: "grey.400" }} />
             )}
@@ -267,7 +334,46 @@ export default function IdariPersonelDetailPage() {
                   <TableRow key={b.id}>
                     <TableCell>{belgeTipleri.find((t) => t.kod === b.belge_tipi)?.ad ?? b.belge_tipi}</TableCell>
                     <TableCell>{b.gecerlilik_tarihi ? String(b.gecerlilik_tarihi).slice(0, 10) : "—"}</TableCell>
-                    <TableCell><Button size="small" href={b.dosya_yolu} target="_blank" rel="noopener">Görüntüle</Button></TableCell>
+                    <TableCell><Button size="small" href={`/api/idari/personel/${id}/belgeler/${b.id}`} target="_blank" rel="noopener">Görüntüle</Button></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Paper>
+      )}
+
+      {finansOzet && (
+        <Paper sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+          <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.5 }}>Ücret özeti (onaylı puantaj)</Typography>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+            Veriler {finansOzet.stats_since} tarihinden itibaren listelenir (sistemde puantaj olan aylar). Yevmiye tutarı güncel tarifeyle çarpılır; aylık maaş için ay içinde en az bir onaylı puantaj varsa tarife satırı gösterilir.
+          </Typography>
+          {finansOzet.aylar.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">Bu dönemde onaylı puantaj kaydı yok.</Typography>
+          ) : (
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><strong>Ay</strong></TableCell>
+                  <TableCell align="right"><strong>Adam/gün</strong></TableCell>
+                  <TableCell align="right"><strong>Yevmiye hak edişi</strong></TableCell>
+                  <TableCell align="right"><strong>Aylık maaş (liste)</strong></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {finansOzet.aylar.map((row) => (
+                  <TableRow key={row.ay}>
+                    <TableCell>{row.ay}</TableCell>
+                    <TableCell align="right">{Number(row.toplam_carpan).toLocaleString("tr-TR", { maximumFractionDigits: 2 })}</TableCell>
+                    <TableCell align="right">
+                      {finansOzet.gunluk_yevmiye != null && finansOzet.gunluk_yevmiye > 0
+                        ? Number(row.yevmiye_hak_edis).toLocaleString("tr-TR", { maximumFractionDigits: 0 })
+                        : "—"}
+                    </TableCell>
+                    <TableCell align="right">
+                      {row.aylik_maas_goster != null ? Number(row.aylik_maas_goster).toLocaleString("tr-TR", { maximumFractionDigits: 0 }) : "—"}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -280,7 +386,16 @@ export default function IdariPersonelDetailPage() {
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
           <Typography variant="subtitle1" fontWeight={600}>Atama geçmişi (şantiye)</Typography>
           {canManage && (
-            <Button size="small" variant="outlined" startIcon={<Add />} onClick={() => setAtamaDialogOpen(true)}>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<Add />}
+              onClick={() => {
+                setEditingAtamaId(null)
+                setAtamaForm({ site_id: "", baslangic_tarihi: "", bitis_tarihi: "" })
+                setAtamaDialogOpen(true)
+              }}
+            >
               Atama ekle
             </Button>
           )}
@@ -294,6 +409,7 @@ export default function IdariPersonelDetailPage() {
                 <TableCell><strong>Şantiye</strong></TableCell>
                 <TableCell><strong>Başlangıç</strong></TableCell>
                 <TableCell><strong>Bitiş</strong></TableCell>
+                {canManage && <TableCell align="right"><strong>İşlem</strong></TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -302,6 +418,28 @@ export default function IdariPersonelDetailPage() {
                   <TableCell>{a.site_name}</TableCell>
                   <TableCell>{String(a.baslangic_tarihi).slice(0, 10)}</TableCell>
                   <TableCell>{a.bitis_tarihi ? String(a.bitis_tarihi).slice(0, 10) : "Devam ediyor"}</TableCell>
+                  {canManage && (
+                    <TableCell align="right">
+                      <IconButton
+                        size="small"
+                        aria-label="Düzenle"
+                        onClick={() => {
+                          setEditingAtamaId(a.id)
+                          setAtamaForm({
+                            site_id: String(a.site_id),
+                            baslangic_tarihi: String(a.baslangic_tarihi).slice(0, 10),
+                            bitis_tarihi: a.bitis_tarihi ? String(a.bitis_tarihi).slice(0, 10) : "",
+                          })
+                          setAtamaDialogOpen(true)
+                        }}
+                      >
+                        <Edit fontSize="small" />
+                      </IconButton>
+                      <IconButton size="small" aria-label="Sil" color="error" onClick={() => handleDeleteAtama(a.id)}>
+                        <Delete fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -334,8 +472,8 @@ export default function IdariPersonelDetailPage() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={atamaDialogOpen} onClose={() => setAtamaDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Şantiye ataması ekle</DialogTitle>
+      <Dialog open={atamaDialogOpen} onClose={closeAtamaDialog} maxWidth="xs" fullWidth>
+        <DialogTitle>{editingAtamaId != null ? "Şantiye atamasını düzenle" : "Şantiye ataması ekle"}</DialogTitle>
         <DialogContent>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
             <FormControl fullWidth required>
@@ -368,14 +506,16 @@ export default function IdariPersonelDetailPage() {
               InputLabelProps={{ shrink: true }}
             />
             <Typography variant="caption" color="text.secondary">
-              Not: Yeni atama eklendiğinde, başka şantiyelerdeki aktif atamalar başlangıç tarihinden bir gün önce otomatik kapatılır.
+              {editingAtamaId != null
+                ? "Tarih ve şantiye bilgisini güncelleyebilirsiniz. Çakışan başlangıç tarihi kaydedilemez."
+                : "Yeni atama eklendiğinde, başka şantiyelerdeki aktif atamalar başlangıç tarihinden bir gün önce otomatik kapatılır."}
             </Typography>
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setAtamaDialogOpen(false)}>İptal</Button>
-          <Button variant="contained" onClick={handleAddAtama} disabled={!atamaForm.site_id || !atamaForm.baslangic_tarihi} sx={{ background: "var(--icsp-lacivert)" }}>
-            Ekle
+          <Button onClick={closeAtamaDialog}>İptal</Button>
+          <Button variant="contained" onClick={handleSaveAtama} disabled={!atamaForm.site_id || !atamaForm.baslangic_tarihi} sx={{ background: "var(--icsp-lacivert)" }}>
+            {editingAtamaId != null ? "Kaydet" : "Ekle"}
           </Button>
         </DialogActions>
       </Dialog>

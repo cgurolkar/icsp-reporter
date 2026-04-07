@@ -209,6 +209,7 @@ function AdminPanel() {
     timezone: string
     emailList: string[]
     totalPiles: string
+    iqdPerUsd: string
     contractUnitPrice: string
     authorizedPerson: string
     employer: string
@@ -227,6 +228,7 @@ function AdminPanel() {
     timezone: "",
     emailList: [],
     totalPiles: "",
+    iqdPerUsd: "1320",
     contractUnitPrice: "",
     authorizedPerson: "",
     employer: "",
@@ -1294,7 +1296,7 @@ function AdminPanel() {
               variant="contained"
               startIcon={<Add />}
               onClick={() => {
-                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", contractUnitPrice: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [], isActive: true, releaseMachinesWhenClosed: true })
+                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", iqdPerUsd: "1320", contractUnitPrice: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [], isActive: true, releaseMachinesWhenClosed: true })
                 if (personelList.length === 0) fetch("/api/idari/personel?limit=500").then((r) => (r.ok ? r.json() : { data: [] })).then((res: any) => setPersonelList(Array.isArray(res) ? res : (res.data ?? []))).catch(() => {})
                 setSiteDialogOpen(true)
               }}
@@ -1384,6 +1386,7 @@ function AdminPanel() {
                       timezone: (site as any).timezone != null ? String((site as any).timezone) : "",
                       emailList: site.email_list || [],
                       totalPiles: site.total_piles != null ? String(site.total_piles) : "",
+                      iqdPerUsd: (site as any).iqd_per_usd != null ? String((site as any).iqd_per_usd) : "1320",
                       contractUnitPrice: (site as any).contract_unit_price != null ? String((site as any).contract_unit_price) : "",
                       authorizedPerson: (site as any).authorized_person != null ? String((site as any).authorized_person) : "",
                       employer: (site as any).employer != null ? String((site as any).employer) : "",
@@ -1694,6 +1697,7 @@ function AdminPanel() {
             <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1.5, mb: 0.5 }}>Bölgesel saat (operatör biniş/iniş kaydı)</Typography>
             <TextField margin="dense" fullWidth label="Ülke (kodu veya adı)" value={siteDialogData.country} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, country: e.target.value }))} placeholder="Örn: TR, IQ" variant="outlined" size="small" helperText="Zaman dilimi ülkeye göre belirlenir" />
             <TextField margin="dense" fullWidth label="Zaman dilimi (opsiyonel)" value={siteDialogData.timezone} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, timezone: e.target.value }))} placeholder="Örn: Europe/Istanbul" variant="outlined" size="small" />
+            <TextField margin="dense" fullWidth label="Döviz kuru: 1 USD kaç IQD" value={siteDialogData.iqdPerUsd} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, iqdPerUsd: e.target.value }))} placeholder="1320" variant="outlined" size="small" type="number" inputProps={{ min: 1, step: 0.0001 }} helperText="Bilgi girişi ve harcamalarda çevrim için kullanılır" />
 
             <TextField margin="dense" fullWidth label="Yetkili kişi" value={siteDialogData.authorizedPerson} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, authorizedPerson: e.target.value }))} placeholder="Şantiye yetkilisi" variant="outlined" size="small" />
             <TextField margin="dense" fullWidth label="İşveren" value={siteDialogData.employer} onChange={(e) => setSiteDialogData((prev) => ({ ...prev, employer: e.target.value }))} placeholder="İşveren / firma" variant="outlined" size="small" />
@@ -2015,6 +2019,7 @@ function AdminPanel() {
                   timezone: siteDialogData.timezone.trim() || null,
                   emailList: Array.isArray(siteDialogData.emailList) ? siteDialogData.emailList : [],
                   totalPiles: siteDialogData.totalPiles.trim() ? parseInt(siteDialogData.totalPiles, 10) || null : null,
+                  iqdPerUsd: siteDialogData.iqdPerUsd.trim() ? Number(siteDialogData.iqdPerUsd) : 1320,
                   authorizedPerson: siteDialogData.authorizedPerson.trim() || null,
                   employer: siteDialogData.employer.trim() || null,
                   projectStartDate: siteDialogData.projectStartDate.trim() || null,

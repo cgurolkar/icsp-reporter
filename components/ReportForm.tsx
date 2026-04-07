@@ -120,6 +120,31 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     }
   }, [initialSiteId, initialSiteName])
 
+  useEffect(() => {
+    const sid = formData.basicInfo.siteId ?? initialSiteId ?? lockedSiteId ?? null
+    if (sid == null) return
+    let cancelled = false
+    fetch(`/api/sites/${sid}/last-report`)
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((d: { iqd_per_usd?: number | null }) => {
+        if (cancelled) return
+        const iq = d.iqd_per_usd != null && Number(d.iqd_per_usd) > 0 ? Number(d.iqd_per_usd) : 1320
+        setSiteSummary((prev) => ({
+          totalPiles: prev?.totalPiles ?? null,
+          lastDate: prev?.lastDate ?? null,
+          remainingPiles: prev?.remainingPiles ?? null,
+          projectStartDate: prev?.projectStartDate ?? null,
+          isOngoing: prev?.isOngoing ?? false,
+          initialPilesDone: prev?.initialPilesDone ?? null,
+          iqdPerUsd: iq,
+        }))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [formData.basicInfo.siteId, initialSiteId, lockedSiteId])
+
   // Şantiye seçilince İdari → Makineler kayıtlarından aktif makineleri al ve seçimi güncelle
   useEffect(() => {
     const siteId = formData.basicInfo?.siteId
@@ -490,7 +515,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
             basicInfoMachines={formData.basicInfo.machines}
           />
         )
-        case 3: return <ExpensesStep data={formData.expenses} onChange={(d) => updateFormData("expenses", d)} />
+        case 3: return <ExpensesStep data={formData.expenses} onChange={(d) => updateFormData("expenses", d)} iqdPerUsd={siteSummary?.iqdPerUsd} />
         case 4: return <DailyInfoStep data={formData.dailyInfo} onChange={(d) => updateFormData("dailyInfo", d)} />
         case 5: return <ReviewStep data={formData} onSubmit={handleSubmit} siteSummary={siteSummary ?? undefined} />
         default: return null
@@ -621,7 +646,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
           />
         )
       case 5:
-        return <ExpensesStep data={formData.expenses} onChange={(d) => updateFormData("expenses", d)} />
+        return <ExpensesStep data={formData.expenses} onChange={(d) => updateFormData("expenses", d)} iqdPerUsd={siteSummary?.iqdPerUsd} />
       case 6:
         return <DailyInfoStep data={formData.dailyInfo} onChange={(d) => updateFormData("dailyInfo", d)} />
       case 7:

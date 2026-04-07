@@ -28,6 +28,7 @@ export async function GET(
       projectStartDate: site.project_start_date ?? null,
       isOngoing: site.is_ongoing === true,
       initialPilesDone: site.initial_piles_done ?? null,
+      iqd_per_usd: site.iqd_per_usd != null ? Number(site.iqd_per_usd) : 1320,
     })
   } catch (error) {
     console.error("Error fetching last report:", error)
