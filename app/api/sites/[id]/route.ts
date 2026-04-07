@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getSiteById, updateSite, initializeDatabase } from "@/lib/database"
+import { getSiteById, updateSite, initializeDatabase, softDeleteSite, releaseMachinesFromSite } from "@/lib/database"
 import { canAccessAdmin, canViewAllSites, getSessionFromRequest } from "@/lib/auth"
 
 export async function GET(
@@ -43,7 +43,7 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid site id" }, { status: 400 })
     }
     const body = await request.json()
-    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, budget, timezone, contractUnitPrice } = body
+    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, budget, timezone, contractUnitPrice, releaseMachinesFromSite: releaseMachinesFlag } = body
     const site = await updateSite(siteId, {
       ...(name !== undefined && { name }),
       ...(code !== undefined && { code }),
@@ -66,11 +66,42 @@ export async function PUT(
       ...(session.role === "super_admin" && contractUnitPrice !== undefined && { contractUnitPrice: contractUnitPrice != null && !Number.isNaN(Number(contractUnitPrice)) ? Number(contractUnitPrice) : null }),
     })
     if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
+    if (isActive === false && releaseMachinesFlag === true) {
+      await releaseMachinesFromSite(siteId)
+    }
     if (session.role === "super_admin") return NextResponse.json(site)
     const { contract_unit_price, ...rest } = site as Record<string, unknown>
     return NextResponse.json(rest)
   } catch (error) {
     console.error("Error updating site:", error)
     return NextResponse.json({ error: "Failed to update site" }, { status: 500 })
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getSessionFromRequest(request)
+    if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
+    if (!canAccessAdmin(session.role)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
+    await initializeDatabase()
+    const { id } = await params
+    const siteId = parseInt(id, 10)
+    if (isNaN(siteId)) return NextResponse.json({ error: "Invalid site id" }, { status: 400 })
+    let releaseMachines = true
+    try {
+      const body = await request.json()
+      if (body && typeof body === "object" && body.releaseMachines === false) releaseMachines = false
+    } catch {
+      /* body optional */
+    }
+    const ok = await softDeleteSite(siteId, releaseMachines)
+    if (!ok) return NextResponse.json({ error: "Site not found" }, { status: 404 })
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("Error deleting site:", error)
+    return NextResponse.json({ error: "Failed to deactivate site" }, { status: 500 })
   }
 }

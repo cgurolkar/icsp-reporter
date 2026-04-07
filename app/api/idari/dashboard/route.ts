@@ -18,9 +18,10 @@ export async function GET(request: NextRequest) {
     const today = new Date().toISOString().slice(0, 10)
     const monthStart = today.slice(0, 7) + "-01"
 
-    // Toplam aktif personel
+    // Toplam aktif personel (tablo adı: personeller)
     const personelRes = await client.query(
-      `SELECT COUNT(*) AS cnt FROM personel WHERE isten_cikis_tarihi IS NULL OR isten_cikis_tarihi > CURRENT_DATE`
+      `SELECT COUNT(*) AS cnt FROM personeller
+       WHERE isten_cikis_tarihi IS NULL OR isten_cikis_tarihi > CURRENT_DATE`
     )
     const personelSayisi = parseInt(personelRes.rows[0]?.cnt ?? "0", 10)
 
@@ -38,9 +39,10 @@ export async function GET(request: NextRequest) {
     const harcamaRes = await client.query(harcamaQuery, harcamaParams)
     const buAyHarcama = parseFloat(harcamaRes.rows[0]?.toplam ?? "0")
 
-    // Envanter toplam kalem sayısı
+    // Envanter toplam kalem sayısı (durum yoksa veya hurda değilse say)
     const envanterRes = await client.query(
-      `SELECT COUNT(*) AS cnt FROM envanter WHERE durum != 'hurda'`
+      `SELECT COUNT(*) AS cnt FROM envanter
+       WHERE (durum IS NULL OR durum <> 'hurda')`
     )
     const envanterSayisi = parseInt(envanterRes.rows[0]?.cnt ?? "0", 10)
 

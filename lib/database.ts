@@ -1281,6 +1281,58 @@ async function resolveMachineLabelForPersonel(client: { query: (q: string, p?: u
   return MACHINE_ID_TO_NAME[machineId] || machineId
 }
 
+/** Şantiyedeki tüm makinelerin konumunu sıfırlar; bu makinelerdeki açık operatör atamalarına bitiş tarihi verir. */
+export async function releaseMachinesFromSite(siteId: number): Promise<void> {
+  const client = await pool.connect()
+  try {
+    await client.query(
+      `UPDATE machine_operator_atama moa
+       SET bitis_tarihi = CURRENT_DATE
+       FROM machines m
+       WHERE moa.machine_id = m.id AND m.current_site_id = $1 AND moa.bitis_tarihi IS NULL`,
+      [siteId],
+    )
+    await client.query(
+      `UPDATE machines SET current_site_id = NULL, updated_at = NOW() WHERE current_site_id = $1`,
+      [siteId],
+    )
+  } finally {
+    client.release()
+  }
+}
+
+/** Şantiyeyi pasif yapar. releaseMachines true ise makineler şantiyeden çıkarılır (operatör atamaları kapatılır). */
+export async function softDeleteSite(siteId: number, releaseMachines = true): Promise<boolean> {
+  const client = await pool.connect()
+  try {
+    await client.query("BEGIN")
+    if (releaseMachines) {
+      await client.query(
+        `UPDATE machine_operator_atama moa
+         SET bitis_tarihi = CURRENT_DATE
+         FROM machines m
+         WHERE moa.machine_id = m.id AND m.current_site_id = $1 AND moa.bitis_tarihi IS NULL`,
+        [siteId],
+      )
+      await client.query(
+        `UPDATE machines SET current_site_id = NULL, updated_at = NOW() WHERE current_site_id = $1`,
+        [siteId],
+      )
+    }
+    const r = await client.query(
+      `UPDATE sites SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id`,
+      [siteId],
+    )
+    await client.query("COMMIT")
+    return (r.rowCount ?? 0) > 0
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {})
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
 /** İdari makineler tablosu: seçilen makineleri şantiyeye bağlar, operatör atamalarını günceller. */
 export async function syncSiteMachineAssignments(
   siteId: number,
@@ -1291,6 +1343,13 @@ export async function syncSiteMachineAssignments(
   const client = await pool.connect()
   try {
     if (numericIds.length === 0) {
+      await client.query(
+        `UPDATE machine_operator_atama moa
+         SET bitis_tarihi = CURRENT_DATE
+         FROM machines m
+         WHERE moa.machine_id = m.id AND m.current_site_id = $1 AND moa.bitis_tarihi IS NULL`,
+        [siteId],
+      )
       await client.query(`UPDATE machines SET current_site_id = NULL, updated_at = NOW() WHERE current_site_id = $1`, [siteId])
     } else {
       await client.query(
@@ -1329,23 +1388,28 @@ export async function getAllSites() {
 }
 
 /** Şantiyeleri rapor sayılarıyla getir; siteId verilirse sadece o şantiye (kullanıcı kendi şantiyesini görsün) */
-export async function getSitesWithReportCount(siteId?: number | null) {
+export async function getSitesWithReportCount(
+  siteId?: number | null,
+  options?: { includeInactive?: boolean },
+) {
+  const includeInactive = options?.includeInactive === true
   const client = await pool.connect()
   try {
+    const activeClause = includeInactive ? "TRUE" : "s.is_active = true"
     const query = siteId != null
       ? `
       SELECT s.*,
         (SELECT COUNT(*) FROM work_reports wr WHERE wr.site_id = s.id) AS report_count
       FROM sites s
-      WHERE s.is_active = true AND s.id = $1
-      ORDER BY s.name
+      WHERE ${activeClause} AND s.id = $1
+      ORDER BY s.is_active DESC, s.name
       `
       : `
       SELECT s.*,
         (SELECT COUNT(*) FROM work_reports wr WHERE wr.site_id = s.id) AS report_count
       FROM sites s
-      WHERE s.is_active = true
-      ORDER BY s.name
+      WHERE ${activeClause}
+      ORDER BY s.is_active DESC, s.name
       `
     const result = siteId != null
       ? await client.query(query, [siteId])

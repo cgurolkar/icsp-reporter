@@ -2,7 +2,8 @@
 
 import type React from "react"
 
-import { useState, useEffect, useRef } from "react"
+import Link from "next/link"
+import { useState, useEffect, useRef, useMemo } from "react"
 import {
   Container,
   Paper,
@@ -60,6 +61,12 @@ interface TabPanelProps {
   children?: React.ReactNode
   index: number
   value: number
+}
+
+/** Şantiye operatör seçiminde: görevi operatör olan personel. */
+function personelIsOperatör(p: { gorev: string }) {
+  const g = (p.gorev || "").toLowerCase()
+  return g.includes("operat")
 }
 
 function TabPanel(props: TabPanelProps) {
@@ -190,9 +197,29 @@ function AdminPanel() {
   // Şantiye yönetimi
   const [dbSites, setDbSites] = useState<{ id: number; name: string; code: string; email_list: string[]; report_count?: number; total_piles?: number | null; contract_unit_price?: number | null; region?: string | null; city?: string | null; country?: string | null; authorized_person?: string | null; employer?: string | null; assigned_machine_operators?: { machineId: string; personelId: number }[] }[]>([])
   const [personelList, setPersonelList] = useState<{ id: number; ad: string; soyad: string; gorev: string }[]>([])
+  const operatörPersonelList = useMemo(() => personelList.filter(personelIsOperatör), [personelList])
   const [siteDialogOpen, setSiteDialogOpen] = useState(false)
   const [idariMachineOptions, setIdariMachineOptions] = useState<{ id: number; name: string; machine_type: string; marka?: string | null; model?: string | null; plaka_no?: string | null; seri_no?: string | null; status?: string | null; current_site_id: number | null }[]>([])
-  const [siteDialogData, setSiteDialogData] = useState<{ id?: number; name: string; code: string; country: string; timezone: string; emailList: string[]; totalPiles: string; contractUnitPrice: string; authorizedPerson: string; employer: string; projectStartDate: string; isOngoing: boolean; initialPilesDone: string; assignedMachineIds: string[]; assignedOperatorIds: number[]; assignedMachineOperators: { machineId: string; personelId: number }[] }>({
+  const [siteDialogData, setSiteDialogData] = useState<{
+    id?: number
+    name: string
+    code: string
+    country: string
+    timezone: string
+    emailList: string[]
+    totalPiles: string
+    contractUnitPrice: string
+    authorizedPerson: string
+    employer: string
+    projectStartDate: string
+    isOngoing: boolean
+    initialPilesDone: string
+    assignedMachineIds: string[]
+    assignedOperatorIds: number[]
+    assignedMachineOperators: { machineId: string; personelId: number }[]
+    isActive: boolean
+    releaseMachinesWhenClosed: boolean
+  }>({
     name: "",
     code: "",
     country: "",
@@ -208,8 +235,13 @@ function AdminPanel() {
     assignedMachineIds: [],
     assignedOperatorIds: [],
     assignedMachineOperators: [],
+    isActive: true,
+    releaseMachinesWhenClosed: true,
   })
   const [siteRemainingRecalcLoading, setSiteRemainingRecalcLoading] = useState(false)
+  const [makinelerRefreshToken, setMakinelerRefreshToken] = useState(0)
+  const [quickMachineName, setQuickMachineName] = useState("")
+  const [quickMachineSaving, setQuickMachineSaving] = useState(false)
 
   // Dashboard
   const [dashboardStats, setDashboardStats] = useState<{
@@ -279,12 +311,22 @@ function AdminPanel() {
 
   useEffect(() => {
     if (!siteDialogOpen) return
-    fetch("/api/idari/makineler")
+    fetch("/api/idari/makineler", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : []))
       .then((list: { id: number; name: string; machine_type: string; marka?: string | null; model?: string | null; plaka_no?: string | null; seri_no?: string | null; status?: string | null; current_site_id: number | null }[]) => {
         setIdariMachineOptions(Array.isArray(list) ? list : [])
       })
       .catch(() => setIdariMachineOptions([]))
+  }, [siteDialogOpen, makinelerRefreshToken])
+
+  useEffect(() => {
+    if (!siteDialogOpen) return
+    fetch("/api/idari/personel?limit=500")
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((res: { data?: { id: number; ad: string; soyad: string; gorev: string }[] } | { id: number; ad: string; soyad: string; gorev: string }[]) => {
+        setPersonelList(Array.isArray(res) ? res : (res.data ?? []))
+      })
+      .catch(() => {})
   }, [siteDialogOpen])
   useEffect(() => {
     if (tabValue === 4) loadReportList()
@@ -413,7 +455,7 @@ function AdminPanel() {
 
   const loadSites = async () => {
     try {
-      const res = await fetch("/api/sites?withReportCount=1")
+      const res = await fetch("/api/sites?withReportCount=1&includeInactive=1")
       if (res.ok) {
         const list = await res.json()
         setDbSites(list.map((s: any) => ({ ...s, email_list: s.email_list || [], report_count: s.report_count ?? 0 })))
@@ -1251,7 +1293,7 @@ function AdminPanel() {
               variant="contained"
               startIcon={<Add />}
               onClick={() => {
-                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", contractUnitPrice: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [] })
+                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", contractUnitPrice: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [], isActive: true, releaseMachinesWhenClosed: true })
                 if (personelList.length === 0) fetch("/api/idari/personel?limit=500").then((r) => (r.ok ? r.json() : { data: [] })).then((res: any) => setPersonelList(Array.isArray(res) ? res : (res.data ?? []))).catch(() => {})
                 setSiteDialogOpen(true)
               }}
@@ -1263,7 +1305,14 @@ function AdminPanel() {
             {dbSites.map((site) => (
               <ListItem key={site.id} divider>
                 <ListItemText
-                  primary={`${site.name} (${site.code})`}
+                  primary={
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                      <span>{`${site.name} (${site.code})`}</span>
+                      {(site as { is_active?: boolean }).is_active === false && (
+                        <Chip size="small" label="Kapalı / iş bitti" color="default" variant="outlined" />
+                      )}
+                    </Box>
+                  }
                   secondary={
                     <>
                       {(site.email_list && site.email_list.length > 0)
@@ -1276,6 +1325,36 @@ function AdminPanel() {
                   }
                 />
                 <ListItemSecondaryAction>
+                  <IconButton
+                    aria-label="Şantiyeyi pasifleştir"
+                    sx={{ color: "#b71c1c" }}
+                    onClick={() => {
+                      if (
+                        !confirm(
+                          "Bu şantiye pasif yapılacak (formlarda ve proje listesinde görünmez). Makineler depoya çekilsin ve açık operatör atamaları kapatılsın mı?\n\nİptal derseniz işlem yapılmaz.",
+                        )
+                      ) {
+                        return
+                      }
+                      void (async () => {
+                        try {
+                          const res = await fetch(`/api/sites/${site.id}`, {
+                            method: "DELETE",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ releaseMachines: true }),
+                          })
+                          const data = await res.json().catch(() => ({}))
+                          if (res.ok) await loadSites()
+                          else alert(data.error || "İşlem başarısız.")
+                        } catch (e) {
+                          console.error(e)
+                          alert("İstek gönderilemedi.")
+                        }
+                      })()
+                    }}
+                  >
+                    <Delete />
+                  </IconButton>
                   <IconButton
                 sx={{ color: "#1a237e" }}
                 onClick={() => {
@@ -1313,6 +1392,8 @@ function AdminPanel() {
                       assignedMachineIds: assignedIds,
                       assignedOperatorIds: Array.isArray((site as any).assigned_operator_ids) ? (site as any).assigned_operator_ids.map((x: unknown) => Number(x)).filter((n: number) => !Number.isNaN(n)) : [],
                       assignedMachineOperators: ops.map((o: any) => ({ machineId: String(o.machineId ?? o.machine_id ?? ""), personelId: Number(o.personelId ?? o.personel_id ?? 0) })).filter((o: { machineId: string; personelId: number }) => o.machineId && o.personelId > 0),
+                      isActive: (site as { is_active?: boolean }).is_active !== false,
+                      releaseMachinesWhenClosed: true,
                     })
                     setSiteDialogOpen(true)
                   }
@@ -1618,8 +1699,58 @@ function AdminPanel() {
 
             <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>Makineler ve operatörler</Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-              Liste İdari → Makineler’de tanımlı kazık makinelerinden gelir. En az bir makine seçimi zorunludur.
+              Liste İdari → Makineler’de tanımlı kazık makinelerinden gelir. Yeni makine yoksa önce tanımlayın veya aşağıdan hızlı ekleyin. En az bir makine seçimi zorunludur.
             </Typography>
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, alignItems: "center", mb: 1 }}>
+              <Button size="small" variant="outlined" startIcon={<Refresh />} onClick={() => setMakinelerRefreshToken((t) => t + 1)}>
+                Listeyi yenile
+              </Button>
+              <Button size="small" component={Link} href="/idari/makineler" target="_blank" rel="noopener noreferrer" variant="text">
+                İdari → Makineler
+              </Button>
+            </Box>
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, alignItems: "center", mb: 1.5 }}>
+              <TextField
+                size="small"
+                label="Hızlı: yeni kazık makinesi adı"
+                value={quickMachineName}
+                onChange={(e) => setQuickMachineName(e.target.value)}
+                sx={{ flex: "1 1 200px", minWidth: 180 }}
+                placeholder="Örn: KM-03"
+              />
+              <Button
+                size="small"
+                variant="contained"
+                disabled={!quickMachineName.trim() || quickMachineSaving}
+                sx={{ background: "var(--icsp-lacivert)" }}
+                onClick={async () => {
+                  const name = quickMachineName.trim()
+                  if (!name) return
+                  setQuickMachineSaving(true)
+                  try {
+                    const res = await fetch("/api/idari/makineler", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name, machine_type: "Kazık Makinesi", status: "depoda" }),
+                    })
+                    const data = await res.json().catch(() => ({}))
+                    if (res.ok) {
+                      setQuickMachineName("")
+                      setMakinelerRefreshToken((t) => t + 1)
+                    } else {
+                      alert(data.error || "Makine eklenemedi (yetki veya doğrulama).")
+                    }
+                  } catch (e) {
+                    console.error(e)
+                    alert("İstek gönderilemedi.")
+                  } finally {
+                    setQuickMachineSaving(false)
+                  }
+                }}
+              >
+                {quickMachineSaving ? "Ekleniyor…" : "Makineyi ekle"}
+              </Button>
+            </Box>
             <FormControl fullWidth margin="dense" size="small" variant="outlined">
               <InputLabel>Bu şantiyedeki makineler</InputLabel>
               <Select
@@ -1695,14 +1826,19 @@ function AdminPanel() {
                           }))
                         }}
                         renderValue={(sel) => (sel as number[]).map((id) => {
-                          const p = personelList.find((p) => p.id === id)
+                          const p = operatörPersonelList.find((p) => p.id === id) ?? personelList.find((p) => p.id === id)
                           return p ? `${p.ad} ${p.soyad}` : String(id)
                         }).join(", ") || "— Seçin"}
                       >
-                        {personelList.map((p) => (
+                        {operatörPersonelList.map((p) => (
                           <MenuItem key={p.id} value={p.id}>{p.ad} {p.soyad} ({p.gorev})</MenuItem>
                         ))}
                       </Select>
+                      {operatörPersonelList.length === 0 && (
+                        <Typography variant="caption" color="warning.main" sx={{ display: "block", mt: 0.5, maxWidth: 360 }}>
+                          Listede görevi operatör olan personel yok. İdari → Personel’de görev alanına &quot;Operatör&quot; yazın.
+                        </Typography>
+                      )}
                     </FormControl>
                   </Box>
                   )
@@ -1733,7 +1869,31 @@ function AdminPanel() {
                 inputProps={{ min: 0, step: "0.01" }}
               />
             )}
-            <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }} color="text.secondary">Proje durumu</Typography>
+            <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }} color="text.secondary">Şantiye durumu</Typography>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={siteDialogData.isActive}
+                  onChange={(e) => setSiteDialogData((prev) => ({ ...prev, isActive: e.target.checked }))}
+                />
+              }
+              label="Şantiye açık (bilgi girişi ve proje listesinde görünsün)"
+            />
+            {!siteDialogData.isActive && (
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={siteDialogData.releaseMachinesWhenClosed}
+                    onChange={(e) => setSiteDialogData((prev) => ({ ...prev, releaseMachinesWhenClosed: e.target.checked }))}
+                  />
+                }
+                label="Kayıtta makineleri şantiyeden kaldır ve bu makinelerdeki açık operatör atamalarını kapat"
+              />
+            )}
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.5 }}>
+              İş bittiğinde şantiyeyi kapatabilirsiniz. Listeden tamamen düşürmek için şantiye satırındaki çöp simgesi şantiyeyi pasif yapar (rapor geçmişi kalır).
+            </Typography>
+            <Typography variant="subtitle2" sx={{ mt: 1, mb: 0.5 }} color="text.secondary">Proje durumu</Typography>
             <TextField
               margin="dense"
               fullWidth
@@ -1843,8 +2003,8 @@ function AdminPanel() {
                 const kazikIds = siteDialogData.assignedMachineIds.filter((id) =>
                   idariMachineOptions.some((m) => String(m.id) === id && m.machine_type === "Kazık Makinesi"),
                 )
-                if (kazikIds.length === 0) {
-                  alert("En az bir kazık makinesi seçmelisiniz (İdari → Makineler’de tanımlı olmalı).")
+                if (kazikIds.length === 0 && siteDialogData.isActive) {
+                  alert("Açık şantiye için en az bir kazık makinesi seçmelisiniz (İdari → Makineler’de tanımlı olmalı).")
                   return
                 }
                 const payload = {
@@ -1863,6 +2023,8 @@ function AdminPanel() {
                   assignedMachineIds: kazikIds,
                   assignedOperatorIds: siteDialogData.assignedOperatorIds || [],
                   assignedMachineOperators: (siteDialogData.assignedMachineOperators || []).filter((o) => o.personelId > 0 && kazikIds.includes(o.machineId)),
+                  isActive: siteDialogData.isActive,
+                  releaseMachinesFromSite: !siteDialogData.isActive && siteDialogData.releaseMachinesWhenClosed,
                 }
                 try {
                   if (siteDialogData.id) {

@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
     await initializeDatabase()
     const { searchParams } = new URL(request.url)
     const withReportCount = searchParams.get("withReportCount") === "1"
+    const includeInactive = canAccessAdmin(session.role) && searchParams.get("includeInactive") === "1"
     let siteIdParam = searchParams.get("siteId")
     // Kullanıcı/Personel sadece kendi şantiyesini görebilir
     if (!canViewAllSites(session.role, session) && session.siteId != null) {
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
     const siteIdNum = siteIdParam ? parseInt(siteIdParam, 10) : NaN
     const filterSiteId = Number.isInteger(siteIdNum) ? siteIdNum : undefined
     const sites = withReportCount
-      ? await getSitesWithReportCount(filterSiteId)
+      ? await getSitesWithReportCount(filterSiteId, { includeInactive })
       : await getAllSites()
     // Kullanıcı/Personel: sadece kendi şantiyesi dönsün
     const allowed = canViewAllSites(session.role, session)
