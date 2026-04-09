@@ -49,6 +49,7 @@ import {
   AddPhotoAlternate,
 } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
+import { compressImageFileToDataUrl } from "@/lib/image-webp-client"
 import { SortableTh, type SortDir } from "@/components/idari/SortableTh"
 
 const GOREVLER = [
@@ -271,15 +272,16 @@ export default function IdariPersonelPage() {
   useEffect(() => { setPage(0); loadList(0) }, [siteId, gorev, search, tabValue, sortBy, sortDir])
   useEffect(() => { loadList(page) }, [page])
 
-  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      setForm((f) => ({ ...f, foto_base64: (ev.target?.result as string) || "" }))
-    }
-    reader.readAsDataURL(file)
     e.target.value = ""
+    try {
+      const dataUrl = await compressImageFileToDataUrl(file)
+      setForm((f) => ({ ...f, foto_base64: dataUrl }))
+    } catch {
+      alert("Fotoğraf işlenemedi.")
+    }
   }
 
   const openAdd = () => {

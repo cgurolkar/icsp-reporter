@@ -5,6 +5,7 @@ import { Typography, Box, TextField, Paper, Button, IconButton } from "@mui/mate
 import { PhotoCamera, Delete } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
 import type { DailyInfo } from "@/types/form-data"
+import { compressImageFileToDataUrl } from "@/lib/image-webp-client"
 
 interface DailyInfoStepProps {
   data: DailyInfo
@@ -14,15 +15,6 @@ interface DailyInfoStepProps {
 const MAX_IMAGE_SIZE_MB = 5
 const MAX_IMAGES = 10
 const ACCEPT_IMAGE = "image/jpeg,image/png,image/webp"
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader()
-    r.onload = () => resolve(r.result as string)
-    r.onerror = reject
-    r.readAsDataURL(file)
-  })
-}
 
 /** Normalize legacy image1/image2 fields into the images array */
 function getImages(data: DailyInfo): string[] {
@@ -56,7 +48,7 @@ export default function DailyInfoStep({ data, onChange }: DailyInfoStepProps) {
         continue
       }
       try {
-        const dataUrl = await readFileAsDataUrl(file)
+        const dataUrl = await compressImageFileToDataUrl(file)
         newImages.push(dataUrl)
       } catch (err) {
         console.error(err)

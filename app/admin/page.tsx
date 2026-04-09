@@ -146,6 +146,7 @@ function AdminPanel() {
   const { user } = useAuth()
   const currentRole = String(user?.role ?? "")
   const isSuperAdmin = currentRole === "super_admin"
+  const isAdminOrSuper = currentRole === "super_admin" || currentRole === "admin"
   const isSuperAdminRef = useRef(isSuperAdmin)
   useEffect(() => {
     isSuperAdminRef.current = isSuperAdmin
@@ -286,6 +287,7 @@ function AdminPanel() {
   /** Super admin: varsayılan form alanlarıyla kayıt; işaretlenirse JSON’daki tüm work_reports kolonları uygulanır */
   const [reportSaveFromFullJson, setReportSaveFromFullJson] = useState(false)
   const [reportDeleteId, setReportDeleteId] = useState<number | null>(null)
+  const [webpMigrateLoading, setWebpMigrateLoading] = useState(false)
 
   // Super admin — operatör girişleri sekmesi
   const [operatorEntriesList, setOperatorEntriesList] = useState<Record<string, unknown>[]>([])
@@ -1531,6 +1533,60 @@ function AdminPanel() {
 
         <TabPanel value={tabValue} index={4}>
           <Typography variant="h6" sx={{ color: "#1a237e", fontWeight: 600, mb: 2 }}>Raporlar</Typography>
+          {isAdminOrSuper && (
+            <Paper sx={{ p: 2, mb: 2, borderLeft: "4px solid #00796b", background: "#f1f8f6" }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                Eski fotoğrafları WebP&apos;ye çevir
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                Yeni yüklemeler (günlük rapor, operatör, envanter, personel) tarayıcıda WebP veya JPEG olarak küçültülür. Veritabanında kalan büyük JPEG/PNG data URL
+                kayıtlarını sunucuda WebP&apos;ye dönüştürmek için her tıklamada sınırlı sayıda satır işlenir; tüm kayıtlar bitene kadar düğmeyi tekrarlayın.
+              </Typography>
+              <Button
+                variant="contained"
+                size="small"
+                disabled={webpMigrateLoading}
+                onClick={async () => {
+                  setWebpMigrateLoading(true)
+                  try {
+                    const res = await fetch("/api/admin/migrate-images-to-webp", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      credentials: "same-origin",
+                      body: JSON.stringify({ limit: 50 }),
+                    })
+                    const data = await res.json().catch(() => ({}))
+                    if (!res.ok) {
+                      alert(data.error || "Migrasyon başarısız.")
+                      return
+                    }
+                    const wr = data.workReports
+                    const oe = data.operatorEntries
+                    const pe = data.personeller
+                    const en = data.envanter
+                    const lines = [
+                      `Toplam güncellenen: ${data.totalUpdated ?? 0}`,
+                      wr && `work_reports: +${wr.updated} (taranan ${wr.scanned}, atlanan ${wr.skipped})`,
+                      oe && `operator_entries: +${oe.updated} (taranan ${oe.scanned})`,
+                      pe && `personeller: +${pe.updated} (taranan ${pe.scanned})`,
+                      en && `envanter: +${en.updated} (taranan ${en.scanned})`,
+                    ].filter(Boolean)
+                    if (Array.isArray(data.errors) && data.errors.length) {
+                      lines.push(`Hatalar: ${data.errors.length} (konsol / sunucu log)`)
+                    }
+                    alert(lines.join("\n"))
+                  } catch {
+                    alert("İstek gönderilemedi.")
+                  } finally {
+                    setWebpMigrateLoading(false)
+                  }
+                }}
+                sx={{ background: "#00796b", "&:hover": { background: "#00695c" } }}
+              >
+                {webpMigrateLoading ? "İşleniyor…" : "Bir parti WebP migrasyonu çalıştır"}
+              </Button>
+            </Paper>
+          )}
           <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, alignItems: "center", mb: 2 }}>
             <TextField
               size="small"

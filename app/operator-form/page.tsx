@@ -16,18 +16,10 @@ import {
 import { Save, PhotoCamera, Add, Delete, ArrowForward } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
 import { useRouter } from "next/navigation"
+import { compressImageFileToDataUrl } from "@/lib/image-webp-client"
 
 const MAX_IMAGE_SIZE_MB = 5
 const ACCEPT_IMAGE = "image/jpeg,image/png,image/webp"
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader()
-    r.onload = () => resolve(r.result as string)
-    r.onerror = reject
-    r.readAsDataURL(file)
-  })
-}
 
 interface DbMachine {
   id: number
@@ -164,7 +156,7 @@ export default function OperatorFormPage() {
       return
     }
     try {
-      const dataUrl = await readFileAsDataUrl(file)
+      const dataUrl = await compressImageFileToDataUrl(file)
       if (slot === 1) setImage1(dataUrl)
       else setImage2(dataUrl)
       setMessage(null)

@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
@@ -14,6 +14,7 @@ import {
   GridView, ViewList, AddPhotoAlternate,
 } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
+import { compressImageFileToDataUrl } from "@/lib/image-webp-client"
 import { SortableTh, type SortDir } from "@/components/idari/SortableTh"
 
 const DURUM_OPTS = [
@@ -139,17 +140,18 @@ export default function IdariEnvanterPage() {
     setDialogOpen(true)
   }
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     if (file.size > 4 * 1024 * 1024) { alert("Resim 4MB'dan küçük olmalı."); return }
-    const reader = new FileReader()
-    reader.onload = () => {
-      const b64 = reader.result as string
+    e.target.value = ""
+    try {
+      const b64 = await compressImageFileToDataUrl(file)
       setImgPreview(b64)
       setForm((f) => ({ ...f, fotograf_base64: b64 }))
+    } catch {
+      alert("Resim işlenemedi.")
     }
-    reader.readAsDataURL(file)
   }
 
   const openHareket = (row: EnvanterRow) => {
