@@ -2151,6 +2151,46 @@ export async function updateWorkReport(id: number, data: {
   }
 }
 
+/**
+ * Super admin için: work_reports tablosundaki tüm güncellenebilir alanları tek seferde yazar.
+ * - Sadece tabloda gerçekten var olan kolonlar güncellenir.
+ * - id / created_at / updated_at kolonları korunur.
+ */
+export async function updateWorkReportAllEditableFields(id: number, payload: Record<string, unknown>) {
+  const client = await pool.connect()
+  try {
+    const cols = await client.query<{ column_name: string }>(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'work_reports'`
+    )
+    const validCols = new Set(cols.rows.map((r) => r.column_name))
+    const protectedCols = new Set(["id", "created_at", "updated_at"])
+
+    const updates: string[] = []
+    const values: unknown[] = []
+    let i = 1
+
+    for (const [rawKey, val] of Object.entries(payload ?? {})) {
+      const key = String(rawKey).trim()
+      if (!key || protectedCols.has(key) || !validCols.has(key)) continue
+      updates.push(`${key} = $${i++}`)
+      values.push(val)
+    }
+
+    if (updates.length === 0) return (await getWorkReportById(id))?.report ?? null
+    updates.push(`updated_at = CURRENT_TIMESTAMP`)
+    values.push(id)
+    await client.query(`UPDATE work_reports SET ${updates.join(", ")} WHERE id = $${i}`, values)
+    return (await getWorkReportById(id))?.report ?? null
+  } catch (error) {
+    console.error("Error full-updating work report:", error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
 // Rapor sil (ilişkili kayıtlar CASCADE veya manuel silinir)
 export async function deleteWorkReport(id: number) {
   const client = await pool.connect()

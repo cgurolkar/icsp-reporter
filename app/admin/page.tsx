@@ -282,6 +282,7 @@ function AdminPanel() {
   const [reportFilterSiteId, setReportFilterSiteId] = useState<string>("")
   const [reportEditDialog, setReportEditDialog] = useState<{ open: boolean; report: any }>({ open: false, report: null })
   const [reportEditForm, setReportEditForm] = useState<{ date: string; project: string; notes: string; totalProductionSummary: string; dailyPileCount: string; remainingPiles: string; dailyFuelUsage: string; personnelTotal: string }>({ date: "", project: "", notes: "", totalProductionSummary: "", dailyPileCount: "", remainingPiles: "", dailyFuelUsage: "", personnelTotal: "" })
+  const [reportEditRawJson, setReportEditRawJson] = useState("")
   const [reportDeleteId, setReportDeleteId] = useState<number | null>(null)
 
   // Super admin — operatör girişleri sekmesi
@@ -1599,6 +1600,7 @@ function AdminPanel() {
                           size="small"
                           onClick={() => {
                             setReportEditDialog({ open: true, report: r })
+                            setReportEditRawJson(JSON.stringify(r, null, 2))
                             const d = r.date && String(r.date).slice(0, 10)
                             const dailyVal = [r.daily_pile_count, r.total_pile_count, r.concrete_poured].find((v) => v != null && String(v).trim() !== "")
                             setReportEditForm({
@@ -2181,7 +2183,15 @@ function AdminPanel() {
           </DialogActions>
         </Dialog>
 
-        <Dialog open={reportEditDialog.open} onClose={() => setReportEditDialog({ open: false, report: null })} maxWidth="sm" fullWidth>
+        <Dialog
+          open={reportEditDialog.open}
+          onClose={() => {
+            setReportEditDialog({ open: false, report: null })
+            setReportEditRawJson("")
+          }}
+          maxWidth="sm"
+          fullWidth
+        >
           <DialogTitle>Rapor düzenle</DialogTitle>
           <DialogContent>
             {reportEditDialog.report && (
@@ -2194,20 +2204,43 @@ function AdminPanel() {
                 <TextField size="small" label="Mazot (lt) / not" value={reportEditForm.dailyFuelUsage} onChange={(e) => setReportEditForm((p) => ({ ...p, dailyFuelUsage: e.target.value }))} fullWidth />
                 <TextField size="small" label="Personel toplam" value={reportEditForm.personnelTotal} onChange={(e) => setReportEditForm((p) => ({ ...p, personnelTotal: e.target.value }))} fullWidth />
                 <TextField size="small" label="Notlar" multiline rows={3} value={reportEditForm.notes} onChange={(e) => setReportEditForm((p) => ({ ...p, notes: e.target.value }))} fullWidth />
+                {isSuperAdmin && (
+                  <TextField
+                    size="small"
+                    label="Super admin - tam girdi düzenleme (JSON, work_reports kolon adları)"
+                    multiline
+                    rows={10}
+                    value={reportEditRawJson}
+                    onChange={(e) => setReportEditRawJson(e.target.value)}
+                    fullWidth
+                  />
+                )}
               </Box>
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setReportEditDialog({ open: false, report: null })}>İptal</Button>
+            <Button onClick={() => { setReportEditDialog({ open: false, report: null }); setReportEditRawJson("") }}>İptal</Button>
             <Button
               variant="contained"
               onClick={async () => {
                 if (!reportEditDialog.report?.id) return
                 try {
-                  const res = await fetch(`/api/reports/${reportEditDialog.report.id}`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
+                  let body: Record<string, unknown>
+                  if (isSuperAdmin && reportEditRawJson.trim()) {
+                    let parsed: unknown
+                    try {
+                      parsed = JSON.parse(reportEditRawJson)
+                    } catch {
+                      alert("JSON geçersiz. Lütfen düzeltip tekrar deneyin.")
+                      return
+                    }
+                    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+                      alert("JSON nesne formatında olmalıdır.")
+                      return
+                    }
+                    body = { fullUpdate: true, rawData: parsed as Record<string, unknown> }
+                  } else {
+                    body = {
                       date: reportEditForm.date || undefined,
                       project: reportEditForm.project || undefined,
                       totalProductionSummary: reportEditForm.totalProductionSummary || undefined,
@@ -2216,10 +2249,16 @@ function AdminPanel() {
                       dailyFuelUsage: reportEditForm.dailyFuelUsage || undefined,
                       personnelTotal: reportEditForm.personnelTotal !== "" ? parseInt(reportEditForm.personnelTotal, 10) : undefined,
                       notes: reportEditForm.notes !== undefined ? reportEditForm.notes : undefined,
-                    }),
+                    }
+                  }
+                  const res = await fetch(`/api/reports/${reportEditDialog.report.id}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
                   })
                   if (res.ok) {
                     setReportEditDialog({ open: false, report: null })
+                    setReportEditRawJson("")
                     loadReportList()
                   } else {
                     const data = await res.json().catch(() => ({}))
