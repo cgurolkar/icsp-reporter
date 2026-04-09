@@ -18,6 +18,36 @@ export async function GET(request: NextRequest) {
     const today = new Date().toISOString().slice(0, 10)
     const monthStart = today.slice(0, 7) + "-01"
 
+    // Şantiye bazında bugün / bu ay harcama (özet kartları)
+    let harcamaSiteQuery = `
+      SELECT s.id AS "siteId",
+        s.name AS "siteName",
+        s.code AS "siteCode",
+        COALESCE(SUM(CASE WHEN i.islem_tarihi::date = $1::date THEN COALESCE(i.tutar_iqd, i.tutar) ELSE 0 END), 0)::float AS "bugunIqd",
+        COALESCE(SUM(CASE WHEN i.islem_tarihi::date = $1::date THEN COALESCE(i.tutar_usd, 0) ELSE 0 END), 0)::float AS "bugunUsd",
+        COALESCE(SUM(CASE WHEN i.islem_tarihi >= $2 THEN COALESCE(i.tutar_iqd, i.tutar) ELSE 0 END), 0)::float AS "ayIqd",
+        COALESCE(SUM(CASE WHEN i.islem_tarihi >= $2 THEN COALESCE(i.tutar_usd, 0) ELSE 0 END), 0)::float AS "ayUsd"
+      FROM sites s
+      LEFT JOIN islemler i ON i.site_id = s.id
+      WHERE s.is_active = true`
+    const harcamaSiteParams: unknown[] = [today, monthStart]
+    let hpi = 3
+    if (siteId) {
+      harcamaSiteQuery += ` AND s.id = $${hpi++}`
+      harcamaSiteParams.push(siteId)
+    }
+    harcamaSiteQuery += ` GROUP BY s.id, s.name, s.code ORDER BY s.name`
+    const harcamaSiteRes = await client.query(harcamaSiteQuery, harcamaSiteParams)
+    const harcamaBySite = harcamaSiteRes.rows as {
+      siteId: number
+      siteName: string
+      siteCode: string
+      bugunIqd: number
+      bugunUsd: number
+      ayIqd: number
+      ayUsd: number
+    }[]
+
     // Toplam aktif personel (tablo adı: personeller)
     const personelRes = await client.query(
       `SELECT COUNT(*) AS cnt FROM personeller
@@ -61,6 +91,7 @@ export async function GET(request: NextRequest) {
       buAyHarcamaUsd,
       envanterSayisi,
       uyariSayisi,
+      harcamaBySite,
     })
   } catch (error) {
     console.error("Dashboard GET error:", error)

@@ -43,8 +43,9 @@ import {
   FormLabel,
   AppBar,
   Toolbar,
+  Divider,
 } from "@mui/material"
-import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility, Notifications, NotificationsActive, Close, Engineering, ArrowBack } from "@mui/icons-material"
+import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility, Notifications, NotificationsActive, Close, Engineering, ArrowBack, Construction } from "@mui/icons-material"
 import Badge from "@mui/material/Badge"
 import Snackbar from "@mui/material/Snackbar"
 import Alert from "@mui/material/Alert"
@@ -259,6 +260,19 @@ function AdminPanel() {
   const [dashboardLoading, setDashboardLoading] = useState(true)
   const [dashboardSiteId, setDashboardSiteId] = useState<string>("")
   const [dashboardChartMetric, setDashboardChartMetric] = useState<"piles" | "fuel" | "production" | "expenses">("piles")
+  const [siteDashboardSummary, setSiteDashboardSummary] = useState<{
+    sites: {
+      siteId: number
+      siteName: string
+      siteCode: string
+      todayPiles: number
+      todayProduction: number
+      totalProduction: number
+      remainingToday: number | null
+      remainingLatest: number | null
+    }[]
+    machines: { id: number; name: string; machineType: string | null; siteId: number; siteName: string; siteCode: string }[]
+  } | null>(null)
 
   // Raporlar sekmesi
   const [reportList, setReportList] = useState<any[]>([])
@@ -433,10 +447,22 @@ function AdminPanel() {
         endDate: end.toISOString().slice(0, 10),
       })
       if (dashboardSiteId) params.set("siteId", dashboardSiteId)
-      const [statsRes, rawRes] = await Promise.all([
+      const siteDashParams = new URLSearchParams()
+      if (dashboardSiteId) siteDashParams.set("siteId", dashboardSiteId)
+      const [statsRes, rawRes, siteDashRes] = await Promise.all([
         fetch(`/api/reports?${params}`),
         fetch(`/api/reports?${params}&raw=1&limit=10`),
+        fetch(`/api/admin/site-dashboard?${siteDashParams}`),
       ])
+      if (siteDashRes.ok) {
+        const sd = await siteDashRes.json()
+        setSiteDashboardSummary({
+          sites: Array.isArray(sd.sites) ? sd.sites : [],
+          machines: Array.isArray(sd.machines) ? sd.machines : [],
+        })
+      } else {
+        setSiteDashboardSummary(null)
+      }
       if (statsRes.ok) {
         const data = await statsRes.json()
         setDashboardStats({
@@ -887,50 +913,133 @@ function AdminPanel() {
             <>
               <Grid container spacing={2} sx={{ mb: 3 }}>
                 <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                  <Card sx={{ background: "linear-gradient(135deg, #4caf50 0%, #43a047 100%)", color: "#fff", borderRadius: 2 }}>
-                    <CardContent>
+                  <Card sx={{ background: "linear-gradient(135deg, #4caf50 0%, #43a047 100%)", color: "#fff", borderRadius: 2, height: "100%" }}>
+                    <CardContent sx={{ pb: "16px !important" }}>
                       <Box sx={{ display: "flex", alignItems: "center", gap: 1, opacity: 0.9, mb: 0.5 }}>
-                        <Assessment fontSize="small" /> Toplam Rapor
+                        <Assessment fontSize="small" /> Bugünkü kazık (adet)
                       </Box>
-                      <Typography variant="h4" sx={{ color: "#fff", fontWeight: 700 }}>
-                        {dashboardStats?.totalReports ?? 0}
+                      <Typography variant="caption" sx={{ display: "block", opacity: 0.85, mb: 1 }}>
+                        Aktif şantiyeler — bugün rapordaki toplam
                       </Typography>
+                      <Box sx={{ maxHeight: 240, overflow: "auto", pr: 0.5 }}>
+                        {(siteDashboardSummary?.sites?.length ?? 0) === 0 ? (
+                          <Typography variant="body2" sx={{ opacity: 0.9 }}>Şantiye özeti yok</Typography>
+                        ) : (
+                          siteDashboardSummary!.sites.map((s, idx) => (
+                            <Box key={s.siteId}>
+                              {idx > 0 && <Divider sx={{ borderColor: "rgba(255,255,255,0.25)", my: 1 }} />}
+                              <Typography variant="caption" sx={{ opacity: 0.95, fontWeight: 600, display: "block" }}>
+                                {s.siteName} ({s.siteCode})
+                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 700 }}>{s.todayPiles.toLocaleString("tr-TR")} ad.</Typography>
+                            </Box>
+                          ))
+                        )}
+                      </Box>
                     </CardContent>
                   </Card>
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                  <Card sx={{ background: "linear-gradient(135deg, #ec407a 0%, #e91e63 100%)", color: "#fff", borderRadius: 2 }}>
-                    <CardContent>
+                  <Card sx={{ background: "linear-gradient(135deg, #ec407a 0%, #e91e63 100%)", color: "#fff", borderRadius: 2, height: "100%" }}>
+                    <CardContent sx={{ pb: "16px !important" }}>
                       <Box sx={{ display: "flex", alignItems: "center", gap: 1, opacity: 0.9, mb: 0.5 }}>
-                        <Place fontSize="small" /> Şantiyeler
+                        <Place fontSize="small" /> Kalan kazık (adet)
                       </Box>
-                      <Typography variant="h4" sx={{ color: "#fff", fontWeight: 700 }}>
-                        {dbSites.length}
+                      <Typography variant="caption" sx={{ display: "block", opacity: 0.85, mb: 1 }}>
+                        Bugünkü rapor / son rapor (günlük / toplam)
                       </Typography>
+                      <Box sx={{ maxHeight: 240, overflow: "auto", pr: 0.5 }}>
+                        {(siteDashboardSummary?.sites?.length ?? 0) === 0 ? (
+                          <Typography variant="body2" sx={{ opacity: 0.9 }}>Şantiye özeti yok</Typography>
+                        ) : (
+                          siteDashboardSummary!.sites.map((s, idx) => {
+                            const g = s.remainingToday != null ? s.remainingToday.toLocaleString("tr-TR") : "—"
+                            const t = s.remainingLatest != null ? s.remainingLatest.toLocaleString("tr-TR") : "—"
+                            return (
+                              <Box key={s.siteId}>
+                                {idx > 0 && <Divider sx={{ borderColor: "rgba(255,255,255,0.25)", my: 1 }} />}
+                                <Typography variant="caption" sx={{ opacity: 0.95, fontWeight: 600, display: "block" }}>
+                                  {s.siteName} ({s.siteCode})
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                  {g} / {t} ad.
+                                </Typography>
+                              </Box>
+                            )
+                          })
+                        )}
+                      </Box>
                     </CardContent>
                   </Card>
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                  <Card sx={{ background: "linear-gradient(135deg, #ffc107 0%, #ffb300 100%)", color: "#1a1a1a", borderRadius: 2 }}>
-                    <CardContent>
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, opacity: 0.9, mb: 0.5 }}>
-                        <TrendingUp fontSize="small" /> Bu hafta
+                  <Card sx={{ background: "linear-gradient(135deg, #ffc107 0%, #ffb300 100%)", color: "#1a1a1a", borderRadius: 2, height: "100%" }}>
+                    <CardContent sx={{ pb: "16px !important" }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, opacity: 0.85, mb: 0.5 }}>
+                        <TrendingUp fontSize="small" /> Kazık imalatı (m)
                       </Box>
-                      <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                        {dashboardStats?.weekly?.slice(-1)[0]?.reportCount ?? 0}
+                      <Typography variant="caption" sx={{ display: "block", opacity: 0.8, mb: 1 }}>
+                        Günlük / şimdiye kadar (tüm raporlar toplamı)
                       </Typography>
+                      <Box sx={{ maxHeight: 240, overflow: "auto", pr: 0.5 }}>
+                        {(siteDashboardSummary?.sites?.length ?? 0) === 0 ? (
+                          <Typography variant="body2">Şantiye özeti yok</Typography>
+                        ) : (
+                          siteDashboardSummary!.sites.map((s, idx) => (
+                            <Box key={s.siteId}>
+                              {idx > 0 && <Divider sx={{ borderColor: "rgba(0,0,0,0.12)", my: 1 }} />}
+                              <Typography variant="caption" sx={{ fontWeight: 600, display: "block" }}>
+                                {s.siteName} ({s.siteCode})
+                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                {s.todayProduction.toLocaleString("tr-TR", { maximumFractionDigits: 2 })} / {s.totalProduction.toLocaleString("tr-TR", { maximumFractionDigits: 2 })} m
+                              </Typography>
+                            </Box>
+                          ))
+                        )}
+                      </Box>
                     </CardContent>
                   </Card>
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                  <Card sx={{ background: "linear-gradient(135deg, #42a5f5 0%, #1e88e5 100%)", color: "#fff", borderRadius: 2 }}>
-                    <CardContent>
+                  <Card sx={{ background: "linear-gradient(135deg, #42a5f5 0%, #1e88e5 100%)", color: "#fff", borderRadius: 2, height: "100%" }}>
+                    <CardContent sx={{ pb: "16px !important" }}>
                       <Box sx={{ display: "flex", alignItems: "center", gap: 1, opacity: 0.9, mb: 0.5 }}>
-                        Son 90 gün
+                        <Construction fontSize="small" /> Aktif makineler
                       </Box>
-                      <Typography variant="h4" sx={{ color: "#fff", fontWeight: 700 }}>
-                        {dashboardStats?.totalReports ?? 0}
+                      <Typography variant="caption" sx={{ display: "block", opacity: 0.85, mb: 1 }}>
+                        Şu an şantiyede (atanmış, durum aktif)
                       </Typography>
+                      <Box sx={{ maxHeight: 240, overflow: "auto", pr: 0.5 }}>
+                        {(siteDashboardSummary?.machines?.length ?? 0) === 0 ? (
+                          <Typography variant="body2" sx={{ opacity: 0.9 }}>Atanmış aktif makine yok</Typography>
+                        ) : (
+                          (() => {
+                            const machines = siteDashboardSummary!.machines
+                            const bySite = new Map<number, (typeof machines)[number][]>()
+                            for (const m of machines) {
+                              const list = bySite.get(m.siteId) ?? []
+                              list.push(m)
+                              bySite.set(m.siteId, list)
+                            }
+                            const entries = [...bySite.entries()]
+                            return entries.map(([sid, list], idx) => (
+                              <Box key={sid}>
+                                {idx > 0 && <Divider sx={{ borderColor: "rgba(255,255,255,0.25)", my: 1 }} />}
+                                <Typography variant="caption" sx={{ opacity: 0.95, fontWeight: 600, display: "block" }}>
+                                  {list[0].siteName} ({list[0].siteCode})
+                                </Typography>
+                                {list.map((m) => (
+                                  <Typography key={m.id} variant="body2" sx={{ pl: 0.5, fontWeight: 500 }}>
+                                    • {m.name}
+                                    {m.machineType ? ` — ${m.machineType}` : ""}
+                                  </Typography>
+                                ))}
+                              </Box>
+                            ))
+                          })()
+                        )}
+                      </Box>
                     </CardContent>
                   </Card>
                 </Grid>

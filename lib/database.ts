@@ -1276,6 +1276,147 @@ export async function getAggregatedStats(options: { siteId?: number | null; star
   }
 }
 
+/** Yönetici paneli özet kartları: şantiye bazında bugünkü kazık, imalat, kalan; aktif makineler. */
+export type AdminSiteDashboardRow = {
+  siteId: number
+  siteName: string
+  siteCode: string
+  todayPiles: number
+  todayProduction: number
+  totalProduction: number
+  remainingToday: number | null
+  remainingLatest: number | null
+}
+
+export type AdminDashboardActiveMachineRow = {
+  id: number
+  name: string
+  machineType: string | null
+  siteId: number
+  siteName: string
+  siteCode: string
+}
+
+function parseRemainingPilesDb(raw: string | null | undefined): number | null {
+  if (raw == null || String(raw).trim() === "") return null
+  const n = parseInt(String(raw).replace(/\D/g, ""), 10)
+  return Number.isFinite(n) ? n : null
+}
+
+export async function getAdminDashboardSiteSummaries(options: { siteId?: number | null; reportDate?: string } = {}): Promise<{
+  sites: AdminSiteDashboardRow[]
+  machines: AdminDashboardActiveMachineRow[]
+}> {
+  const client = await pool.connect()
+  try {
+    const today = (options.reportDate ?? new Date().toISOString().slice(0, 10)).slice(0, 10)
+    const siteId = options.siteId ?? null
+
+    const sitesRes = await client.query<{ id: number; name: string; code: string }>(
+      siteId != null
+        ? `SELECT id, name, code FROM sites WHERE is_active = true AND id = $1 ORDER BY name`
+        : `SELECT id, name, code FROM sites WHERE is_active = true ORDER BY name`,
+      siteId != null ? [siteId] : []
+    )
+    const sites = sitesRes.rows
+    if (sites.length === 0) {
+      return { sites: [], machines: [] }
+    }
+    const siteIds = sites.map((s) => s.id)
+
+    const pileExpr = `CASE
+      WHEN COALESCE(TRIM(wr.total_pile_count), '') ~ '^[0-9]+$' THEN TRIM(wr.total_pile_count)::int
+      WHEN COALESCE(TRIM(wr.daily_pile_count), '') ~ '^[0-9]+$' THEN TRIM(wr.daily_pile_count)::int
+      WHEN COALESCE(TRIM(wr.concrete_poured), '') ~ '^[0-9]+$' THEN TRIM(wr.concrete_poured)::int
+      ELSE 0 END`
+
+    const prodExpr = `CASE
+      WHEN COALESCE(wr.total_production_summary, '') ~ '^[0-9]+([\\.,][0-9]+)?$' THEN REPLACE(wr.total_production_summary, ',', '.')::numeric
+      WHEN COALESCE(wr.total_production, '') ~ '^[0-9]+([\\.,][0-9]+)?$' THEN REPLACE(wr.total_production, ',', '.')::numeric
+      ELSE 0::numeric END`
+
+    const todayAgg = await client.query<{ site_id: number; today_piles: string; today_production: string }>(
+      `SELECT wr.site_id,
+        COALESCE(SUM(${pileExpr}), 0)::text AS today_piles,
+        COALESCE(SUM(${prodExpr}), 0)::text AS today_production
+       FROM work_reports wr
+       WHERE wr.site_id = ANY($1::int[]) AND wr.date::text = $2
+       GROUP BY wr.site_id`,
+      [siteIds, today]
+    )
+
+    const totalProdAgg = await client.query<{ site_id: number; total_production: string }>(
+      `SELECT wr.site_id,
+        COALESCE(SUM(${prodExpr}), 0)::text AS total_production
+       FROM work_reports wr
+       WHERE wr.site_id = ANY($1::int[])
+       GROUP BY wr.site_id`,
+      [siteIds]
+    )
+
+    const latestRem = await client.query<{ site_id: number; remaining_piles: string | null }>(
+      `SELECT DISTINCT ON (wr.site_id) wr.site_id, wr.remaining_piles
+       FROM work_reports wr
+       WHERE wr.site_id = ANY($1::int[])
+       ORDER BY wr.site_id, wr.date DESC, wr.id DESC`,
+      [siteIds]
+    )
+
+    const todayRem = await client.query<{ site_id: number; remaining_piles: string | null }>(
+      `SELECT DISTINCT ON (wr.site_id) wr.site_id, wr.remaining_piles
+       FROM work_reports wr
+       WHERE wr.site_id = ANY($1::int[]) AND wr.date::text = $2
+       ORDER BY wr.site_id, wr.id DESC`,
+      [siteIds, today]
+    )
+
+    const todayMap = new Map(todayAgg.rows.map((r) => [r.site_id, r]))
+    const totalMap = new Map(totalProdAgg.rows.map((r) => [r.site_id, r]))
+    const latestRemMap = new Map(latestRem.rows.map((r) => [r.site_id, r.remaining_piles]))
+    const todayRemMap = new Map(todayRem.rows.map((r) => [r.site_id, r.remaining_piles]))
+
+    const siteRows: AdminSiteDashboardRow[] = sites.map((s) => {
+      const ta = todayMap.get(s.id)
+      const tp = totalMap.get(s.id)
+      const todayPiles = ta ? parseInt(ta.today_piles, 10) || 0 : 0
+      const todayProduction = ta ? parseFloat(ta.today_production) || 0 : 0
+      const totalProduction = tp ? parseFloat(tp.total_production) || 0 : 0
+      return {
+        siteId: s.id,
+        siteName: s.name,
+        siteCode: s.code,
+        todayPiles,
+        todayProduction,
+        totalProduction,
+        remainingToday: parseRemainingPilesDb(todayRemMap.get(s.id)),
+        remainingLatest: parseRemainingPilesDb(latestRemMap.get(s.id)),
+      }
+    })
+
+    const machRes = await client.query<AdminDashboardActiveMachineRow & Record<string, unknown>>(
+      siteId != null
+        ? `SELECT m.id, m.name, m.machine_type AS "machineType", s.id AS "siteId", s.name AS "siteName", s.code AS "siteCode"
+           FROM machines m
+           JOIN sites s ON s.id = m.current_site_id
+           WHERE m.status = 'aktif' AND s.is_active = true AND s.id = $1
+           ORDER BY s.name, m.name`
+        : `SELECT m.id, m.name, m.machine_type AS "machineType", s.id AS "siteId", s.name AS "siteName", s.code AS "siteCode"
+           FROM machines m
+           JOIN sites s ON s.id = m.current_site_id
+           WHERE m.status = 'aktif' AND s.is_active = true
+           ORDER BY s.name, m.name`,
+      siteId != null ? [siteId] : []
+    )
+
+    return { sites: siteRows, machines: machRes.rows as AdminDashboardActiveMachineRow[] }
+  } catch (error) {
+    console.error("getAdminDashboardSiteSummaries:", error)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
 function getWeekKey(d: Date): string {
   const date = new Date(d)
   const day = date.getDay()

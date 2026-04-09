@@ -16,6 +16,16 @@ interface UyariRow {
   gorev: string
 }
 
+interface HarcamaSiteRow {
+  siteId: number
+  siteName: string
+  siteCode: string
+  bugunIqd: number
+  bugunUsd: number
+  ayIqd: number
+  ayUsd: number
+}
+
 interface DashboardStats {
   personelSayisi: number
   bugunGelen: number
@@ -23,6 +33,7 @@ interface DashboardStats {
   buAyHarcamaUsd?: number
   envanterSayisi: number
   uyariSayisi: number
+  harcamaBySite?: HarcamaSiteRow[]
 }
 
 function StatCard({
@@ -118,17 +129,6 @@ export default function IdariDashboardPage() {
           loading={statsLoading}
         />
         <StatCard
-          title="Bu ay harcama"
-          value={
-            stats
-              ? `USD ${(stats.buAyHarcamaUsd ?? 0).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} · IQD ${stats.buAyHarcama.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}`
-              : "—"
-          }
-          icon={<AttachMoney fontSize="small" />}
-          color="#e65100"
-          loading={statsLoading}
-        />
-        <StatCard
           title="Envanter Kalem"
           value={stats?.envanterSayisi ?? "—"}
           icon={<Inventory2 fontSize="small" />}
@@ -146,6 +146,33 @@ export default function IdariDashboardPage() {
           />
         )}
       </Box>
+
+      <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 2, borderLeft: "4px solid #e65100" }}>
+        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5, display: "flex", alignItems: "center", gap: 1, color: "text.primary" }}>
+          <AttachMoney fontSize="small" sx={{ color: "#e65100" }} /> Harcamalar — şantiye bazında (günlük / bu ay)
+        </Typography>
+        {statsLoading ? (
+          <Skeleton variant="rounded" height={120} />
+        ) : (stats?.harcamaBySite?.length ?? 0) === 0 ? (
+          <Typography variant="body2" color="text.secondary">Şantiye harcaması yok veya veri alınamadı.</Typography>
+        ) : (
+          <Box component="ul" sx={{ m: 0, pl: 2, listStyle: "none" }}>
+            {(stats?.harcamaBySite ?? []).map((h) => (
+              <Box component="li" key={h.siteId} sx={{ mb: 1.5, pl: 0 }}>
+                <Typography variant="body2" fontWeight={600}>
+                  {h.siteName} ({h.siteCode})
+                </Typography>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Bugün: USD {h.bugunUsd.toLocaleString("tr-TR", { maximumFractionDigits: 2 })} · IQD {h.bugunIqd.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Bu ay: USD {h.ayUsd.toLocaleString("tr-TR", { maximumFractionDigits: 2 })} · IQD {h.ayIqd.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        )}
+      </Paper>
 
       {uyarilar.length > 0 && (
         <Paper sx={{ p: 2, mb: 2, borderLeft: "4px solid", borderColor: "warning.main" }}>
