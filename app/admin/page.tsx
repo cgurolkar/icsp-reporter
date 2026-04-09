@@ -283,6 +283,8 @@ function AdminPanel() {
   const [reportEditDialog, setReportEditDialog] = useState<{ open: boolean; report: any }>({ open: false, report: null })
   const [reportEditForm, setReportEditForm] = useState<{ date: string; project: string; notes: string; totalProductionSummary: string; dailyPileCount: string; remainingPiles: string; dailyFuelUsage: string; personnelTotal: string }>({ date: "", project: "", notes: "", totalProductionSummary: "", dailyPileCount: "", remainingPiles: "", dailyFuelUsage: "", personnelTotal: "" })
   const [reportEditRawJson, setReportEditRawJson] = useState("")
+  /** Super admin: varsayılan form alanlarıyla kayıt; işaretlenirse JSON’daki tüm work_reports kolonları uygulanır */
+  const [reportSaveFromFullJson, setReportSaveFromFullJson] = useState(false)
   const [reportDeleteId, setReportDeleteId] = useState<number | null>(null)
 
   // Super admin — operatör girişleri sekmesi
@@ -1600,7 +1602,7 @@ function AdminPanel() {
                           size="small"
                           onClick={() => {
                             setReportEditDialog({ open: true, report: r })
-                            setReportEditRawJson(JSON.stringify(r, null, 2))
+                            setReportSaveFromFullJson(false)
                             const d = r.date && String(r.date).slice(0, 10)
                             const dailyVal = [r.daily_pile_count, r.total_pile_count, r.concrete_poured].find((v) => v != null && String(v).trim() !== "")
                             setReportEditForm({
@@ -1613,6 +1615,24 @@ function AdminPanel() {
                               dailyFuelUsage: r.daily_fuel_usage || "",
                               personnelTotal: r.personnel_total != null ? String(r.personnel_total) : "",
                             })
+                            const stripJoin = (row: Record<string, unknown>) => {
+                              const { site_name: _sn, site_code: _sc, ...rest } = row
+                              return rest
+                            }
+                            if (isSuperAdmin && r.id != null) {
+                              void fetch(`/api/reports/${r.id}`, { credentials: "same-origin" })
+                                .then((res) => (res.ok ? res.json() : null))
+                                .then((data: { report?: Record<string, unknown> } | null) => {
+                                  if (data?.report && typeof data.report === "object") {
+                                    setReportEditRawJson(JSON.stringify(stripJoin(data.report), null, 2))
+                                  } else {
+                                    setReportEditRawJson(JSON.stringify(stripJoin(r as Record<string, unknown>), null, 2))
+                                  }
+                                })
+                                .catch(() => setReportEditRawJson(JSON.stringify(stripJoin(r as Record<string, unknown>), null, 2)))
+                            } else {
+                              setReportEditRawJson("")
+                            }
                           }}
                           title="Düzenle"
                           sx={{ color: "#ed6c02" }}
@@ -2188,6 +2208,7 @@ function AdminPanel() {
           onClose={() => {
             setReportEditDialog({ open: false, report: null })
             setReportEditRawJson("")
+            setReportSaveFromFullJson(false)
           }}
           maxWidth="sm"
           fullWidth
@@ -2205,28 +2226,44 @@ function AdminPanel() {
                 <TextField size="small" label="Personel toplam" value={reportEditForm.personnelTotal} onChange={(e) => setReportEditForm((p) => ({ ...p, personnelTotal: e.target.value }))} fullWidth />
                 <TextField size="small" label="Notlar" multiline rows={3} value={reportEditForm.notes} onChange={(e) => setReportEditForm((p) => ({ ...p, notes: e.target.value }))} fullWidth />
                 {isSuperAdmin && (
-                  <TextField
-                    size="small"
-                    label="Super admin - tam girdi düzenleme (JSON, work_reports kolon adları)"
-                    multiline
-                    rows={10}
-                    value={reportEditRawJson}
-                    onChange={(e) => setReportEditRawJson(e.target.value)}
-                    fullWidth
-                  />
+                  <>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={reportSaveFromFullJson}
+                          onChange={(_, checked) => setReportSaveFromFullJson(checked)}
+                          size="small"
+                        />
+                      }
+                      label="Kaydı JSON içeriğine göre tam uygula (tüm work_reports kolonları; dikkatli kullanın)"
+                    />
+                    <TextField
+                      size="small"
+                      label="Super admin — work_reports JSON (yalnızca yukarıdaki kutuyu işaretlerseniz kayıtta kullanılır)"
+                      multiline
+                      rows={10}
+                      value={reportEditRawJson}
+                      onChange={(e) => setReportEditRawJson(e.target.value)}
+                      fullWidth
+                    />
+                  </>
                 )}
               </Box>
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => { setReportEditDialog({ open: false, report: null }); setReportEditRawJson("") }}>İptal</Button>
+            <Button onClick={() => { setReportEditDialog({ open: false, report: null }); setReportEditRawJson(""); setReportSaveFromFullJson(false) }}>İptal</Button>
             <Button
               variant="contained"
               onClick={async () => {
                 if (!reportEditDialog.report?.id) return
                 try {
                   let body: Record<string, unknown>
-                  if (isSuperAdmin && reportEditRawJson.trim()) {
+                  if (isSuperAdmin && reportSaveFromFullJson) {
+                    if (!reportEditRawJson.trim()) {
+                      alert("Tam JSON kaydı için metin alanı dolu olmalıdır.")
+                      return
+                    }
                     let parsed: unknown
                     try {
                       parsed = JSON.parse(reportEditRawJson)
@@ -2240,6 +2277,10 @@ function AdminPanel() {
                     }
                     body = { fullUpdate: true, rawData: parsed as Record<string, unknown> }
                   } else {
+                    const pt =
+                      reportEditForm.personnelTotal.trim() !== ""
+                        ? parseInt(reportEditForm.personnelTotal, 10)
+                        : undefined
                     body = {
                       date: reportEditForm.date || undefined,
                       project: reportEditForm.project || undefined,
@@ -2247,22 +2288,25 @@ function AdminPanel() {
                       dailyPileCount: reportEditForm.dailyPileCount || undefined,
                       remainingPiles: reportEditForm.remainingPiles || undefined,
                       dailyFuelUsage: reportEditForm.dailyFuelUsage || undefined,
-                      personnelTotal: reportEditForm.personnelTotal !== "" ? parseInt(reportEditForm.personnelTotal, 10) : undefined,
+                      personnelTotal: pt !== undefined && Number.isFinite(pt) ? pt : undefined,
                       notes: reportEditForm.notes !== undefined ? reportEditForm.notes : undefined,
                     }
                   }
                   const res = await fetch(`/api/reports/${reportEditDialog.report.id}`, {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
+                    credentials: "same-origin",
                     body: JSON.stringify(body),
                   })
                   if (res.ok) {
                     setReportEditDialog({ open: false, report: null })
                     setReportEditRawJson("")
+                    setReportSaveFromFullJson(false)
                     loadReportList()
                   } else {
                     const data = await res.json().catch(() => ({}))
-                    alert(data.error || "Güncelleme başarısız.")
+                    const detail = typeof (data as { detail?: string }).detail === "string" ? (data as { detail: string }).detail : ""
+                    alert([data.error || "Güncelleme başarısız.", detail].filter(Boolean).join("\n"))
                   }
                 } catch (e) {
                   console.error(e)

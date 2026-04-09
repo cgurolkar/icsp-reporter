@@ -52,7 +52,12 @@ export async function PUT(
           dailyPileCount: (body.dailyPileCount ?? body.daily_pile_count) as string | undefined,
           remainingPiles: (body.remainingPiles ?? body.remaining_piles) as string | undefined,
           concretePoured: (body.concretePoured ?? body.concrete_poured) as string | undefined,
-          personnelTotal: (body.personnelTotal ?? body.personnel_total) as number | undefined,
+          personnelTotal: (() => {
+            const raw = body.personnelTotal ?? body.personnel_total
+            if (raw === undefined || raw === null || raw === "") return undefined
+            const n = typeof raw === "number" ? raw : parseInt(String(raw), 10)
+            return Number.isFinite(n) ? n : undefined
+          })(),
           dailyFuelUsage: (body.dailyFuelUsage ?? body.daily_fuel_usage) as string | undefined,
           notes: body.notes as string | undefined,
         })
@@ -60,7 +65,8 @@ export async function PUT(
     return NextResponse.json(updated)
   } catch (error) {
     console.error("Error updating report:", error)
-    return NextResponse.json({ error: "Failed to update report" }, { status: 500 })
+    const detail = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ error: "Failed to update report", detail }, { status: 500 })
   }
 }
 

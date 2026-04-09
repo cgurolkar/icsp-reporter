@@ -2135,7 +2135,10 @@ export async function updateWorkReport(id: number, data: {
     if (data.dailyPileCount !== undefined) { updates.push(`daily_pile_count = $${i++}`); values.push(data.dailyPileCount) }
     if (data.remainingPiles !== undefined) { updates.push(`remaining_piles = $${i++}`); values.push(data.remainingPiles) }
     if (data.concretePoured !== undefined) { updates.push(`concrete_poured = $${i++}`); values.push(data.concretePoured) }
-    if (data.personnelTotal !== undefined) { updates.push(`personnel_total = $${i++}`); values.push(data.personnelTotal) }
+    if (data.personnelTotal !== undefined) {
+      const n = typeof data.personnelTotal === "number" ? data.personnelTotal : parseInt(String(data.personnelTotal), 10)
+      if (Number.isFinite(n)) { updates.push(`personnel_total = $${i++}`); values.push(n) }
+    }
     if (data.dailyFuelUsage !== undefined) { updates.push(`daily_fuel_usage = $${i++}`); values.push(data.dailyFuelUsage) }
     if (data.notes !== undefined) { updates.push(`notes = $${i++}`); values.push(data.notes) }
     if (updates.length === 0) return (await getWorkReportById(id))?.report ?? null
@@ -2159,13 +2162,87 @@ export async function updateWorkReport(id: number, data: {
 export async function updateWorkReportAllEditableFields(id: number, payload: Record<string, unknown>) {
   const client = await pool.connect()
   try {
-    const cols = await client.query<{ column_name: string }>(
-      `SELECT column_name
+    const cols = await client.query<{ column_name: string; data_type: string; is_nullable: string; udt_name: string }>(
+      `SELECT column_name, data_type, is_nullable, udt_name
        FROM information_schema.columns
        WHERE table_schema = 'public' AND table_name = 'work_reports'`
     )
-    const validCols = new Set(cols.rows.map((r) => r.column_name))
+    const colMeta = new Map(cols.rows.map((r) => [r.column_name, r]))
     const protectedCols = new Set(["id", "created_at", "updated_at"])
+
+    const safeCol = (name: string) => /^[a-z_][a-z0-9_]*$/i.test(name)
+
+    const OMIT_FIELD = Symbol("omitWorkReportField")
+    const coerceValue = (key: string, raw: unknown): unknown | typeof OMIT_FIELD => {
+      const meta = colMeta.get(key)
+      if (!meta) return OMIT_FIELD
+
+      if (raw === undefined) return OMIT_FIELD
+
+      const udt = (meta.udt_name || "").toLowerCase()
+      const dtype = (meta.data_type || "").toLowerCase()
+      const nullable = meta.is_nullable === "YES"
+
+      if (raw === null) {
+        if (!nullable) return OMIT_FIELD
+        return null
+      }
+
+      if (udt === "int2" || udt === "int4" || udt === "int8") {
+        const n = typeof raw === "number" ? raw : parseInt(String(raw).replace(/[^\d.-]/g, ""), 10)
+        return Number.isFinite(n) ? Math.trunc(n) : OMIT_FIELD
+      }
+
+      if (udt === "float4" || udt === "float8" || udt === "numeric") {
+        const n = typeof raw === "number" ? raw : parseFloat(String(raw).replace(",", "."))
+        return Number.isFinite(n) ? n : OMIT_FIELD
+      }
+
+      if (udt === "bool") {
+        if (typeof raw === "boolean") return raw
+        const s = String(raw).toLowerCase()
+        if (s === "true" || s === "1") return true
+        if (s === "false" || s === "0") return false
+        return OMIT_FIELD
+      }
+
+      if (udt === "date") {
+        if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
+          return `${raw.getUTCFullYear()}-${String(raw.getUTCMonth() + 1).padStart(2, "0")}-${String(raw.getUTCDate()).padStart(2, "0")}`
+        }
+        const s = String(raw).trim()
+        if (!s) return OMIT_FIELD
+        if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+        return OMIT_FIELD
+      }
+
+      if (udt === "timestamp" || udt === "timestamptz") {
+        if (raw instanceof Date) return raw
+        const s = String(raw).trim()
+        if (!s) return OMIT_FIELD
+        return s
+      }
+
+      if (udt === "json" || udt === "jsonb") {
+        if (typeof raw === "object") return raw
+        if (typeof raw === "string") {
+          const t = raw.trim()
+          if (!t) return nullable ? null : OMIT_FIELD
+          try {
+            return JSON.parse(t)
+          } catch {
+            return OMIT_FIELD
+          }
+        }
+        return OMIT_FIELD
+      }
+
+      if (dtype === "character varying" || dtype === "text" || dtype === "character") {
+        return raw == null ? null : String(raw)
+      }
+
+      return raw
+    }
 
     const updates: string[] = []
     const values: unknown[] = []
@@ -2173,9 +2250,11 @@ export async function updateWorkReportAllEditableFields(id: number, payload: Rec
 
     for (const [rawKey, val] of Object.entries(payload ?? {})) {
       const key = String(rawKey).trim()
-      if (!key || protectedCols.has(key) || !validCols.has(key)) continue
+      if (!key || !safeCol(key) || protectedCols.has(key) || !colMeta.has(key)) continue
+      const coerced = coerceValue(key, val)
+      if (coerced === OMIT_FIELD) continue
       updates.push(`${key} = $${i++}`)
-      values.push(val)
+      values.push(coerced)
     }
 
     if (updates.length === 0) return (await getWorkReportById(id))?.report ?? null
