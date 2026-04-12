@@ -158,7 +158,7 @@ export function buildReportNotificationEmail(data: ReportNotificationData): { su
   const subject = `📋 Yeni Rapor: ${data.siteName} — ${formatDate(data.date)}`
 
   const hasAnomalies = data.anomalies && data.anomalies.length > 0
-  const expenseStr = data.expenseTotal != null ? `₺${data.expenseTotal.toLocaleString("tr-TR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : null
+  const expenseStr = data.expenseTotal != null ? `${data.expenseTotal.toLocaleString("tr-TR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} IQD` : null
 
   const content = `
   <!-- Site & Date info -->
@@ -258,7 +258,7 @@ export function buildDailySummaryEmail(data: DailySummaryData): { subject: strin
         <div style="font-size:10px;color:${COLORS.textSecondary};">kişi</div>
       </td>
       <td style="padding:14px 12px;text-align:right;vertical-align:top;">
-        <div style="font-size:14px;font-weight:600;color:${COLORS.primary};">${site.totalExpenses > 0 ? `₺${site.totalExpenses.toLocaleString("tr-TR")}` : "—"}</div>
+        <div style="font-size:14px;font-weight:600;color:${COLORS.primary};">${site.totalExpenses > 0 ? `${site.totalExpenses.toLocaleString("tr-TR")} IQD` : "—"}</div>
       </td>
       ${anomalyBadges ? `<td style="padding:14px 12px;vertical-align:top;">${anomalyBadges}</td>` : `<td style="padding:14px 12px;text-align:center;color:${COLORS.success};">✓</td>`}
     </tr>`
@@ -282,7 +282,7 @@ export function buildDailySummaryEmail(data: DailySummaryData): { subject: strin
       ${stat("Toplam Rapor", data.totalReports, "şantiye")}
       ${stat("Toplam Kazık", totalPiles || null, "adet")}
       ${stat("Toplam Personel", totalPersonnel || null, "kişi")}
-      ${stat("Toplam Harcama", totalExpenses > 0 ? `₺${totalExpenses.toLocaleString("tr-TR")}` : null, "bugün")}
+      ${stat("Toplam Harcama", totalExpenses > 0 ? `${totalExpenses.toLocaleString("tr-TR")} IQD` : null, "bugün")}
     </tr>
   </table>
 

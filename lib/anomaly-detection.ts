@@ -86,7 +86,7 @@ export function detectReportAnomalies(data: ReportAnomalyInput): AnomalyItem[] {
     anomalies.push({
       level: "warning",
       field: "Günlük Harcama",
-      message: `₺${expenseTotal.toLocaleString("tr-TR")} — olağandışı yüksek harcama (eşik: ₺${THRESHOLDS.maxDailyExpense.toLocaleString("tr-TR")}).`,
+      message: `${expenseTotal.toLocaleString("tr-TR")} IQD — olağandışı yüksek harcama (eşik: ${THRESHOLDS.maxDailyExpense.toLocaleString("tr-TR")} IQD).`,
     })
   }
 
