@@ -174,6 +174,7 @@ export async function POST(request: NextRequest) {
       selectedMachine: formData.machineSelection.selectedMachine,
       additionalMachines: formData.machineSelection.additionalMachines,
       fuelMachines: formData.fuel.machines,
+      submittedByUserId: session.id,
     })
 
     // Harcamaları islemler tablosuna senkronize et (idari modülle senkron)

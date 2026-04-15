@@ -1226,6 +1226,7 @@ function AdminPanel() {
                       <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Tarih</TableCell>
                       <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Proje</TableCell>
                       <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Şantiye</TableCell>
+                      <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Gönderen</TableCell>
                       <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Makine</TableCell>
                       <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Kazık İmalatı (m)</TableCell>
                       <TableCell sx={{ color: "var(--icsp-lacivert)", borderColor: "var(--icsp-nav-border)", fontWeight: 600 }}>Kazık Sayısı (Ad.)</TableCell>
@@ -1237,7 +1238,7 @@ function AdminPanel() {
                   <TableBody>
                     {recentReports.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={9} sx={{ color: "#616161", borderColor: "var(--icsp-nav-border)" }}>
+                        <TableCell colSpan={10} sx={{ color: "#616161", borderColor: "var(--icsp-nav-border)" }}>
                           Henüz rapor yok
                         </TableCell>
                       </TableRow>
@@ -1247,6 +1248,7 @@ function AdminPanel() {
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.date}</TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.project}</TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.site_name || "—"}</TableCell>
+                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.submitted_by_username ?? (r.submitted_by_user_id != null ? `#${r.submitted_by_user_id}` : "—")}</TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.selected_machine_name || "—"}</TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.total_production_summary ?? r.total_production ?? "—"}</TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{[r.daily_pile_count, r.total_pile_count, r.concrete_poured].find((v) => v != null && String(v).trim() !== "") ?? "—"}</TableCell>
@@ -1630,6 +1632,7 @@ function AdminPanel() {
                   <TableCell sx={{ fontWeight: 600 }}>Tarih</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Proje</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Şantiye</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Gönderen</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Makine</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Kazık Sayısı</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Kalan</TableCell>
@@ -1638,15 +1641,16 @@ function AdminPanel() {
               </TableHead>
               <TableBody>
                 {reportListLoading ? (
-                  <TableRow><TableCell colSpan={7}>Yükleniyor...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8}>Yükleniyor...</TableCell></TableRow>
                 ) : reportList.length === 0 ? (
-                  <TableRow><TableCell colSpan={7}>Rapor bulunamadı.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8}>Rapor bulunamadı.</TableCell></TableRow>
                 ) : (
                   reportList.map((r: any) => (
                     <TableRow key={r.id}>
                       <TableCell>{typeof r.date === "string" ? r.date.slice(0, 10) : r.date}</TableCell>
                       <TableCell>{r.project ?? "—"}</TableCell>
                       <TableCell>{r.site_name ?? "—"}</TableCell>
+                      <TableCell>{r.submitted_by_username ?? (r.submitted_by_user_id != null ? `#${r.submitted_by_user_id}` : "—")}</TableCell>
                       <TableCell>{r.selected_machine_name ?? "—"}</TableCell>
                       <TableCell>{[r.daily_pile_count, r.total_pile_count, r.concrete_poured].find((v) => v != null && String(v).trim() !== "") ?? "—"}</TableCell>
                       <TableCell>{r.remaining_piles != null && String(r.remaining_piles).trim() !== "" ? r.remaining_piles : "—"}</TableCell>
@@ -1672,7 +1676,7 @@ function AdminPanel() {
                               personnelTotal: r.personnel_total != null ? String(r.personnel_total) : "",
                             })
                             const stripJoin = (row: Record<string, unknown>) => {
-                              const { site_name: _sn, site_code: _sc, ...rest } = row
+                              const { site_name: _sn, site_code: _sc, submitted_by_username: _su, ...rest } = row
                               return rest
                             }
                             if (isSuperAdmin && r.id != null) {

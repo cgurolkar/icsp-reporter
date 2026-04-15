@@ -258,6 +258,20 @@ async function _doInitializeDatabase() {
         RAISE NOTICE 'site_id column may already exist or work_reports missing: %', SQLERRM;
       END $$
     `)
+    // Raporu gönderen kullanıcı (bilgi girişi oturumu)
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'work_reports' AND column_name = 'submitted_by_user_id'
+        ) THEN
+          ALTER TABLE work_reports ADD COLUMN submitted_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'submitted_by_user_id column: %', SQLERRM;
+      END $$
+    `)
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_work_reports_submitted_by ON work_reports(submitted_by_user_id)`)
     // sites tablosuna projedeki toplam kazık sayısı
     await client.query(`
       DO $$ BEGIN
@@ -704,8 +718,9 @@ export async function saveWorkReport(reportData: any) {
         total_completed_piles, remaining_piles, steel_lowered_piles, concrete_poured,
         engineer_count, foreman_count, operator_count, oiler_count, welder_count, other_count, personnel_total,
         crane_count, loader_count, truck_count, pickup_count, car_count, service_count, vehicles_total,
-        daily_fuel_usage, expenses, pile_details, notes, daily_notes, daily_image1, daily_image2, next_day_planned, daily_images
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40)
+        daily_fuel_usage, expenses, pile_details, notes, daily_notes, daily_image1, daily_image2, next_day_planned, daily_images,
+        submitted_by_user_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41)
       RETURNING id
     `, [
       reportData.date,
@@ -748,6 +763,9 @@ export async function saveWorkReport(reportData: any) {
       reportData.dailyImage2 ?? null,
       reportData.nextDayPlanned ?? null,
       JSON.stringify(Array.isArray(reportData.dailyImages) ? reportData.dailyImages : []),
+      reportData.submittedByUserId != null && reportData.submittedByUserId !== ""
+        ? (Number(reportData.submittedByUserId) || null)
+        : null,
     ])
 
     const reportId = result.rows[0].id
@@ -830,9 +848,11 @@ export async function getWorkReportsFiltered(options: { siteId?: number | null; 
   const { siteId, startDate, endDate } = options
   try {
     let query = `
-      SELECT wr.*, s.name as site_name, s.code as site_code 
-      FROM work_reports wr 
+      SELECT wr.*, s.name as site_name, s.code as site_code,
+             u.username AS submitted_by_username
+      FROM work_reports wr
       LEFT JOIN sites s ON wr.site_id = s.id
+      LEFT JOIN users u ON u.id = wr.submitted_by_user_id
       WHERE 1=1
     `
     const params: (number | string)[] = []
@@ -2085,9 +2105,11 @@ export async function getWorkReportById(id: number) {
   const client = await pool.connect()
   try {
     const reportResult = await client.query(`
-      SELECT wr.*, s.name as site_name, s.code as site_code
+      SELECT wr.*, s.name as site_name, s.code as site_code,
+             u.username AS submitted_by_username
       FROM work_reports wr
       LEFT JOIN sites s ON wr.site_id = s.id
+      LEFT JOIN users u ON u.id = wr.submitted_by_user_id
       WHERE wr.id = $1
     `, [id])
     const machinesResult = await client.query(`SELECT * FROM machine_selections WHERE report_id = $1`, [id])
