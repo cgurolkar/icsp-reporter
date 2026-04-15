@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { randomUUID } from "crypto"
 import fs from "fs"
 import path from "path"
 import { saveWorkReport, initializeDatabase, getMergedNotificationEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativeTotalProduction } from "@/lib/database"
@@ -9,16 +10,34 @@ import { buildReportNotificationEmail, buildOperatorReportEmail } from "@/lib/em
 import { detectReportAnomalies } from "@/lib/anomaly-detection"
 import { publishNotification } from "@/lib/notification-bus"
 
+export const maxDuration = 120
+
 export async function POST(request: NextRequest) {
+  const ref = randomUUID()
   const session = await getSessionFromRequest(request)
   if (!session) {
-    return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
+    return NextResponse.json({ error: "Giriş yapmalısınız.", ref }, { status: 401 })
   }
   if (!canDoDataEntry(session.role, session)) {
-    return NextResponse.json({ error: "Bilgi girişi yetkiniz yok." }, { status: 403 })
+    return NextResponse.json({ error: "Bilgi girişi yetkiniz yok.", ref }, { status: 403 })
   }
   try {
-    const raw = await request.json()
+    let raw: any
+    try {
+      raw = await request.json()
+    } catch (parseErr) {
+      const detail = parseErr instanceof Error ? parseErr.message : String(parseErr)
+      console.error(`[send-report ${ref}] request.json failed:`, detail)
+      return NextResponse.json(
+        {
+          error:
+            "Rapor verisi sunucuya ulaşamadı veya çok büyük. Fotoğraf sayısını azaltın, interneti kontrol edin ve tekrar deneyin.",
+          detail,
+          ref,
+        },
+        { status: 400 }
+      )
+    }
     // skipEmail: true → save but don't send email (two-step flow)
     const skipEmail = raw.skipEmail === true
     // Normalize to avoid undefined access and "Failed to generate report"
@@ -57,10 +76,10 @@ export async function POST(request: NextRequest) {
     const siteIdForDb = siteId != null && !Number.isNaN(siteId) ? siteId : null
     if (session.role === "user" || session.role === "personel" || session.role === "engineer") {
       if (session.siteId == null) {
-        return NextResponse.json({ error: "Size atanmış şantiye yok. Bilgi girişi yapamazsınız." }, { status: 403 })
+        return NextResponse.json({ error: "Size atanmış şantiye yok. Bilgi girişi yapamazsınız.", ref }, { status: 403 })
       }
       if (siteIdForDb !== session.siteId) {
-        return NextResponse.json({ error: "Sadece görevli olduğunuz şantiye için rapor gönderebilirsiniz." }, { status: 403 })
+        return NextResponse.json({ error: "Sadece görevli olduğunuz şantiye için rapor gönderebilirsiniz.", ref }, { status: 403 })
       }
     }
     let projectName = (formData.basicInfo?.project ?? "").trim()
@@ -382,9 +401,9 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    console.error("Error generating report:", error)
+    console.error(`[send-report ${ref}] Error generating report:`, error)
     return NextResponse.json(
-      { error: "Failed to generate report", detail: message },
+      { error: "Rapor kaydedilirken sunucu hatası oluştu.", detail: message, ref },
       { status: 500 }
     )
   }

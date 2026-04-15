@@ -16,6 +16,8 @@ import ExpensesStep from "@/components/steps/expenses-step"
 import DailyInfoStep from "@/components/steps/daily-info-step"
 import ReviewStep from "@/components/steps/review-step"
 import { type FormData, type Machine, initialFormData, AVAILABLE_MACHINES } from "@/types/form-data"
+import { shrinkDailyInfoImagesForSubmit } from "@/lib/image-webp-client"
+import { estimateJsonPayloadBytes, readResponseJsonSafe, buildReportSubmitUserMessage } from "@/lib/report-submit-client"
 import Dialog from "@mui/material/Dialog"
 import DialogTitle from "@mui/material/DialogTitle"
 import DialogContent from "@mui/material/DialogContent"
@@ -352,29 +354,47 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     setShowSaveConfirmDialog(false)
     setIsSaving(true)
     try {
-      const response = await fetch("/api/send-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...formData, skipEmail: true }),
-      })
-      const data = response.ok ? await response.json().catch(() => ({})) : null
-      if (response.ok && data?.success) {
-        // Başarılı kayıt: taslağı temizle
+      const prepared = await shrinkDailyInfoImagesForSubmit(formData)
+      const payload = { ...prepared, skipEmail: true }
+      const approxBytes = estimateJsonPayloadBytes(payload)
+      if (approxBytes > 10 * 1024 * 1024) {
+        alert(t("report_submit_error_too_large"))
+        return
+      }
+      const timeoutSignal =
+        typeof AbortSignal !== "undefined" && typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout === "function"
+          ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(180000)
+          : undefined
+      let response: Response
+      try {
+        response = await fetch("/api/send-report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(payload),
+          ...(timeoutSignal ? { signal: timeoutSignal } : {}),
+        })
+      } catch (err) {
+        console.error("Error saving report (fetch):", err)
+        alert(buildReportSubmitUserMessage(t, null, null, err))
+        return
+      }
+      const data = await readResponseJsonSafe(response)
+      if (response.ok && data && (data as { success?: boolean }).success === true) {
+        const ok = data as { success?: boolean; reportId?: number; recipients?: string[] }
         clearDraftFn()
         clearDraft(siteIdForDraft)
-        setSavedReportId(data.reportId ?? null)
-        setSavedRecipients(Array.isArray(data.recipients) ? data.recipients : [])
-        // Formu sıfırla
+        setSavedReportId(ok.reportId ?? null)
+        setSavedRecipients(Array.isArray(ok.recipients) ? ok.recipients : [])
         setFormData(initialFormData)
         setActiveStep(0)
-        // E-posta onay dialogunu göster
         setShowEmailConfirmDialog(true)
       } else {
-        alert(data?.error || t("error_sending_report"))
+        alert(buildReportSubmitUserMessage(t, response, data, null))
       }
     } catch (error) {
       console.error("Error saving report:", error)
-      alert(t("error_sending_report"))
+      alert(buildReportSubmitUserMessage(t, null, null, error))
     } finally {
       setIsSaving(false)
     }
@@ -386,20 +406,33 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     if (!savedReportId) return
     setIsSendingEmail(true)
     try {
-      const response = await fetch("/api/send-report/email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reportId: savedReportId }),
-      })
-      const data = response.ok ? await response.json().catch(() => ({})) : null
-      if (data?.emailSent) {
-        alert(`E-posta gönderildi: ${(data.recipients ?? []).join(", ")}`)
+      const timeoutSignal =
+        typeof AbortSignal !== "undefined" && typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout === "function"
+          ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(120000)
+          : undefined
+      let response: Response
+      try {
+        response = await fetch("/api/send-report/email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ reportId: savedReportId }),
+          ...(timeoutSignal ? { signal: timeoutSignal } : {}),
+        })
+      } catch (err) {
+        alert(buildReportSubmitUserMessage(t, null, null, err))
+        return
+      }
+      const data = await readResponseJsonSafe(response)
+      if (response.ok && data && (data as { emailSent?: boolean }).emailSent) {
+        alert(`E-posta gönderildi: ${((data as { recipients?: string[] }).recipients ?? []).join(", ")}`)
       } else {
-        alert(data?.error || data?.emailError || "E-posta gönderilemedi.")
+        const d = data as { error?: string; emailError?: string } | null
+        alert(d?.error || d?.emailError || buildReportSubmitUserMessage(t, response, data, null))
       }
     } catch (error) {
       console.error("Error sending email:", error)
-      alert("E-posta gönderilemedi.")
+      alert(buildReportSubmitUserMessage(t, null, null, error))
     } finally {
       setIsSendingEmail(false)
       setSavedReportId(null)

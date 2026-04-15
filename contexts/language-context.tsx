@@ -61,6 +61,15 @@ const translations = {
     maintenance_notes: "Bakım / Malzeme / Notlar",
     report_sent_successfully: "Rapor başarıyla gönderildi",
     error_sending_report: "Rapor gönderilirken hata oluştu",
+    report_submit_error_network:
+      "Sunucuya bağlanılamadı (internet zayıf veya kesildi). Wi‑Fi / mobil veriyi kontrol edip tekrar deneyin.",
+    report_submit_error_too_large:
+      "Gönderi çok büyük olabilir (özellikle fotoğraflar). Birkaç fotoğrafı silin veya daha küçük ekleyip tekrar deneyin.",
+    report_submit_error_auth: "Oturum süresi dolmuş olabilir. Çıkış yapıp yeniden giriş yapın.",
+    report_submit_error_forbidden: "Bu işlem için yetkiniz yok veya şantiye eşleşmiyor.",
+    report_submit_error_server_busy: "Sunucu geçici olarak yanıt veremedi. Bir süre sonra tekrar deneyin.",
+    report_submit_error_timeout: "İşlem zaman aşımına uğradı. İnternetinizi kontrol edip tekrar deneyin.",
+    report_submit_ref: "Destek için referans",
     admin_panel: "Yönetici Paneli",
     email_settings: "E-posta Ayarları",
     user_management: "Kullanıcı Yönetimi",
@@ -239,6 +248,15 @@ const translations = {
     maintenance_notes: "Maintenance / Material / Notes",
     report_sent_successfully: "Report sent successfully",
     error_sending_report: "Error sending report",
+    report_submit_error_network:
+      "Could not reach the server (weak or dropped connection). Check Wi‑Fi / mobile data and try again.",
+    report_submit_error_too_large:
+      "The submission may be too large (often photos). Remove a few photos or use smaller images, then try again.",
+    report_submit_error_auth: "Your session may have expired. Sign out and sign in again.",
+    report_submit_error_forbidden: "You are not allowed to do this, or the site does not match your assignment.",
+    report_submit_error_server_busy: "The server is temporarily unavailable. Please try again in a moment.",
+    report_submit_error_timeout: "The request timed out. Check your connection and try again.",
+    report_submit_ref: "Reference for support",
     admin_panel: "Admin Panel",
     email_settings: "Email Settings",
     user_management: "User Management",
@@ -416,6 +434,15 @@ const translations = {
     maintenance_notes: "صيانة / مواد / ملاحظات",
     report_sent_successfully: "تم إرسال التقرير بنجاح",
     error_sending_report: "خطأ في إرسال التقرير",
+    report_submit_error_network:
+      "تعذر الاتصال بالخادم (إنترنت ضعيف أو انقطع). تحقق من الواي فاي أو بيانات الجوال وحاول مرة أخرى.",
+    report_submit_error_too_large:
+      "قد يكون الإرسال كبيراً جداً (غالباً الصور). احذف بعض الصور أو استخدم صوراً أصغر ثم أعد المحاولة.",
+    report_submit_error_auth: "قد تكون الجلسة منتهية. سجّل الخروج ثم الدخول من جديد.",
+    report_submit_error_forbidden: "ليس لديك صلاحية أو الموقع لا يطابق تعيينك.",
+    report_submit_error_server_busy: "الخادم غير متاح مؤقتاً. حاول بعد قليل.",
+    report_submit_error_timeout: "انتهت مهلة الطلب. تحقق من الاتصال وحاول مرة أخرى.",
+    report_submit_ref: "مرجع للدعم",
     admin_panel: "لوحة الإدارة",
     email_settings: "إعدادات البريد الإلكتروني",
     user_management: "إدارة المستخدمين",
