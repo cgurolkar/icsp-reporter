@@ -113,13 +113,19 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // siteId'yi şantiye adı API'den gelmeden hemen yaz (aksi halde siteId null kalır, gönderim 403 verir)
   useEffect(() => {
-    if (initialSiteId != null && initialSiteName) {
-      setFormData((prev) => ({
-        ...prev,
-        basicInfo: { ...prev.basicInfo, siteId: initialSiteId, siteName: initialSiteName, project: initialSiteName },
-      }))
-    }
+    if (initialSiteId == null) return
+    setFormData((prev) => ({
+      ...prev,
+      basicInfo: {
+        ...prev.basicInfo,
+        siteId: initialSiteId,
+        ...(initialSiteName
+          ? { siteName: initialSiteName, project: initialSiteName }
+          : {}),
+      },
+    }))
   }, [initialSiteId, initialSiteName])
 
   useEffect(() => {
@@ -795,7 +801,14 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
           <Button variant="contained" onClick={() => {
             const draft = loadDraft<typeof formData>(siteIdForDraft)
             if (draft?.formData) {
-              setFormData(draft.formData)
+              const sid = isRestricted && lockedSiteId != null ? lockedSiteId : initialSiteId
+              setFormData({
+                ...draft.formData,
+                basicInfo: {
+                  ...draft.formData.basicInfo,
+                  siteId: draft.formData.basicInfo.siteId ?? sid ?? null,
+                },
+              })
               setDraftRestoreSnack(true)
             }
             setDraftSnack({ open: false })

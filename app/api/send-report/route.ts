@@ -73,12 +73,17 @@ export async function POST(request: NextRequest) {
 
     const rawSiteId = formData.basicInfo?.siteId
     const siteId = rawSiteId == null || rawSiteId === "" ? null : Number(rawSiteId)
-    const siteIdForDb = siteId != null && !Number.isNaN(siteId) ? siteId : null
+    let siteIdForDb = siteId != null && !Number.isNaN(siteId) ? siteId : null
     if (session.role === "user" || session.role === "personel" || session.role === "engineer") {
       if (session.siteId == null) {
         return NextResponse.json({ error: "Size atanmış şantiye yok. Bilgi girişi yapamazsınız.", ref }, { status: 403 })
       }
-      if (siteIdForDb !== session.siteId) {
+      const sessionSite = Number(session.siteId)
+      // İstemci siteId göndermeyebilir (eski taslak / yükleme yarışı); atanmış şantiye ile tamamla
+      if (siteIdForDb == null) {
+        siteIdForDb = sessionSite
+      }
+      if (Number(siteIdForDb) !== sessionSite) {
         return NextResponse.json({ error: "Sadece görevli olduğunuz şantiye için rapor gönderebilirsiniz.", ref }, { status: 403 })
       }
     }

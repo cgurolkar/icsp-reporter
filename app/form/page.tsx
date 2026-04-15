@@ -12,7 +12,8 @@ import ReportForm from "@/components/ReportForm"
 function FormContent() {
   const searchParams = useSearchParams()
   const { user } = useAuth()
-  const isRestrictedUser = user?.role === "user" || user?.role === "personel"
+  const isRestrictedUser =
+    user?.role === "user" || user?.role === "personel" || user?.role === "engineer"
   const siteIdFromUrl = searchParams.get("siteId")
   const initialSiteIdFromUrl = siteIdFromUrl ? parseInt(siteIdFromUrl, 10) : undefined
   const initialSiteId = isRestrictedUser && user?.siteId != null ? user.siteId : initialSiteIdFromUrl
