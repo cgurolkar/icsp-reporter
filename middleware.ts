@@ -58,8 +58,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(dest, request.url))
   }
 
-  // Operator rolü yalnızca /operator-form'a erişebilir
-  if (session.role === "operator" && !pathname.startsWith(OPERATOR_HOME)) {
+  // Operatör: yalnızca makine girişi sayfası; şifre değiştirme hariç (aksi halde mustChangePassword ile sonsuz yönlendirme oluşur)
+  if (
+    session.role === "operator" &&
+    pathname !== CHANGE_PASSWORD_PATH &&
+    !pathname.startsWith(OPERATOR_HOME)
+  ) {
     return NextResponse.redirect(new URL(OPERATOR_HOME, request.url))
   }
 
