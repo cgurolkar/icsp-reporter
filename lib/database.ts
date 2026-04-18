@@ -1040,6 +1040,136 @@ export async function getAdminOperatorEntriesList(options: {
   }
 }
 
+/** Super admin: tek operatör girişi (düzenleme için) */
+export async function getOperatorEntryByIdAdmin(id: number): Promise<Record<string, unknown> | null> {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `SELECT oe.*, u.username AS operator_username, s.name AS site_name, s.code AS site_code
+       FROM operator_entries oe
+       LEFT JOIN users u ON u.id = oe.user_id
+       LEFT JOIN sites s ON s.id = oe.site_id
+       WHERE oe.id = $1`,
+      [id],
+    )
+    return r.rows[0] ?? null
+  } finally {
+    client.release()
+  }
+}
+
+export async function deleteOperatorEntryByIdAdmin(id: number): Promise<boolean> {
+  const r = await pool.query(`DELETE FROM operator_entries WHERE id = $1`, [id])
+  return (r.rowCount ?? 0) > 0
+}
+
+export async function updateOperatorEntryByIdAdmin(
+  id: number,
+  data: {
+    siteId: number
+    reportDate: string
+    userId: number
+    machineId: string
+    machineName: string
+    dbMachineId?: number | null
+    machineHours?: string
+    startTime?: string | null
+    endTime?: string | null
+    motorSaatBinis?: string | null
+    motorSaatInis?: string | null
+    pileDepths?: unknown
+    usedFuel?: string
+    workDone?: string
+    note?: string
+    dailyPileCount?: string
+    totalProduction?: string
+    emptyBorehole?: string
+    preBorehole?: string
+    concretePoured?: string
+    elmasMiktar?: string | null
+    elmasDegisimYok?: boolean
+    bentonitMiktar?: string | null
+    kullanilanMalzeme?: string | null
+    malzemeIhtiyaci?: boolean
+    servisIhtiyaci?: boolean
+    image1?: string | null
+    image2?: string | null
+    notes?: string
+  },
+): Promise<void> {
+  const client = await pool.connect()
+  try {
+    const dateStr = (data.reportDate || "").slice(0, 10)
+    const pileDepthsJson = JSON.stringify(data.pileDepths ?? [])
+    const img1 =
+      data.image1 == null || data.image1 === ""
+        ? null
+        : String(data.image1).startsWith("data:")
+          ? data.image1
+          : data.image1
+    const img2 =
+      data.image2 == null || data.image2 === ""
+        ? null
+        : String(data.image2).startsWith("data:")
+          ? data.image2
+          : data.image2
+    const dup = await client.query(
+      `SELECT 1 FROM operator_entries
+       WHERE site_id = $1 AND report_date = $2::date AND user_id = $3 AND machine_id = $4 AND id <> $5
+       LIMIT 1`,
+      [data.siteId, dateStr, data.userId, data.machineId, id],
+    )
+    if (dup.rows.length > 0) {
+      throw new Error("UNIQUE_CONFLICT")
+    }
+    await client.query(
+      `UPDATE operator_entries SET
+        site_id = $2, report_date = $3::date, user_id = $4, machine_id = $5, machine_name = $6,
+        machine_hours = $7, start_time = $8, end_time = $9, motor_saat_binis = $10, motor_saat_inis = $11,
+        pile_depths = $12::jsonb, used_fuel = $13, work_done = $14, note = $15,
+        daily_pile_count = $16, total_production = $17, empty_borehole = $18, pre_borehole = $19,
+        concrete_poured = $20, elmas_miktar = $21, elmas_degisim_yok = $22, bentonit_miktar = $23,
+        kullanilan_malzeme = $24, malzeme_ihtiyaci = $25, servis_ihtiyaci = $26, db_machine_id = $27,
+        image1 = $28, image2 = $29, notes = $30
+      WHERE id = $1`,
+      [
+        id,
+        data.siteId,
+        dateStr,
+        data.userId,
+        data.machineId,
+        data.machineName,
+        data.machineHours ?? "",
+        (data.startTime || "").slice(0, 5) || null,
+        (data.endTime || "").slice(0, 5) || null,
+        data.motorSaatBinis ?? null,
+        data.motorSaatInis ?? null,
+        pileDepthsJson,
+        data.usedFuel ?? "",
+        data.workDone ?? "",
+        data.note ?? "",
+        data.dailyPileCount ?? "",
+        data.totalProduction ?? "",
+        data.emptyBorehole ?? "",
+        data.preBorehole ?? "",
+        data.concretePoured ?? "",
+        data.elmasMiktar ?? null,
+        data.elmasDegisimYok === true,
+        data.bentonitMiktar ?? null,
+        data.kullanilanMalzeme ?? null,
+        data.malzemeIhtiyaci === true,
+        data.servisIhtiyaci === true,
+        data.dbMachineId ?? null,
+        img1 ?? null,
+        img2 ?? null,
+        data.notes ?? "",
+      ],
+    )
+  } finally {
+    client.release()
+  }
+}
+
 /** Ülke kodu veya ismine göre IANA timezone döndürür (basit eşleme). */
 export function getTimezoneForCountry(country: string | null | undefined): string {
   if (!country || !String(country).trim()) return "Europe/Istanbul"

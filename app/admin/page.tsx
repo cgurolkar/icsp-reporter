@@ -297,6 +297,49 @@ function AdminPanel() {
   const [opFilterSiteId, setOpFilterSiteId] = useState("")
   const [opDetailOpen, setOpDetailOpen] = useState(false)
   const [opDetailRow, setOpDetailRow] = useState<Record<string, unknown> | null>(null)
+  /** Super admin: operatör girişi CRUD */
+  const [opCrudOpen, setOpCrudOpen] = useState(false)
+  const [opCrudMode, setOpCrudMode] = useState<"create" | "edit">("create")
+  const [opCrudId, setOpCrudId] = useState<number | null>(null)
+  const [opCrudSaving, setOpCrudSaving] = useState(false)
+  const [opCrudMachines, setOpCrudMachines] = useState<{ id: number; name: string }[]>([])
+  const [opCrudForm, setOpCrudForm] = useState({
+    siteId: "",
+    reportDate: "",
+    userId: "",
+    machineId: "",
+    machineName: "",
+    dbMachineId: "" as string | number,
+    machineHours: "",
+    startTime: "",
+    endTime: "",
+    motorSaatBinis: "",
+    motorSaatInis: "",
+    pileDepthsJson: "[]",
+    usedFuel: "",
+    workDone: "",
+    note: "",
+    dailyPileCount: "",
+    totalProduction: "",
+    emptyBorehole: "",
+    preBorehole: "",
+    concretePoured: "",
+    elmasMiktar: "",
+    elmasDegisimYok: false,
+    bentonitMiktar: "",
+    kullanilanMalzeme: "",
+    malzemeIhtiyaci: false,
+    servisIhtiyaci: false,
+    image1: "",
+    image2: "",
+    notes: "",
+  })
+  const [opDeleteConfirmId, setOpDeleteConfirmId] = useState<number | null>(null)
+
+  const operatorUsersForCrud = useMemo(
+    () => (Array.isArray(dbUsers) ? dbUsers.filter((u: { role?: string }) => String(u?.role ?? "").toLowerCase() === "operator") : []),
+    [dbUsers],
+  )
 
   /** Rapor önizleme: aynı sayfada tam ekran iframe */
   const [reportPreviewId, setReportPreviewId] = useState<number | null>(null)
@@ -372,6 +415,222 @@ function AdminPanel() {
       setOperatorEntriesList([])
     } finally {
       setOperatorEntriesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!opCrudOpen) return
+    const sid = parseInt(String(opCrudForm.siteId), 10)
+    if (!Number.isInteger(sid) || sid < 1) {
+      setOpCrudMachines([])
+      return
+    }
+    let cancelled = false
+    fetch(`/api/idari/makineler?siteId=${sid}&status=aktif`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: { id: number; name: string }[]) => {
+        if (!cancelled) setOpCrudMachines(Array.isArray(list) ? list.map((m) => ({ id: m.id, name: m.name })) : [])
+      })
+      .catch(() => {
+        if (!cancelled) setOpCrudMachines([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [opCrudOpen, opCrudForm.siteId])
+
+  const openOpCrudCreate = () => {
+    setOpCrudMode("create")
+    setOpCrudId(null)
+    setOpCrudForm({
+      siteId: opFilterSiteId || (dbSites[0]?.id != null ? String(dbSites[0].id) : ""),
+      reportDate: new Date().toISOString().slice(0, 10),
+      userId: "",
+      machineId: "",
+      machineName: "",
+      dbMachineId: "",
+      machineHours: "",
+      startTime: "",
+      endTime: "",
+      motorSaatBinis: "",
+      motorSaatInis: "",
+      pileDepthsJson: "[]",
+      usedFuel: "",
+      workDone: "",
+      note: "",
+      dailyPileCount: "",
+      totalProduction: "",
+      emptyBorehole: "",
+      preBorehole: "",
+      concretePoured: "",
+      elmasMiktar: "",
+      elmasDegisimYok: false,
+      bentonitMiktar: "",
+      kullanilanMalzeme: "",
+      malzemeIhtiyaci: false,
+      servisIhtiyaci: false,
+      image1: "",
+      image2: "",
+      notes: "",
+    })
+    setOpCrudOpen(true)
+  }
+
+  const openOpCrudEdit = async (row: Record<string, unknown>) => {
+    const id = Number(row.id)
+    if (!Number.isInteger(id)) return
+    setOpCrudSaving(true)
+    try {
+      const res = await fetch(`/api/admin/operator-entries/${id}`, { credentials: "same-origin" })
+      const data = await res.json().catch(() => ({}))
+      const e = (data as { entry?: Record<string, unknown> }).entry
+      if (!res.ok || !e) {
+        alert((data as { error?: string }).error || "Kayıt yüklenemedi.")
+        return
+      }
+      const pd = e.pile_depths
+      let pileJson = "[]"
+      try {
+        pileJson = pd != null ? JSON.stringify(pd, null, 2) : "[]"
+      } catch {
+        pileJson = "[]"
+      }
+      const rd =
+        e.report_date instanceof Date ? e.report_date.toISOString().slice(0, 10) : String(e.report_date ?? "").slice(0, 10)
+      setOpCrudMode("edit")
+      setOpCrudId(id)
+      setOpCrudForm({
+        siteId: e.site_id != null ? String(e.site_id) : "",
+        reportDate: rd,
+        userId: e.user_id != null ? String(e.user_id) : "",
+        machineId: String(e.machine_id ?? ""),
+        machineName: String(e.machine_name ?? ""),
+        dbMachineId: e.db_machine_id != null ? Number(e.db_machine_id) : "",
+        machineHours: String(e.machine_hours ?? ""),
+        startTime: String(e.start_time ?? ""),
+        endTime: String(e.end_time ?? ""),
+        motorSaatBinis: String(e.motor_saat_binis ?? ""),
+        motorSaatInis: String(e.motor_saat_inis ?? ""),
+        pileDepthsJson: pileJson,
+        usedFuel: String(e.used_fuel ?? ""),
+        workDone: String(e.work_done ?? ""),
+        note: String(e.note ?? ""),
+        dailyPileCount: String(e.daily_pile_count ?? ""),
+        totalProduction: String(e.total_production ?? ""),
+        emptyBorehole: String(e.empty_borehole ?? ""),
+        preBorehole: String(e.pre_borehole ?? ""),
+        concretePoured: String(e.concrete_poured ?? ""),
+        elmasMiktar: String(e.elmas_miktar ?? ""),
+        elmasDegisimYok: e.elmas_degisim_yok === true,
+        bentonitMiktar: String(e.bentonit_miktar ?? ""),
+        kullanilanMalzeme: String(e.kullanilan_malzeme ?? ""),
+        malzemeIhtiyaci: e.malzeme_ihtiyaci === true,
+        servisIhtiyaci: e.servis_ihtiyaci === true,
+        image1: typeof e.image1 === "string" ? e.image1 : "",
+        image2: typeof e.image2 === "string" ? e.image2 : "",
+        notes: String(e.notes ?? ""),
+      })
+      setOpCrudOpen(true)
+    } finally {
+      setOpCrudSaving(false)
+    }
+  }
+
+  const submitOpCrud = async () => {
+    const siteId = parseInt(String(opCrudForm.siteId), 10)
+    const userId = parseInt(String(opCrudForm.userId), 10)
+    if (!Number.isInteger(siteId) || siteId < 1) {
+      alert("Şantiye seçin.")
+      return
+    }
+    if (!Number.isInteger(userId) || userId < 1) {
+      alert("Operatör seçin.")
+      return
+    }
+    let pileDepths: unknown = []
+    try {
+      pileDepths = JSON.parse(opCrudForm.pileDepthsJson || "[]")
+    } catch {
+      alert("Kazık derinlikleri geçerli JSON olmalı.")
+      return
+    }
+    const mid = opCrudForm.machineId.trim()
+    const dbMid = opCrudForm.dbMachineId === "" ? null : Number(opCrudForm.dbMachineId)
+    const machineId = mid || (dbMid != null && !Number.isNaN(dbMid) ? `DB_${dbMid}` : "")
+    const machineName = opCrudForm.machineName.trim()
+    if (!machineName) {
+      alert("Makine adı gerekli.")
+      return
+    }
+    if (!machineId) {
+      alert("Makine seçin veya makine kimliği girin.")
+      return
+    }
+    const payload = {
+      siteId,
+      userId,
+      reportDate: opCrudForm.reportDate.slice(0, 10),
+      machineId,
+      machineName,
+      dbMachineId: dbMid != null && !Number.isNaN(dbMid) ? dbMid : null,
+      machineHours: opCrudForm.machineHours,
+      startTime: opCrudForm.startTime,
+      endTime: opCrudForm.endTime,
+      motorSaatBinis: opCrudForm.motorSaatBinis,
+      motorSaatInis: opCrudForm.motorSaatInis,
+      pileDepths,
+      usedFuel: opCrudForm.usedFuel,
+      workDone: opCrudForm.workDone,
+      note: opCrudForm.note,
+      dailyPileCount: opCrudForm.dailyPileCount,
+      totalProduction: opCrudForm.totalProduction,
+      emptyBorehole: opCrudForm.emptyBorehole,
+      preBorehole: opCrudForm.preBorehole,
+      concretePoured: opCrudForm.concretePoured,
+      elmasMiktar: opCrudForm.elmasMiktar || null,
+      elmasDegisimYok: opCrudForm.elmasDegisimYok,
+      bentonitMiktar: opCrudForm.bentonitMiktar || null,
+      kullanilanMalzeme: opCrudForm.kullanilanMalzeme,
+      malzemeIhtiyaci: opCrudForm.malzemeIhtiyaci,
+      servisIhtiyaci: opCrudForm.servisIhtiyaci,
+      image1: opCrudForm.image1 || null,
+      image2: opCrudForm.image2 || null,
+      notes: opCrudForm.notes,
+    }
+    setOpCrudSaving(true)
+    try {
+      const url = opCrudMode === "create" ? "/api/admin/operator-entries" : `/api/admin/operator-entries/${opCrudId}`
+      const method = opCrudMode === "create" ? "POST" : "PATCH"
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert((data as { error?: string }).error || "Kayıt başarısız.")
+        return
+      }
+      setOpCrudOpen(false)
+      void loadOperatorEntries()
+    } finally {
+      setOpCrudSaving(false)
+    }
+  }
+
+  const deleteOpEntry = async (id: number) => {
+    setOpDeleteConfirmId(null)
+    try {
+      const res = await fetch(`/api/admin/operator-entries/${id}`, { method: "DELETE", credentials: "same-origin" })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert((data as { error?: string }).error || "Silinemedi.")
+        return
+      }
+      void loadOperatorEntries()
+    } catch {
+      alert("Silme isteği başarısız.")
     }
   }
 
@@ -1752,6 +2011,9 @@ function AdminPanel() {
               <Button variant="contained" onClick={() => loadOperatorEntries()} disabled={operatorEntriesLoading}>
                 {operatorEntriesLoading ? "Yükleniyor..." : "Listele"}
               </Button>
+              <Button variant="outlined" color="primary" onClick={openOpCrudCreate} sx={{ ml: 1 }}>
+                Yeni kayıt
+              </Button>
             </Box>
             <Paper sx={{ background: "#fff", border: "1px solid var(--icsp-nav-border)", overflow: "auto" }}>
               <Table size="small">
@@ -1765,16 +2027,17 @@ function AdminPanel() {
                     <TableCell sx={{ fontWeight: 600 }}>Kazık / üretim</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Yakıt</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Detay</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>İşlemler</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {operatorEntriesLoading ? (
                     <TableRow>
-                      <TableCell colSpan={8}>Yükleniyor...</TableCell>
+                      <TableCell colSpan={9}>Yükleniyor...</TableCell>
                     </TableRow>
                   ) : operatorEntriesList.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8}>Kayıt yok.</TableCell>
+                      <TableCell colSpan={9}>Kayıt yok.</TableCell>
                     </TableRow>
                   ) : (
                     operatorEntriesList.map((row) => {
@@ -1815,6 +2078,14 @@ function AdminPanel() {
                               sx={{ color: "#1976d2" }}
                             >
                               <Visibility />
+                            </IconButton>
+                          </TableCell>
+                          <TableCell>
+                            <IconButton size="small" title="Düzenle" onClick={() => void openOpCrudEdit(row)} sx={{ color: "#ed6c02" }}>
+                              <Edit />
+                            </IconButton>
+                            <IconButton size="small" title="Sil" onClick={() => setOpDeleteConfirmId(id)} sx={{ color: "#d32f2f" }}>
+                              <Delete />
                             </IconButton>
                           </TableCell>
                         </TableRow>
@@ -2721,6 +2992,147 @@ function AdminPanel() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpDetailOpen(false)}>Kapat</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Operatör girişi CRUD */}
+      <Dialog open={opCrudOpen} onClose={() => !opCrudSaving && setOpCrudOpen(false)} maxWidth="md" fullWidth scroll="paper">
+        <DialogTitle sx={{ color: "#1a237e", fontWeight: 600 }}>
+          {opCrudMode === "create" ? "Yeni operatör girişi" : "Operatör girişini düzenle"}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1, maxHeight: "70vh", overflow: "auto" }}>
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+              <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
+                <InputLabel>Şantiye</InputLabel>
+                <Select
+                  label="Şantiye"
+                  value={opCrudForm.siteId}
+                  onChange={(e) => setOpCrudForm((p) => ({ ...p, siteId: e.target.value }))}
+                >
+                  {dbSites.map((s: { id: number; name: string; code: string }) => (
+                    <MenuItem key={s.id} value={String(s.id)}>
+                      {s.name} ({s.code})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <TextField
+                size="small"
+                label="Rapor tarihi"
+                type="date"
+                value={opCrudForm.reportDate}
+                onChange={(e) => setOpCrudForm((p) => ({ ...p, reportDate: e.target.value.slice(0, 10) }))}
+                InputLabelProps={{ shrink: true }}
+                sx={{ minWidth: 160 }}
+              />
+            </Box>
+            <FormControl size="small" fullWidth>
+              <InputLabel>Operatör kullanıcı</InputLabel>
+              <Select
+                label="Operatör kullanıcı"
+                value={opCrudForm.userId}
+                onChange={(e) => setOpCrudForm((p) => ({ ...p, userId: e.target.value }))}
+              >
+                <MenuItem value="">Seçin</MenuItem>
+                {operatorUsersForCrud.map((u: { id: number; username: string }) => (
+                  <MenuItem key={u.id} value={String(u.id)}>{u.username}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl size="small" fullWidth>
+              <InputLabel>Makine (şantiye kayıtlı)</InputLabel>
+              <Select
+                label="Makine (şantiye kayıtlı)"
+                value={opCrudForm.dbMachineId === "" ? "" : String(opCrudForm.dbMachineId)}
+                onChange={(e) => {
+                  const v = e.target.value
+                  const m = opCrudMachines.find((x) => String(x.id) === v)
+                  if (m) {
+                    setOpCrudForm((p) => ({
+                      ...p,
+                      dbMachineId: m.id,
+                      machineId: `DB_${m.id}`,
+                      machineName: m.name,
+                    }))
+                  } else {
+                    setOpCrudForm((p) => ({ ...p, dbMachineId: "", machineId: "", machineName: "" }))
+                  }
+                }}
+              >
+                <MenuItem value="">— Elle makine kimliği gir —</MenuItem>
+                {opCrudMachines.map((m) => (
+                  <MenuItem key={m.id} value={String(m.id)}>{m.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField
+              size="small"
+              fullWidth
+              label="Makine kimliği (örn. DB_12)"
+              value={opCrudForm.machineId}
+              onChange={(e) => setOpCrudForm((p) => ({ ...p, machineId: e.target.value }))}
+              helperText="Listeden seçim yapınca dolar; gerekirse manuel düzenleyin."
+            />
+            <TextField
+              size="small"
+              fullWidth
+              label="Makine adı"
+              value={opCrudForm.machineName}
+              onChange={(e) => setOpCrudForm((p) => ({ ...p, machineName: e.target.value }))}
+              required
+            />
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+              <TextField size="small" label="Başlangıç saati" value={opCrudForm.startTime} onChange={(e) => setOpCrudForm((p) => ({ ...p, startTime: e.target.value }))} placeholder="08:30" />
+              <TextField size="small" label="Bitiş saati" value={opCrudForm.endTime} onChange={(e) => setOpCrudForm((p) => ({ ...p, endTime: e.target.value }))} />
+              <TextField size="small" label="Motor saat (biniş)" value={opCrudForm.motorSaatBinis} onChange={(e) => setOpCrudForm((p) => ({ ...p, motorSaatBinis: e.target.value }))} />
+              <TextField size="small" label="Motor saat (iniş)" value={opCrudForm.motorSaatInis} onChange={(e) => setOpCrudForm((p) => ({ ...p, motorSaatInis: e.target.value }))} />
+            </Box>
+            <TextField size="small" fullWidth label="Makine saatleri (metin)" value={opCrudForm.machineHours} onChange={(e) => setOpCrudForm((p) => ({ ...p, machineHours: e.target.value }))} />
+            <TextField size="small" fullWidth label="Yakıt (L)" value={opCrudForm.usedFuel} onChange={(e) => setOpCrudForm((p) => ({ ...p, usedFuel: e.target.value }))} />
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+              <TextField size="small" label="Günlük kazık / adet" value={opCrudForm.dailyPileCount} onChange={(e) => setOpCrudForm((p) => ({ ...p, dailyPileCount: e.target.value }))} />
+              <TextField size="small" label="Üretim (m)" value={opCrudForm.totalProduction} onChange={(e) => setOpCrudForm((p) => ({ ...p, totalProduction: e.target.value }))} />
+              <TextField size="small" label="Beton dökülen (ad.)" value={opCrudForm.concretePoured} onChange={(e) => setOpCrudForm((p) => ({ ...p, concretePoured: e.target.value }))} />
+            </Box>
+            <TextField
+              size="small"
+              fullWidth
+              multiline
+              minRows={3}
+              label="Kazık derinlikleri (JSON)"
+              value={opCrudForm.pileDepthsJson}
+              onChange={(e) => setOpCrudForm((p) => ({ ...p, pileDepthsJson: e.target.value }))}
+              helperText='Örn: [{"depth":"12.5","onForaj":false,"bosForaj":false}]'
+            />
+            <TextField size="small" fullWidth label="Yapılan iş / work_done" value={opCrudForm.workDone} onChange={(e) => setOpCrudForm((p) => ({ ...p, workDone: e.target.value }))} />
+            <TextField size="small" fullWidth label="Makine notu" value={opCrudForm.note} onChange={(e) => setOpCrudForm((p) => ({ ...p, note: e.target.value }))} />
+            <TextField size="small" fullWidth multiline minRows={2} label="Genel notlar" value={opCrudForm.notes} onChange={(e) => setOpCrudForm((p) => ({ ...p, notes: e.target.value }))} />
+            <FormControlLabel control={<Checkbox checked={opCrudForm.malzemeIhtiyaci} onChange={(e) => setOpCrudForm((p) => ({ ...p, malzemeIhtiyaci: e.target.checked }))} />} label="Malzeme ihtiyacı" />
+            <FormControlLabel control={<Checkbox checked={opCrudForm.servisIhtiyaci} onChange={(e) => setOpCrudForm((p) => ({ ...p, servisIhtiyaci: e.target.checked }))} />} label="Servis ihtiyacı" />
+            <Typography variant="caption" color="text.secondary">
+              Resim alanları çok büyük olabilir; gerekirse mevcut kaydı düzenlerken olduğu gibi bırakın veya boşaltın.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setOpCrudOpen(false)} disabled={opCrudSaving}>İptal</Button>
+          <Button variant="contained" onClick={() => void submitOpCrud()} disabled={opCrudSaving}>
+            {opCrudSaving ? "Kaydediliyor..." : "Kaydet"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={opDeleteConfirmId != null} onClose={() => setOpDeleteConfirmId(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Operatör girişini sil</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">Bu kayıt kalıcı olarak silinecek. Devam edilsin mi?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpDeleteConfirmId(null)}>İptal</Button>
+          <Button color="error" variant="contained" onClick={() => opDeleteConfirmId != null && void deleteOpEntry(opDeleteConfirmId)}>
+            Sil
+          </Button>
         </DialogActions>
       </Dialog>
 
