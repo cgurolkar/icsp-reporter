@@ -1508,7 +1508,9 @@ function AdminPanel() {
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.project}</TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.site_name || "—"}</TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.submitted_by_username ?? (r.submitted_by_user_id != null ? `#${r.submitted_by_user_id}` : "—")}</TableCell>
-                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.selected_machine_name || "—"}</TableCell>
+                          <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>
+                            {String(r.machine_names_list ?? r.selected_machine_name ?? "").trim() || "—"}
+                          </TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.total_production_summary ?? r.total_production ?? "—"}</TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{[r.daily_pile_count, r.total_pile_count, r.concrete_poured].find((v) => v != null && String(v).trim() !== "") ?? "—"}</TableCell>
                           <TableCell sx={{ borderColor: "var(--icsp-nav-border)" }}>{r.concrete_poured != null && String(r.concrete_poured).trim() !== "" ? r.concrete_poured : "—"}</TableCell>
@@ -1910,7 +1912,9 @@ function AdminPanel() {
                       <TableCell>{r.project ?? "—"}</TableCell>
                       <TableCell>{r.site_name ?? "—"}</TableCell>
                       <TableCell>{r.submitted_by_username ?? (r.submitted_by_user_id != null ? `#${r.submitted_by_user_id}` : "—")}</TableCell>
-                      <TableCell>{r.selected_machine_name ?? "—"}</TableCell>
+                      <TableCell>
+                        {String(r.machine_names_list ?? r.selected_machine_name ?? "").trim() || "—"}
+                      </TableCell>
                       <TableCell>{[r.daily_pile_count, r.total_pile_count, r.concrete_poured].find((v) => v != null && String(v).trim() !== "") ?? "—"}</TableCell>
                       <TableCell>{r.remaining_piles != null && String(r.remaining_piles).trim() !== "" ? r.remaining_piles : "—"}</TableCell>
                       <TableCell>

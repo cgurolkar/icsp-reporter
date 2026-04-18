@@ -849,7 +849,12 @@ export async function getWorkReportsFiltered(options: { siteId?: number | null; 
   try {
     let query = `
       SELECT wr.*, s.name as site_name, s.code as site_code,
-             u.username AS submitted_by_username
+             u.username AS submitted_by_username,
+             COALESCE(
+               (SELECT string_agg(ms.machine_name, ', ' ORDER BY ms.is_primary DESC NULLS LAST, ms.id)
+                FROM machine_selections ms WHERE ms.report_id = wr.id),
+               NULLIF(TRIM(COALESCE(wr.selected_machine_name, '')), '')
+             ) AS machine_names_list
       FROM work_reports wr
       LEFT JOIN sites s ON wr.site_id = s.id
       LEFT JOIN users u ON u.id = wr.submitted_by_user_id
