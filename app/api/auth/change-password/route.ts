@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import pool, { initializeDatabase } from "@/lib/database"
 import { getSessionFromRequest, verifyPassword, hashPassword, createToken, setSessionCookie } from "@/lib/auth"
+import type { Role } from "@/lib/auth-session"
+
+const ALLOWED_ROLES: Role[] = ["super_admin", "admin", "manager", "user", "personel", "operator", "engineer"]
 
 function isBcryptHash(hash: string): boolean {
   return typeof hash === "string" && (hash.startsWith("$2a$") || hash.startsWith("$2b$") || hash.startsWith("$2y$"))
@@ -38,7 +41,10 @@ export async function POST(request: NextRequest) {
 
   const client = await pool.connect()
   try {
-    const result = await client.query("SELECT id, username, role, site_id, password_hash FROM users WHERE id = $1", [session.id])
+    const result = await client.query(
+      "SELECT id, username, role, site_id, password_hash, module_permissions FROM users WHERE id = $1",
+      [session.id],
+    )
     const row = result.rows[0]
     if (!row) {
       return NextResponse.json({ success: false, error: "Kullanıcı bulunamadı." }, { status: 404 })
@@ -60,12 +66,27 @@ export async function POST(request: NextRequest) {
       [newHash, session.id]
     )
 
+    const rawRole = String(row.role || "").toLowerCase()
+    const role = ALLOWED_ROLES.includes(rawRole as Role) ? (rawRole as Role) : "user"
+    const rawPerms = row.module_permissions
+    const modulePermissions: Record<string, string> | undefined =
+      rawPerms && typeof rawPerms === "object" && !Array.isArray(rawPerms)
+        ? (rawPerms as Record<string, string>)
+        : undefined
+    const viewAllSites =
+      role === "super_admin" ||
+      role === "admin" ||
+      role === "manager" ||
+      modulePermissions?.view_all_sites === "write"
+
     const token = await createToken({
       id: row.id,
       username: row.username,
-      role: session.role,
+      role,
       siteId: row.site_id ?? null,
       mustChangePassword: false,
+      modulePermissions,
+      viewAllSites,
     })
 
     const forwardedProto = request.headers.get("x-forwarded-proto")
@@ -74,7 +95,7 @@ export async function POST(request: NextRequest) {
       (typeof request.nextUrl?.protocol === "string" && request.nextUrl.protocol === "https:") ||
       (typeof request.url === "string" && request.url.startsWith("https://"))
 
-    const response = NextResponse.json({ success: true })
+    const response = NextResponse.json({ success: true, role })
     response.headers.set("Set-Cookie", setSessionCookie(token, isSecureRequest))
     return response
   } catch (error) {

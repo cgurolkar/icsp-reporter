@@ -42,9 +42,10 @@ export default function ChangePasswordPage() {
         setLoading(false)
         return
       }
+      const role = String((data as { role?: string }).role ?? "").toLowerCase()
       setSuccess("Şifreniz güncellendi. Yönlendiriliyorsunuz...")
       setTimeout(() => {
-        window.location.href = "/proje"
+        window.location.href = role === "operator" ? "/operator-form" : "/proje"
       }, 800)
     } catch {
       setError("Bağlantı hatası.")

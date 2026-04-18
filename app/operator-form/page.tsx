@@ -12,6 +12,7 @@ import {
   Checkbox,
   Alert,
   Chip,
+  CircularProgress,
 } from "@mui/material"
 import { Save, PhotoCamera, Add, Delete, ArrowForward } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
@@ -31,7 +32,7 @@ interface DbMachine {
 }
 
 export default function OperatorFormPage() {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const router = useRouter()
   const role = (user?.role ?? "").toLowerCase()
   const isOperator = role === "operator"
@@ -131,11 +132,20 @@ export default function OperatorFormPage() {
   }, [selectedDbMachine])
 
   useEffect(() => {
+    if (authLoading) return
+    if (!user) {
+      router.replace("/login")
+      return
+    }
     if (!isOperator) {
       router.replace("/proje")
       return
     }
-    if (!siteId) return
+    if (!siteId) {
+      setDbMachines([])
+      setMachinesLoaded(true)
+      return
+    }
 
     // Fetch DB machines for this site (auto-assigned to operator)
     fetch(`/api/operator-entry/my-machine?siteId=${siteId}`)
@@ -146,7 +156,7 @@ export default function OperatorFormPage() {
         setMachinesLoaded(true)
       })
       .catch(() => { setDbMachines([]); setMachinesLoaded(true) })
-  }, [isOperator, router, siteId])
+  }, [authLoading, user, isOperator, router, siteId])
 
   const handleImageChange = async (slot: 1 | 2, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -283,7 +293,14 @@ export default function OperatorFormPage() {
     }
   }
 
-  if (!isOperator) return null
+  if (authLoading) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "40vh" }}>
+        <CircularProgress sx={{ color: "var(--icsp-lacivert)" }} />
+      </Box>
+    )
+  }
+  if (!user || !isOperator) return null
 
   return (
     <Container maxWidth="sm" sx={{ py: 3 }}>
