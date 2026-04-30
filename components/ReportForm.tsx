@@ -554,8 +554,6 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
           onChange={(d) => updateFormData("pileDetails", d)}
           productionSummary={formData.productionSummary}
           siteConcretePouredPiles={formData.siteConcretePouredPiles}
-          projectTotalPiles={projectTotalPiles}
-          totalCompletedBeforeToday={totalCompletedBeforeToday}
         />
       </Box>
     )

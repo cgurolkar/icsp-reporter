@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
 
 import {
   TextField,
@@ -29,10 +28,6 @@ interface PileDetailsStepProps {
   productionSummary?: MachineProductionSummary[]
   /** Şantiye toplam beton dökülen kazık (üretim özeti) */
   siteConcretePouredPiles?: string
-  /** Şantiye proje özetinden gelen toplam kazık (yoksa ayarlardan alınır) */
-  projectTotalPiles?: number
-  /** Bugünden önce yapılan toplam kazık sayısı (son rapordaki kalan üzerinden hesaplanır) */
-  totalCompletedBeforeToday?: number
 }
 
 export default function PileDetailsStep({
@@ -40,39 +35,11 @@ export default function PileDetailsStep({
   onChange,
   productionSummary = [],
   siteConcretePouredPiles = "",
-  projectTotalPiles: projectTotalFromProps,
-  totalCompletedBeforeToday = 0,
 }: PileDetailsStepProps) {
   const { t } = useLanguage()
-  const [projectTotalFromSettings, setProjectTotalFromSettings] = useState<number>(120)
 
-  // Şantiye seçilmemişse yönetici panelinden toplam kazık sayısını al
-  useEffect(() => {
-    if (projectTotalFromProps != null) return
-    const loadProjectSettings = async () => {
-      try {
-        const response = await fetch("/api/admin/settings")
-        if (response.ok) {
-          const settings = await response.json()
-          setProjectTotalFromSettings(parseInt(settings.totalPiles) || 120)
-        }
-      } catch (error) {
-        console.error("Error loading project settings:", error)
-      }
-    }
-    loadProjectSettings()
-  }, [projectTotalFromProps])
-
-  const projectTotalPiles = projectTotalFromProps ?? projectTotalFromSettings
-
-  const totalProduction = productionSummary.reduce((sum, m) => sum + (parseFloat(m.totalProduction) || 0), 0)
   const betonToplam = parseInt(String(siteConcretePouredPiles ?? "").trim(), 10) || 0
   const dailyPiles = betonToplam
-
-  // Bugüne kadar (bugün dahil) = son rapor sonu itibarıyla yapılan + bugün yapılan
-  const totalCompletedIncludingToday = totalCompletedBeforeToday + dailyPiles
-  // Kalan kazık = proje toplam − bugüne kadar (bugün dahil)
-  const remainingPiles = projectTotalPiles - totalCompletedIncludingToday
 
   const machineCols = productionSummary.filter((m) => m.machineId)
   const singleMachineId = machineCols.length === 1 ? machineCols[0].machineId : null
@@ -139,46 +106,6 @@ export default function PileDetailsStep({
         {t("pile_details_form_title")}
       </Typography>
       <Paper sx={{ p: 3, background: "linear-gradient(135deg, #fffde7 0%, #ffe082 100%)", border: "1px solid #ffb300", mb: 3 }}>
-        {/* Toplam Değerler */}
-        <Box sx={{ display: "flex", gap: 3, flexWrap: "wrap", mb: 3 }}>
-          <TextField
-            label={t("total_piles_in_project")}
-            value={projectTotalPiles}
-            InputProps={{ readOnly: true }}
-            sx={{ minWidth: 200, backgroundColor: "#fffde7" }}
-          />
-          <TextField
-            label={t("done_until_today_excl_short")}
-            value={totalCompletedBeforeToday}
-            InputProps={{ readOnly: true }}
-            sx={{ minWidth: 220, backgroundColor: "#e3f2fd" }}
-          />
-          <TextField
-            label={t("daily_pile_count_label")}
-            value={dailyPiles}
-            InputProps={{ readOnly: true }}
-            sx={{ minWidth: 200, backgroundColor: "#fffde7" }}
-          />
-          <TextField
-            label={t("done_until_today_incl")}
-            value={totalCompletedIncludingToday}
-            InputProps={{ readOnly: true }}
-            sx={{ minWidth: 220, backgroundColor: "#e3f2fd" }}
-          />
-          <TextField
-            label={t("remaining_piles_count")}
-            value={remainingPiles}
-            InputProps={{ readOnly: true }}
-            sx={{ minWidth: 200, backgroundColor: "#e8f5e9" }}
-          />
-          <TextField
-            label={t("total_production")}
-            value={totalProduction.toFixed(2)}
-            InputProps={{ readOnly: true }}
-            sx={{ minWidth: 200, backgroundColor: "#fffde7" }}
-          />
-        </Box>
-
         {detayEksik && (
           <Alert severity="warning" sx={{ mb: 2 }}>
             {t("pile_details_warning").replace(/\{count\}/g, String(yapilanKazikSayisi)).replace(/\{entered\}/g, String(doldurulanDetaySayisi))}
