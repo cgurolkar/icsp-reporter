@@ -33,16 +33,28 @@ export function generatePDFMainReport(
   const totalProduction = isArray
     ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseFloat(m.totalProduction) || 0), 0)
     : formData.productionSummary?.totalProduction
-  const concreteSum = opts?.concretePouredSum ?? (isArray
-    ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.concretePoured) || 0), 0)
-    : parseInt(formData.productionSummary?.concretePoured ?? "", 10) || 0)
+  const siteConcreteTrim = String(formData.siteConcretePouredPiles ?? "").trim()
+  const siteBetonExplicit = siteConcreteTrim !== "" ? parseInt(siteConcreteTrim, 10) || 0 : null
+  const concreteSum =
+    opts?.concretePouredSum ??
+    (siteBetonExplicit !== null
+      ? siteBetonExplicit
+      : isArray
+        ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.concretePoured) || 0), 0)
+        : parseInt(formData.productionSummary?.concretePoured ?? "", 10) || 0)
   const totalPileCountFromForm = isArray
     ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.totalPileCount) || 0), 0)
     : parseInt(formData.productionSummary?.totalPileCount ?? "", 10) || 0
   const totalPileCount = totalPileCountFromForm > 0 ? totalPileCountFromForm : concreteSum
-  const dailyPileCountFromForm = isArray
-    ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.dailyPileCount) || 0), 0)
-    : parseInt(formData.productionSummary?.dailyPileCount ?? "", 10) || 0
+  const dailyDrilledSum = isArray
+    ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(String(m.dailyDrilledPiles ?? "").trim(), 10) || 0), 0)
+    : 0
+  const dailyPileCountFromForm =
+    dailyDrilledSum > 0
+      ? dailyDrilledSum
+      : (isArray
+          ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.dailyPileCount) || 0), 0)
+          : parseInt(formData.productionSummary?.dailyPileCount ?? "", 10) || 0)
   const dailyPileCount = opts?.computedDailyPileCount?.trim()
     ? opts.computedDailyPileCount
     : (dailyPileCountFromForm > 0 ? String(dailyPileCountFromForm) : (concreteSum > 0 ? String(concreteSum) : "—"))
@@ -57,9 +69,7 @@ export function generatePDFMainReport(
   const steelLoweredPiles = isArray
     ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.steelLoweredPiles) || 0), 0)
     : (formData.productionSummary?.steelLoweredPiles || 0)
-  const concretePoured = isArray
-    ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.concretePoured) || 0), 0)
-    : (formData.productionSummary?.concretePoured || 0)
+  const concretePoured = concreteSum
 
   // Kazık ilerleme yüzdesi
   const remainingNum = parseInt(String(remainingPiles), 10) || 0

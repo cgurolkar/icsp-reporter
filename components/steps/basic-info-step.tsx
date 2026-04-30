@@ -102,7 +102,13 @@ export default function BasicInfoStep({
   return (
     <Box>
       <Typography variant="h6" gutterBottom sx={{ color: "primary.main", fontWeight: 600, mb: 3 }}>
-        {t("basic_info")} {currentMachine ? `- ${currentMachine.machineName}` : ""}
+        {t("basic_info")}
+        {(() => {
+          const names = (allMachines ?? []).map((m) => m.machineName).filter(Boolean)
+          if (names.length > 0) return ` — ${names.join(" · ")}`
+          if (currentMachine?.machineName) return ` — ${currentMachine.machineName}`
+          return ""
+        })()}
       </Typography>
       
       {/* Tarih ve Proje Bilgileri */}

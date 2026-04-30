@@ -5,7 +5,6 @@ import { Container, Paper, Stepper, Step, StepLabel, Box, Button, Typography, Gr
 import { useLanguage } from "@/contexts/language-context"
 import LanguageSelector from "@/components/language-selector"
 import { useFormDraft, loadDraft, clearDraft } from "@/lib/use-form-draft"
-import MachineSelectionStep from "@/components/steps/machine-selection-step"
 import BasicInfoStep, { type SiteSummaryForForm } from "@/components/steps/basic-info-step"
 import ProductionSummaryStep from "@/components/steps/production-summary-step"
 import PileDetailsStep from "@/components/steps/pile-details-step"
@@ -15,7 +14,7 @@ import FuelStep from "@/components/steps/fuel-step"
 import ExpensesStep from "@/components/steps/expenses-step"
 import DailyInfoStep from "@/components/steps/daily-info-step"
 import ReviewStep from "@/components/steps/review-step"
-import { type FormData, type Machine, initialFormData, AVAILABLE_MACHINES } from "@/types/form-data"
+import { type FormData, type Machine, type MachineBasicInfo, type MachineProductionSummary, initialFormData, AVAILABLE_MACHINES } from "@/types/form-data"
 import { shrinkDailyInfoImagesForSubmit } from "@/lib/image-webp-client"
 import { estimateJsonPayloadBytes, readResponseJsonSafe, buildReportSubmitUserMessage } from "@/lib/report-submit-client"
 import Dialog from "@mui/material/Dialog"
@@ -25,7 +24,6 @@ import DialogActions from "@mui/material/DialogActions"
 import CircularProgress from "@mui/material/CircularProgress"
 
 const steps = [
-  "machine_selection",
   "basic_info",
   "production_summary",
   "personnel_vehicles",
@@ -50,11 +48,49 @@ export interface ReportFormProps {
   lockedSiteId?: number
 }
 
+function numFieldOk(s: string | undefined): boolean {
+  const t = String(s ?? "").trim()
+  if (t === "") return false
+  const n = Number(t.replace(",", "."))
+  return Number.isFinite(n)
+}
+
+function reportBasicErrors(fd: FormData): string[] {
+  const e: string[] = []
+  if (fd.basicInfo.siteId == null) e.push("Şantiye seçin.")
+  if (!String(fd.basicInfo.date ?? "").trim()) e.push("Rapor tarihi girin.")
+  return e
+}
+
+function reportProductionErrors(fd: FormData): string[] {
+  const e: string[] = []
+  if (fd.productionSummary.length === 0) e.push("Şantiye için makine listesi yüklenemedi; şantiye seçimini kontrol edin.")
+  for (const m of fd.productionSummary) {
+    const label = m.machineName || "Makine"
+    if (!numFieldOk(m.dailyDrilledPiles)) e.push(`${label}: O gün yapılan kazık (delgi, Ad.) — çalışma yoksa 0 yazın.`)
+    if (!numFieldOk(m.totalProduction)) e.push(`${label}: Kazık imalatı (m) — çalışma yoksa 0 yazın.`)
+    if (!numFieldOk(m.preBorehole)) e.push(`${label}: Ön foraj (Ad.) — çalışma yoksa 0 yazın.`)
+    if (!numFieldOk(m.emptyBorehole)) e.push(`${label}: Boş foraj (Ad.) — çalışma yoksa 0 yazın.`)
+  }
+  if (!numFieldOk(fd.siteConcretePouredPiles)) e.push("Beton dökülen kazık (şantiye toplamı, Ad.) — yoksa 0 yazın.")
+  const beton = parseInt(String(fd.siteConcretePouredPiles ?? "").trim(), 10) || 0
+  const filledRows = (fd.pileDetails || []).filter((p) => String(p.drilled ?? "").trim() || String(p.notes ?? "").trim()).length
+  if (beton > 0 && filledRows < beton) {
+    e.push(`Kazık detayları: ${beton} betonlu kazık için en az ${beton} satırda delik veya not girilmeli (şu an ${filledRows} satır).`)
+  }
+  const machineIds = fd.productionSummary.filter((m) => m.machineId).map((m) => m.machineId)
+  if (machineIds.length > 1) {
+    const bad = fd.pileDetails.some((p) => p.concretePoured === true && (!(p.machineIds && p.machineIds.length)))
+    if (bad) e.push("Kazık detayları: Beton döküldü işaretli satırlarda hangi makineye ait olduğunu işaretleyin.")
+  }
+  return e
+}
+
 export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteId }: ReportFormProps) {
   const isRestricted = lockedSiteId != null
   const [activeStep, setActiveStep] = useState(0)
   const [formData, setFormData] = useState<FormData>(initialFormData)
-  const [showAddMachinePrompt, setShowAddMachinePrompt] = useState(false)
+  const [stepErrors, setStepErrors] = useState<string[]>([])
   const [siteSummary, setSiteSummary] = useState<SiteSummaryForForm | null>(null)
   const [assignedOperatorNames, setAssignedOperatorNames] = useState<string[]>([])
   const [showPrevDayPlannedDialog, setShowPrevDayPlannedDialog] = useState(false)
@@ -153,7 +189,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     }
   }, [formData.basicInfo.siteId, initialSiteId, lockedSiteId])
 
-  // Şantiye seçilince İdari → Makineler kayıtlarından aktif makineleri al ve seçimi güncelle
+  // Şantiye seçilince İdari → Makineler: tüm atanmış aktif makineleri otomatik seç ve satırları senkronize et
   useEffect(() => {
     const siteId = formData.basicInfo?.siteId
     if (siteId == null || !siteId) {
@@ -180,28 +216,62 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
           : []
         const options = fromDb.length > 0 ? fromDb : AVAILABLE_MACHINES
         setReportMachineOptions(options)
-        const ids = options.map((m) => m.id)
         setFormData((prev) => {
-          const current = prev.machineSelection.selectedMachine
-          if (current && ids.includes(current.id)) return prev
-          const machine = options[0]
-          if (!machine) return prev
-          const initialMachineData = { machineId: machine.id, machineName: machine.name, machineHours: "", usedFuel: "", totalProduction: "", pileCount: "", drilledPile: "", concretePile: "", changedDiamondCount: "", note: "" }
-          const initialProductionSummary = { machineId: machine.id, machineName: machine.name, totalProduction: "", emptyBorehole: "", preBorehole: "", concretePoured: "", totalPileCount: "", dailyPileCount: "", totalCompletedPiles: "", remainingPiles: "", steelLoweredPiles: "" }
-          const needInit = isRestricted && (prev.basicInfo.machines.length === 0 || prev.productionSummary.length === 0)
+          const siteChanged = Number(prev.basicInfo.siteId) !== Number(siteId)
+          const mapProduction = (m: Machine): MachineProductionSummary => {
+            const old = prev.productionSummary.find((p) => String(p.machineId) === String(m.id))
+            return old
+              ? {
+                  ...old,
+                  machineId: m.id,
+                  machineName: m.name,
+                  dailyDrilledPiles: old.dailyDrilledPiles ?? "",
+                }
+              : {
+                  machineId: m.id,
+                  machineName: m.name,
+                  totalProduction: "",
+                  emptyBorehole: "",
+                  preBorehole: "",
+                  concretePoured: "",
+                  dailyDrilledPiles: "",
+                }
+          }
+          const mapBasic = (m: Machine): MachineBasicInfo => {
+            const old = prev.basicInfo.machines.find((b) => String(b.machineId) === String(m.id))
+            return old
+              ? { ...old, machineId: m.id, machineName: m.name }
+              : {
+                  machineId: m.id,
+                  machineName: m.name,
+                  machineHours: "",
+                  usedFuel: "",
+                  changedDiamondCount: "",
+                  note: "",
+                }
+          }
+          const productionSummary = options.map(mapProduction)
+          const machines = options.map(mapBasic)
+          const validIds = new Set(options.map((m) => String(m.id)))
+          const pileDetails = (prev.pileDetails || []).map((p) => {
+            const nextIds = (p.machineIds ?? []).filter((id) => validIds.has(String(id)))
+            const single = options.length === 1 ? [options[0].id] : nextIds.length > 0 ? nextIds : (p.machineIds ?? []).filter((id) => validIds.has(String(id)))
+            if (siteChanged) {
+              return { ...p, machineIds: options.length === 1 ? [options[0].id] : nextIds }
+            }
+            return { ...p, machineIds: single }
+          })
           return {
             ...prev,
+            siteConcretePouredPiles: siteChanged ? "" : (prev.siteConcretePouredPiles ?? ""),
+            pileDetails,
             machineSelection: {
               ...prev.machineSelection,
-              selectedMachine: machine,
-              additionalMachines: prev.machineSelection.additionalMachines.filter((m) => ids.includes(m.id)),
+              selectedMachine: options[0] ?? null,
+              additionalMachines: options.slice(1),
             },
-            ...(needInit
-              ? {
-                  basicInfo: { ...prev.basicInfo, machines: [initialMachineData] },
-                  productionSummary: [initialProductionSummary],
-                }
-              : {}),
+            basicInfo: { ...prev.basicInfo, machines },
+            productionSummary,
           }
         })
       })
@@ -211,7 +281,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     return () => {
       cancelled = true
     }
-  }, [formData.basicInfo?.siteId, isRestricted])
+  }, [formData.basicInfo?.siteId])
 
   // Kullanıcı/Personel: atanmış operatör isimleri ve dünkü planlanan işler pop-up
   useEffect(() => {
@@ -250,102 +320,40 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     return () => { cancelled = true }
   }, [formData.basicInfo?.siteId, formData.basicInfo?.date])
 
-  // Operatör girişleri varsa productionSummary ve pileDetails (kazık detayları) senkronize et (manager ve kullanıcı için)
-  useEffect(() => {
-    if (operatorEntriesForDate.length === 0) return
-    const next = operatorEntriesForDate.map((e) => ({
-      machineId: e.machine_id ?? "",
-      machineName: e.machine_name ?? "",
-      totalProduction: e.total_production ?? "",
-      emptyBorehole: e.empty_borehole ?? "",
-      preBorehole: e.pre_borehole ?? "",
-      concretePoured: e.concrete_poured ?? "",
-      dailyPileCount: e.daily_pile_count ?? "",
-    }))
-    const allPileDepths: Array<{ depth: string; onForaj: boolean; bosForaj: boolean }> = []
-    for (const entry of operatorEntriesForDate) {
-      const pd = entry.pile_depths
-      const rows = Array.isArray(pd) ? pd : (typeof pd === "string" ? (() => { try { return JSON.parse(pd) } catch { return [] } })() : [])
-      rows.forEach((r: any, i: number) => {
-        const depth = r.depth != null ? String(r.depth) : ""
-        if (!depth.trim()) return
-        const parts: string[] = []
-        if (r.onForaj) parts.push("Ön foraj")
-        if (r.bosForaj) parts.push("Boş foraj")
-        allPileDepths.push({
-          depth,
-          onForaj: !!r.onForaj,
-          bosForaj: !!r.bosForaj,
-        })
-      })
-    }
-    setFormData((prev) => {
-      let nextForm = prev
-      if (prev.productionSummary.length !== next.length || !next.every((n, i) => prev.productionSummary[i]?.machineName === n.machineName && prev.productionSummary[i]?.concretePoured === n.concretePoured)) {
-        nextForm = { ...nextForm, productionSummary: next }
-      }
-      if (allPileDepths.length > 0) {
-        const fromOperator = allPileDepths.map((r, i) => ({
-          pileNumber: i + 1,
-          drilled: r.depth,
-          notes: [r.onForaj && "Ön foraj", r.bosForaj && "Boş foraj"].filter(Boolean).join(", "),
-          concretePoured: false,
-        }))
-        const current = prev.pileDetails || []
-        const currentFilled = current.filter((p) => String(p.drilled ?? "").trim() || String(p.notes ?? "").trim()).length
-        if (currentFilled === 0 && fromOperator.length > 0) {
-          nextForm = { ...nextForm, pileDetails: fromOperator }
-        }
-      }
-      return nextForm
-    })
-  }, [operatorEntriesForDate])
-
   const handleNext = () => {
+    setStepErrors([])
     if (isRestricted) {
       if (activeStep === 0) {
-        const sm = formData.machineSelection.selectedMachine
-        if (sm && (formData.basicInfo.machines.length === 0 || formData.productionSummary.length === 0)) {
-          const initialMachineData = { machineId: sm.id, machineName: sm.name, machineHours: "", totalProduction: "", pileCount: "", drilledPile: "", concretePile: "", changedDiamondCount: "", note: "" }
-          const initialProductionSummary = { machineId: sm.id, machineName: sm.name, totalProduction: "", totalPileCount: "", dailyPileCount: "", totalCompletedPiles: "", remainingPiles: "", steelLoweredPiles: "", concretePoured: "", emptyBorehole: "", preBorehole: "" }
-          updateFormData("basicInfo", { ...formData.basicInfo, machines: [initialMachineData] })
-          updateFormData("productionSummary", [initialProductionSummary])
+        const errs = [...reportBasicErrors(formData), ...reportProductionErrors(formData)]
+        if (errs.length) {
+          setStepErrors(errs)
+          return
         }
         setActiveStep(1)
-      } else {
-        setActiveStep((prev) => prev + 1)
+        return
       }
+      setActiveStep((prev) => prev + 1)
       return
     }
-    if (activeStep === 0 && formData.machineSelection.selectedMachine) {
-      const initialMachineData = {
-        machineId: formData.machineSelection.selectedMachine.id,
-        machineName: formData.machineSelection.selectedMachine.name,
-        machineHours: "",
-        totalProduction: "",
-        pileCount: "",
-        drilledPile: "",
-        concretePile: "",
+    if (activeStep === 0) {
+      const errs = reportBasicErrors(formData)
+      if (errs.length) {
+        setStepErrors(errs)
+        return
       }
-      const initialProductionSummary = {
-        machineId: formData.machineSelection.selectedMachine.id,
-        machineName: formData.machineSelection.selectedMachine.name,
-        totalProduction: "",
-        totalPileCount: "",
-        dailyPileCount: "",
-        totalCompletedPiles: "",
-        remainingPiles: "",
-        steelLoweredPiles: "",
-        concretePoured: "",
-      }
-      updateFormData("basicInfo", { ...formData.basicInfo, machines: [initialMachineData] })
-      updateFormData("productionSummary", [initialProductionSummary])
       setActiveStep(1)
-    } else if (activeStep === 2) {
-      setShowAddMachinePrompt(true)
-    } else {
-      setActiveStep((prev) => prev + 1)
+      return
     }
+    if (activeStep === 1) {
+      const errs = reportProductionErrors(formData)
+      if (errs.length) {
+        setStepErrors(errs)
+        return
+      }
+      setActiveStep(2)
+      return
+    }
+    setActiveStep((prev) => prev + 1)
   }
 
   const handleBack = () => setActiveStep((prev) => Math.max(0, prev - 1))
@@ -457,16 +465,119 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
       : (siteSummary?.initialPilesDone != null ? siteSummary.initialPilesDone : 0)
 
   const renderStepContent = (step: number) => {
+    const machineNamesHeader = formData.basicInfo.machines.map((m) => m.machineName).filter(Boolean).join(", ") || "—"
+
+    const operatorReadonlyPaper = (
+      <Paper sx={{ p: 2 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>
+          Operatör girişi (bilgi amaçlı; rapor üretimini etkilemez)
+        </Typography>
+        {operatorEntriesForDate.length > 0 ? (
+          <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+            <Table size="small" sx={{ minWidth: 600 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell><strong>Makine</strong></TableCell>
+                  <TableCell><strong>Operatör</strong></TableCell>
+                  <TableCell><strong>Kazık (Ad.)</strong></TableCell>
+                  <TableCell><strong>İmalat (m)</strong></TableCell>
+                  <TableCell><strong>Boş Foraj</strong></TableCell>
+                  <TableCell><strong>Ön Foraj</strong></TableCell>
+                  <TableCell><strong>Beton Dökülen</strong></TableCell>
+                  <TableCell><strong>Not</strong></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {operatorEntriesForDate.map((row, idx) => (
+                  <TableRow key={row.id ?? idx}>
+                    <TableCell>{row.machine_name ?? "—"}</TableCell>
+                    <TableCell>{row.username ?? "—"}</TableCell>
+                    <TableCell>{row.daily_pile_count ?? "—"}</TableCell>
+                    <TableCell>{row.total_production ?? "—"}</TableCell>
+                    <TableCell>{row.empty_borehole ?? "—"}</TableCell>
+                    <TableCell>{row.pre_borehole ?? "—"}</TableCell>
+                    <TableCell>{row.concrete_poured ?? "—"}</TableCell>
+                    <TableCell sx={{ maxWidth: 180 }}>{row.note ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Box>
+        ) : (
+          <Alert severity="info">
+            Bu şantiye ve tarih için henüz operatör girişi yok. Üretim özeti aşağıda şantiye sorumlusu tarafından girilir.
+          </Alert>
+        )}
+      </Paper>
+    )
+
+    const productionAndPiles = (
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <ProductionSummaryStep
+          data={formData.productionSummary}
+          onChange={(d) => updateFormData("productionSummary", d)}
+          siteConcretePouredPiles={formData.siteConcretePouredPiles ?? ""}
+          onSiteConcreteChange={(v) => setFormData((p) => ({ ...p, siteConcretePouredPiles: v }))}
+          machinesAvailableToAdd={reportMachineOptions}
+          onAddMachine={(machine) => {
+            const newProductionSummary: MachineProductionSummary = {
+              machineId: machine.id,
+              machineName: machine.name,
+              totalProduction: "",
+              emptyBorehole: "",
+              preBorehole: "",
+              concretePoured: "",
+              dailyDrilledPiles: "",
+            }
+            const newBasicInfoMachine: MachineBasicInfo = {
+              machineId: machine.id,
+              machineName: machine.name,
+              machineHours: "",
+              usedFuel: "",
+              changedDiamondCount: "",
+              note: "",
+            }
+            updateFormData("productionSummary", [...formData.productionSummary, newProductionSummary])
+            updateFormData("basicInfo", { ...formData.basicInfo, machines: [...formData.basicInfo.machines, newBasicInfoMachine] })
+            updateFormData("machineSelection", {
+              ...formData.machineSelection,
+              additionalMachines: [...formData.machineSelection.additionalMachines, machine],
+              showAddMachineAfterStep2: true,
+            })
+          }}
+          projectTotalPiles={projectTotalPiles}
+          totalCompletedBeforeToday={totalCompletedBeforeToday}
+        />
+        {operatorReadonlyPaper}
+        <PileDetailsStep
+          data={formData.pileDetails}
+          onChange={(d) => updateFormData("pileDetails", d)}
+          productionSummary={formData.productionSummary}
+          siteConcretePouredPiles={formData.siteConcretePouredPiles}
+          projectTotalPiles={projectTotalPiles}
+          totalCompletedBeforeToday={totalCompletedBeforeToday}
+        />
+      </Box>
+    )
+
     if (isRestricted) {
       if (step === 0) {
         return (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
             <Paper sx={{ p: 2, background: "linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)", border: "1px solid #2196f3" }}>
-              <Typography variant="subtitle1" sx={{ color: "#1565c0", fontWeight: 600, mb: 1.5 }}>Şantiye, makine ve operatör (otomatik atandı)</Typography>
+              <Typography variant="subtitle1" sx={{ color: "#1565c0", fontWeight: 600, mb: 1.5 }}>
+                Şantiye, makineler ve operatör (otomatik atandı)
+              </Typography>
               <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 2 }}>
-                <Typography variant="body2"><strong>Şantiye:</strong> {formData.basicInfo.siteName || "—"}</Typography>
-                <Typography variant="body2"><strong>Makine:</strong> {formData.machineSelection.selectedMachine?.name || "—"}</Typography>
-                <Typography variant="body2"><strong>Operatör:</strong> {assignedOperatorNames.length ? assignedOperatorNames.join(", ") : "—"}</Typography>
+                <Typography variant="body2">
+                  <strong>Şantiye:</strong> {formData.basicInfo.siteName || "—"}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Makineler:</strong> {machineNamesHeader}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Operatör:</strong> {assignedOperatorNames.length ? assignedOperatorNames.join(", ") : "—"}
+                </Typography>
               </Box>
             </Paper>
             <BasicInfoStep
@@ -484,183 +595,95 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
               onSiteSummaryChange={(s) => setSiteSummary(s)}
               lockedSiteId={lockedSiteId ?? undefined}
             />
-            <Paper sx={{ p: 2 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>Kazık Detayları – Makine Detayları (Operatör girişi)</Typography>
-              {operatorEntriesForDate.length > 0 ? (
-                <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                  <Table size="small" sx={{ minWidth: 600 }}>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell><strong>Makine</strong></TableCell>
-                        <TableCell><strong>Operatör</strong></TableCell>
-                        <TableCell><strong>Kazık (Ad.)</strong></TableCell>
-                        <TableCell><strong>İmalat (m)</strong></TableCell>
-                        <TableCell><strong>Boş Foraj</strong></TableCell>
-                        <TableCell><strong>Ön Foraj</strong></TableCell>
-                        <TableCell><strong>Beton Dökülen</strong></TableCell>
-                        <TableCell><strong>Not</strong></TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {operatorEntriesForDate.map((row, idx) => (
-                        <TableRow key={row.id ?? idx}>
-                          <TableCell>{row.machine_name ?? "—"}</TableCell>
-                          <TableCell>{row.username ?? "—"}</TableCell>
-                          <TableCell>{row.daily_pile_count ?? "—"}</TableCell>
-                          <TableCell>{row.total_production ?? "—"}</TableCell>
-                          <TableCell>{row.empty_borehole ?? "—"}</TableCell>
-                          <TableCell>{row.pre_borehole ?? "—"}</TableCell>
-                          <TableCell>{row.concrete_poured ?? "—"}</TableCell>
-                          <TableCell sx={{ maxWidth: 180 }}>{row.note ?? "—"}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </Box>
-              ) : (
-                <Alert severity="warning">Operatör giriş yapmamıştır. Lütfen operatörün makine bilgilerini girmesini bekleyin veya raporu yine de kaydedebilirsiniz.</Alert>
-              )}
-            </Paper>
-            <PileDetailsStep
-              data={formData.pileDetails}
-              onChange={(d) => updateFormData("pileDetails", d)}
-              productionSummary={formData.productionSummary}
-              projectTotalPiles={projectTotalPiles}
-              totalCompletedBeforeToday={totalCompletedBeforeToday}
-            />
+            {productionAndPiles}
           </Box>
         )
       }
       switch (step) {
-        case 1: return (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <PersonnelStep
-              data={formData.personnel}
-              onChange={(d) => updateFormData("personnel", d)}
-              puantaj={formData.puantaj ?? []}
-              onPuantajChange={(entries) => updateFormData("puantaj", entries)}
-              siteId={formData.basicInfo.siteId}
-              tarih={formData.basicInfo.date}
+        case 1:
+          return (
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <PersonnelStep
+                data={formData.personnel}
+                onChange={(d) => updateFormData("personnel", d)}
+                puantaj={formData.puantaj ?? []}
+                onPuantajChange={(entries) => updateFormData("puantaj", entries)}
+                siteId={formData.basicInfo.siteId}
+                tarih={formData.basicInfo.date}
+              />
+              <VehiclesStep data={formData.vehicles} onChange={(d) => updateFormData("vehicles", d)} />
+            </Box>
+          )
+        case 2:
+          return (
+            <FuelStep
+              data={formData.fuel}
+              onChange={(d) => updateFormData("fuel", d)}
+              selectedMachine={formData.machineSelection.selectedMachine}
+              additionalMachines={formData.machineSelection.additionalMachines}
+              basicInfoMachines={formData.basicInfo.machines}
             />
-            <VehiclesStep data={formData.vehicles} onChange={(d) => updateFormData("vehicles", d)} />
-          </Box>
-        )
-        case 2: return (
-          <FuelStep
-            data={formData.fuel}
-            onChange={(d) => updateFormData("fuel", d)}
-            selectedMachine={formData.machineSelection.selectedMachine}
-            additionalMachines={formData.machineSelection.additionalMachines}
-            basicInfoMachines={formData.basicInfo.machines}
-          />
-        )
-        case 3: return <ExpensesStep data={formData.expenses} onChange={(d) => updateFormData("expenses", d)} iqdPerUsd={siteSummary?.iqdPerUsd} />
-        case 4: return <DailyInfoStep data={formData.dailyInfo} onChange={(d) => updateFormData("dailyInfo", d)} />
-        case 5: return <ReviewStep data={formData} onSubmit={handleSubmit} siteSummary={siteSummary ?? undefined} />
-        default: return null
+          )
+        case 3:
+          return <ExpensesStep data={formData.expenses} onChange={(d) => updateFormData("expenses", d)} iqdPerUsd={siteSummary?.iqdPerUsd} />
+        case 4:
+          return <DailyInfoStep data={formData.dailyInfo} onChange={(d) => updateFormData("dailyInfo", d)} />
+        case 5:
+          return <ReviewStep data={formData} onSubmit={handleSubmit} siteSummary={siteSummary ?? undefined} />
+        default:
+          return null
       }
     }
     switch (step) {
       case 0:
         return (
-          <MachineSelectionStep
-            data={formData.machineSelection}
-            onChange={(d) => updateFormData("machineSelection", d)}
-            machines={formData.basicInfo.siteId ? reportMachineOptions : undefined}
+          <BasicInfoStep
+            data={formData.basicInfo}
+            onChange={(d) => updateFormData("basicInfo", d)}
+            currentMachineIndex={formData.machineSelection.currentMachineIndex}
+            currentMachine={formData.basicInfo.machines[formData.machineSelection.currentMachineIndex] || null}
+            allMachines={formData.basicInfo.machines}
+            onMachineChange={(machineData) => {
+              const updatedMachines = [...formData.basicInfo.machines]
+              const idx = formData.machineSelection.currentMachineIndex
+              if (updatedMachines[idx]) updatedMachines[idx] = machineData
+              else updatedMachines.push(machineData)
+              updateFormData("basicInfo", { ...formData.basicInfo, machines: updatedMachines })
+            }}
+            onAddMachine={(machine) => {
+              const newProductionSummary: MachineProductionSummary = {
+                machineId: machine.id,
+                machineName: machine.name,
+                totalProduction: "",
+                emptyBorehole: "",
+                preBorehole: "",
+                concretePoured: "",
+                dailyDrilledPiles: "",
+              }
+              const newBasicInfoMachine: MachineBasicInfo = {
+                machineId: machine.id,
+                machineName: machine.name,
+                machineHours: "",
+                usedFuel: "",
+                changedDiamondCount: "",
+                note: "",
+              }
+              updateFormData("productionSummary", [...formData.productionSummary, newProductionSummary])
+              updateFormData("basicInfo", { ...formData.basicInfo, machines: [...formData.basicInfo.machines, newBasicInfoMachine] })
+              updateFormData("machineSelection", {
+                ...formData.machineSelection,
+                additionalMachines: [...formData.machineSelection.additionalMachines, machine],
+                showAddMachineAfterStep2: true,
+              })
+            }}
+            onMachineIndexChange={(index) => updateFormData("machineSelection", { ...formData.machineSelection, currentMachineIndex: index })}
+            onSiteSummaryChange={(s) => setSiteSummary(s)}
+            lockedSiteId={lockedSiteId}
           />
         )
       case 1:
-        return (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <BasicInfoStep
-              data={formData.basicInfo}
-              onChange={(d) => updateFormData("basicInfo", d)}
-              currentMachineIndex={formData.machineSelection.currentMachineIndex}
-              currentMachine={formData.basicInfo.machines[formData.machineSelection.currentMachineIndex] || null}
-              allMachines={formData.basicInfo.machines}
-              onMachineChange={(machineData) => {
-                const updatedMachines = [...formData.basicInfo.machines]
-                updatedMachines[formData.machineSelection.currentMachineIndex] = machineData
-                updateFormData("basicInfo", { ...formData.basicInfo, machines: updatedMachines })
-              }}
-              onAddMachine={(machine) => {
-                const newProductionSummary = { machineId: machine.id, machineName: machine.name, totalProduction: "", emptyBorehole: "", preBorehole: "", concretePoured: "" }
-                const newBasicInfoMachine = { machineId: machine.id, machineName: machine.name, machineHours: "", usedFuel: "", changedDiamondCount: "", note: "" }
-                updateFormData("productionSummary", [...formData.productionSummary, newProductionSummary])
-                updateFormData("basicInfo", { ...formData.basicInfo, machines: [...formData.basicInfo.machines, newBasicInfoMachine] })
-                updateFormData("machineSelection", { ...formData.machineSelection, additionalMachines: [...formData.machineSelection.additionalMachines, machine], showAddMachineAfterStep2: true })
-              }}
-              onMachineIndexChange={(index) => updateFormData("machineSelection", { ...formData.machineSelection, currentMachineIndex: index })}
-              onSiteSummaryChange={(s) => setSiteSummary(s)}
-              lockedSiteId={lockedSiteId}
-            />
-            <Paper sx={{ p: 2 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>Kazık Detayları – Makine Detayları (Operatör girişi)</Typography>
-              {operatorEntriesForDate.length > 0 ? (
-                <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                  <Table size="small" sx={{ minWidth: 600 }}>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell><strong>Makine</strong></TableCell>
-                        <TableCell><strong>Operatör</strong></TableCell>
-                        <TableCell><strong>Kazık (Ad.)</strong></TableCell>
-                        <TableCell><strong>İmalat (m)</strong></TableCell>
-                        <TableCell><strong>Boş Foraj</strong></TableCell>
-                        <TableCell><strong>Ön Foraj</strong></TableCell>
-                        <TableCell><strong>Beton Dökülen</strong></TableCell>
-                        <TableCell><strong>Not</strong></TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {operatorEntriesForDate.map((row, idx) => (
-                        <TableRow key={row.id ?? idx}>
-                          <TableCell>{row.machine_name ?? "—"}</TableCell>
-                          <TableCell>{row.username ?? "—"}</TableCell>
-                          <TableCell>{row.daily_pile_count ?? "—"}</TableCell>
-                          <TableCell>{row.total_production ?? "—"}</TableCell>
-                          <TableCell>{row.empty_borehole ?? "—"}</TableCell>
-                          <TableCell>{row.pre_borehole ?? "—"}</TableCell>
-                          <TableCell>{row.concrete_poured ?? "—"}</TableCell>
-                          <TableCell sx={{ maxWidth: 180 }}>{row.note ?? "—"}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </Box>
-              ) : (
-                <Alert severity="info">Bu şantiye ve tarih için henüz operatör girişi yok. Operatör makine girişi yaptığında burada görünecektir.</Alert>
-              )}
-            </Paper>
-          </Box>
-        )
-      case 2: {
-        return (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <ProductionSummaryStep
-              data={formData.productionSummary}
-              onChange={(d) => updateFormData("productionSummary", d)}
-              currentMachineIndex={formData.machineSelection.currentMachineIndex}
-              additionalMachines={formData.machineSelection.additionalMachines}
-              onAddMachine={(machine) => {
-                const newProductionSummary = { machineId: machine.id, machineName: machine.name, totalProduction: "", emptyBorehole: "", preBorehole: "", concretePoured: "" }
-                const newBasicInfoMachine = { machineId: machine.id, machineName: machine.name, machineHours: "", usedFuel: "", changedDiamondCount: "", note: "" }
-                updateFormData("productionSummary", [...formData.productionSummary, newProductionSummary])
-                updateFormData("basicInfo", { ...formData.basicInfo, machines: [...formData.basicInfo.machines, newBasicInfoMachine] })
-                updateFormData("machineSelection", { ...formData.machineSelection, additionalMachines: [...formData.machineSelection.additionalMachines, machine], showAddMachineAfterStep2: true })
-              }}
-              onMachineIndexChange={(index) => updateFormData("machineSelection", { ...formData.machineSelection, currentMachineIndex: index })}
-            />
-            <PileDetailsStep
-              data={formData.pileDetails}
-              onChange={(d) => updateFormData("pileDetails", d)}
-              productionSummary={formData.productionSummary}
-              projectTotalPiles={projectTotalPiles}
-              totalCompletedBeforeToday={totalCompletedBeforeToday}
-            />
-          </Box>
-        )
-      }
-      case 3:
+        return productionAndPiles
+      case 2:
         return (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
             <PersonnelStep
@@ -674,7 +697,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
             <VehiclesStep data={formData.vehicles} onChange={(d) => updateFormData("vehicles", d)} />
           </Box>
         )
-      case 4:
+      case 3:
         return (
           <FuelStep
             data={formData.fuel}
@@ -684,11 +707,11 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
             basicInfoMachines={formData.basicInfo.machines}
           />
         )
-      case 5:
+      case 4:
         return <ExpensesStep data={formData.expenses} onChange={(d) => updateFormData("expenses", d)} iqdPerUsd={siteSummary?.iqdPerUsd} />
-      case 6:
+      case 5:
         return <DailyInfoStep data={formData.dailyInfo} onChange={(d) => updateFormData("dailyInfo", d)} />
-      case 7:
+      case 6:
         return <ReviewStep data={formData} onSubmit={handleSubmit} siteSummary={siteSummary ?? undefined} />
       default:
         return null
@@ -767,16 +790,25 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
           </Grid>
         </Grid>
       </Paper>
-      <Dialog open={showAddMachinePrompt} onClose={() => setShowAddMachinePrompt(false)}>
-        <DialogTitle>{t("add_machine_prompt_title")}</DialogTitle>
-        <DialogContent>
-          <Typography>{t("add_machine_prompt_message")}</Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => { setShowAddMachinePrompt(false); setActiveStep(3) }} color="primary" variant="contained">{t("no_continue")}</Button>
-          <Button onClick={() => { setShowAddMachinePrompt(false); setActiveStep(0) }} color="secondary" variant="outlined">{t("yes_add_machine")}</Button>
-        </DialogActions>
-      </Dialog>
+      <Snackbar
+        open={stepErrors.length > 0}
+        autoHideDuration={8000}
+        onClose={() => setStepErrors([])}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
+      >
+        <Alert severity="warning" onClose={() => setStepErrors([])} sx={{ width: "100%", maxWidth: 560 }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+            Eksik veya hatalı bilgi
+          </Typography>
+          <Box component="ul" sx={{ m: 0, pl: 2 }}>
+            {stepErrors.map((msg, i) => (
+              <Typography component="li" key={i} variant="body2">
+                {msg}
+              </Typography>
+            ))}
+          </Box>
+        </Alert>
+      </Snackbar>
 
       {/* Taslak bulundu — yükle / iptal */}
       <Dialog open={draftSnack.open} onClose={() => setDraftSnack({ open: false })} maxWidth="xs" fullWidth>

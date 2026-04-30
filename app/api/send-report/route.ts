@@ -66,9 +66,20 @@ export async function POST(request: NextRequest) {
     // Save report to PostgreSQL
     const currentMachine = basicInfoMachines[currentIndex]
     const currentProductionSummary = productionSummary[currentIndex]
-    // Yapılan kazık sayısı: Beton Dökülen (concretePoured) = o gün yapılan; tüm makineler toplamı (kümülatif mantık)
-    const concretePouredSum = productionSummary.reduce((s: number, m: { concretePoured?: string }) => s + (parseInt(m?.concretePoured ?? "", 10) || 0), 0)
-    const dailyPileForDb = currentProductionSummary?.dailyPileCount?.trim() || (concretePouredSum ? String(concretePouredSum) : "")
+    const siteConcreteTrim = raw.siteConcretePouredPiles != null ? String(raw.siteConcretePouredPiles).trim() : ""
+    const useSiteConcrete = siteConcreteTrim !== ""
+    const concretePouredSumLegacy = productionSummary.reduce((s: number, m: { concretePoured?: string }) => s + (parseInt(m?.concretePoured ?? "", 10) || 0), 0)
+    const concretePouredSum = useSiteConcrete ? (parseInt(siteConcreteTrim, 10) || 0) : concretePouredSumLegacy
+    const dailyDrilledSum = productionSummary.reduce((s: number, m: { dailyDrilledPiles?: string }) => s + (parseInt(String(m?.dailyDrilledPiles ?? "").trim(), 10) || 0), 0)
+    const drilledAllSet =
+      productionSummary.length > 0 &&
+      productionSummary.every((m: { dailyDrilledPiles?: string }) => {
+        const t = String(m?.dailyDrilledPiles ?? "").trim()
+        return t !== "" && Number.isFinite(Number(t))
+      })
+    const dailyPileForDb = drilledAllSet
+      ? String(dailyDrilledSum)
+      : currentProductionSummary?.dailyPileCount?.trim() || (concretePouredSum ? String(concretePouredSum) : "")
     const totalPileForDb = currentProductionSummary?.totalPileCount?.trim() || dailyPileForDb
 
     const rawSiteId = formData.basicInfo?.siteId
@@ -137,7 +148,7 @@ export async function POST(request: NextRequest) {
       totalCompletedPiles: currentProductionSummary?.totalCompletedPiles || "",
       remainingPiles: remainingPilesForDb,
       steelLoweredPiles: currentProductionSummary?.steelLoweredPiles || "",
-      concretePoured: currentProductionSummary?.concretePoured || "",
+      concretePoured: String(concretePouredSum),
       engineerCount: formData.personnel.engineer,
       foremanCount: formData.personnel.foreman,
       operatorCount: formData.personnel.operator,

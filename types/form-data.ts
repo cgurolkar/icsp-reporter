@@ -34,6 +34,8 @@ export interface MachineProductionSummary {
   emptyBorehole: string // yeni
   preBorehole: string // yeni
   concretePoured: string
+  /** O gün makinenin yaptığı delgi / yapılan kazık adedi (operatörden bağımsız) */
+  dailyDrilledPiles?: string
 }
 
 export interface BasicInfo {
@@ -122,6 +124,8 @@ export interface PileDetail {
   notes: string
   /** Manager işareti: beton döküldü mü */
   concretePoured?: boolean
+  /** Birden fazla makinede bu kazık satırı hangi makinelerle ilişkili */
+  machineIds?: string[]
 }
 
 export interface PuantajEntry {
@@ -144,6 +148,8 @@ export interface FormData {
   fuel: Fuel;
   expenses: Expense[];
   productionSummary: MachineProductionSummary[];
+  /** Şantiyede o gün dökülen toplam betonlu kazık (tüm makineler) */
+  siteConcretePouredPiles?: string;
   pileDetails: PileDetail[];
   dailyInfo: DailyInfo;
   notes: string;
@@ -204,11 +210,14 @@ export const initialFormData: FormData = {
     emptyBorehole: "",
     preBorehole: "",
     concretePoured: "",
+    dailyDrilledPiles: "",
   }],
+  siteConcretePouredPiles: "",
   pileDetails: Array.from({ length: 3 }, (_, i) => ({
     pileNumber: i + 1,
     drilled: "",
     notes: "",
+    machineIds: [],
   })),
   notes: "",
 }

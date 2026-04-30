@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     const currentMachine = basicInfoMachines[currentIndex]
     const currentProductionSummary = productionSummary[currentIndex]
 
-    let projectName = (formData.basicInfo.project ?? "").trim()
+    let projectName = String(formData.basicInfo?.project ?? "").trim()
     let site: Awaited<ReturnType<typeof getSiteById>> = null
     if (siteIdForDb) {
       site = await getSiteById(siteIdForDb)
@@ -91,13 +91,25 @@ export async function POST(request: NextRequest) {
     const cumulativeTotalProduction =
       siteIdForDb && reportDateStr ? await getCumulativeTotalProduction(siteIdForDb, reportDateStr) : null
 
+    const prodRows = productionSummary as unknown as { concretePoured?: string; dailyDrilledPiles?: string; dailyPileCount?: string }[]
     const concretePoured = parseInt(String(rawReport.concrete_poured ?? ""), 10) || 0
-    const concretePouredSum = productionSummary.reduce((s: number, m: { concretePoured?: string }) => s + (parseInt(m?.concretePoured ?? "", 10) || 0), 0)
-    const dailyPileForDb =
-      currentProductionSummary?.dailyPileCount?.toString().trim() ||
-      (concretePouredSum ? String(concretePouredSum) : "") ||
-      (concretePoured ? String(concretePoured) : "")
-    const totalPileForDb = currentProductionSummary?.totalPileCount?.toString().trim() || dailyPileForDb
+    const concretePouredSumLegacy = prodRows.reduce((s, m) => s + (parseInt(String(m.concretePoured ?? "").trim(), 10) || 0), 0)
+    const rawForm = formData as Record<string, unknown>
+    const siteConcreteTrim = rawForm.siteConcretePouredPiles != null ? String(rawForm.siteConcretePouredPiles).trim() : ""
+    const useSiteConcrete = siteConcreteTrim !== ""
+    const concretePouredSum = useSiteConcrete ? (parseInt(siteConcreteTrim, 10) || 0) : (concretePouredSumLegacy || concretePoured)
+    const dailyDrilledSum = prodRows.reduce((s, m) => s + (parseInt(String(m.dailyDrilledPiles ?? "").trim(), 10) || 0), 0)
+    const drilledAllSet =
+      prodRows.length > 0 &&
+      prodRows.every((m) => {
+        const t = String(m.dailyDrilledPiles ?? "").trim()
+        return t !== "" && Number.isFinite(Number(t))
+      })
+    const curPs = currentProductionSummary as unknown as { dailyPileCount?: string; totalPileCount?: string; remainingPiles?: string } | undefined
+    const dailyPileForDb = drilledAllSet
+      ? String(dailyDrilledSum)
+      : String(curPs?.dailyPileCount ?? "").trim() || (concretePouredSum ? String(concretePouredSum) : "") || (concretePoured ? String(concretePoured) : "")
+    const totalPileForDb = String(curPs?.totalPileCount ?? "").trim() || dailyPileForDb
 
     const reportRecipients = await getMergedNotificationEmails({ siteId: siteIdForDb })
 
@@ -109,7 +121,7 @@ export async function POST(request: NextRequest) {
     }
 
     const mainReportContent = generatePDFMainReport(formData, {
-      computedRemainingPiles: currentProductionSummary?.remainingPiles ?? "",
+      computedRemainingPiles: String(curPs?.remainingPiles ?? ""),
       computedDailyPileCount: dailyPileForDb,
       concretePouredSum,
       projectStartDate,
@@ -126,18 +138,21 @@ export async function POST(request: NextRequest) {
       ? formData.expenses.reduce((s: number, e: { amount?: string | number }) => s + (parseFloat(String(e.amount ?? "0")) || 0), 0)
       : null
 
+    const fd = formData as Record<string, any>
+    const fuelMachines = Array.isArray(fd.fuel?.machines) ? fd.fuel.machines : []
+    const fuelUsedSum = fuelMachines.reduce((s: number, m: { used?: string }) => s + (parseFloat(String(m?.used ?? "")) || 0), 0)
+    const dailyFuelUsageVal = fd.fuel?.dailyUsage || (fuelUsedSum > 0 ? fuelUsedSum : null)
+
     const anomalies = detectReportAnomalies({
-      machineHours: currentMachine?.machineHours,
+      machineHours: String(currentMachine?.machineHours ?? ""),
       dailyPileCount: dailyPileForDb,
-      personnelTotal: formData.personnel?.total,
-      dailyFuelUsage:
-        formData.fuel?.dailyUsage ||
-        ((formData.fuel?.machines || []).reduce((s: number, m: { used?: string }) => s + (parseFloat(m?.used ?? "") || 0), 0) || null),
+      personnelTotal: fd.personnel?.total,
+      dailyFuelUsage: dailyFuelUsageVal,
       expenseTotal: expenseTotal || null,
-      remainingPiles: currentProductionSummary?.remainingPiles,
-      notes: formData.notes,
-      dailyNotes: formData.dailyInfo?.notes,
-      selectedMachineName: formData.machineSelection?.selectedMachine?.name,
+      remainingPiles: curPs?.remainingPiles,
+      notes: String(fd.notes ?? ""),
+      dailyNotes: String(fd.dailyInfo?.notes ?? ""),
+      selectedMachineName: String(fd.machineSelection?.selectedMachine?.name ?? ""),
     })
 
     const appUrl = process.env.NEXTAUTH_URL || process.env.APP_URL || ""
@@ -145,25 +160,23 @@ export async function POST(request: NextRequest) {
 
     const { subject: emailSubject, html: emailHtml } = buildReportNotificationEmail({
       reportId,
-      date: reportDateStr || formData.basicInfo.date,
+      date: reportDateStr || String(fd.basicInfo?.date ?? ""),
       siteName: projectName || site?.name || "Şantiye",
       siteCode: site?.code,
       project: projectName,
       submittedBy: session.username || session.role,
       dailyPileCount: dailyPileForDb,
       totalPileCount: totalPileForDb,
-      remainingPiles: currentProductionSummary?.remainingPiles,
-      concretePoured: currentProductionSummary?.concretePoured,
-      personnelTotal: formData.personnel?.total,
-      engineerCount: formData.personnel?.engineer,
-      machineHours: currentMachine?.machineHours,
-      selectedMachineName: formData.machineSelection?.selectedMachine?.name,
-      dailyFuelUsage:
-        formData.fuel?.dailyUsage ||
-        ((formData.fuel?.machines || []).reduce((s: number, m: { used?: string }) => s + (parseFloat(m?.used ?? "") || 0), 0) || null),
+      remainingPiles: curPs?.remainingPiles,
+      concretePoured: String(concretePouredSum),
+      personnelTotal: fd.personnel?.total,
+      engineerCount: fd.personnel?.engineer,
+      machineHours: String(currentMachine?.machineHours ?? ""),
+      selectedMachineName: String(fd.machineSelection?.selectedMachine?.name ?? ""),
+      dailyFuelUsage: dailyFuelUsageVal,
       expenseTotal: expenseTotal || null,
-      notes: formData.notes,
-      dailyNotes: formData.dailyInfo?.notes,
+      notes: String(fd.notes ?? ""),
+      dailyNotes: String(fd.dailyInfo?.notes ?? ""),
       anomalies,
       reportUrl,
       attachedFullReport: true,

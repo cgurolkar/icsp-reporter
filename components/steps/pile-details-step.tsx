@@ -27,13 +27,22 @@ interface PileDetailsStepProps {
   data: PileDetail[]
   onChange: (data: PileDetail[]) => void
   productionSummary?: MachineProductionSummary[]
+  /** Şantiye toplam beton dökülen kazık (üretim özeti) */
+  siteConcretePouredPiles?: string
   /** Şantiye proje özetinden gelen toplam kazık (yoksa ayarlardan alınır) */
   projectTotalPiles?: number
   /** Bugünden önce yapılan toplam kazık sayısı (son rapordaki kalan üzerinden hesaplanır) */
   totalCompletedBeforeToday?: number
 }
 
-export default function PileDetailsStep({ data, onChange, productionSummary = [], projectTotalPiles: projectTotalFromProps, totalCompletedBeforeToday = 0 }: PileDetailsStepProps) {
+export default function PileDetailsStep({
+  data,
+  onChange,
+  productionSummary = [],
+  siteConcretePouredPiles = "",
+  projectTotalPiles: projectTotalFromProps,
+  totalCompletedBeforeToday = 0,
+}: PileDetailsStepProps) {
   const { t } = useLanguage()
   const [projectTotalFromSettings, setProjectTotalFromSettings] = useState<number>(120)
 
@@ -56,20 +65,29 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
 
   const projectTotalPiles = projectTotalFromProps ?? projectTotalFromSettings
 
-  // Tüm makinelerin toplam değerlerini hesapla
   const totalProduction = productionSummary.reduce((sum, m) => sum + (parseFloat(m.totalProduction) || 0), 0)
-  const totalEmptyBorehole = productionSummary.reduce((sum, m) => sum + (parseInt(m.emptyBorehole) || 0), 0)
-  const totalPreBorehole = productionSummary.reduce((sum, m) => sum + (parseInt(m.preBorehole) || 0), 0)
-  const dailyPiles = productionSummary.reduce((sum, m) => sum + (parseInt(m.concretePoured) || 0), 0)
+  const betonToplam = parseInt(String(siteConcretePouredPiles ?? "").trim(), 10) || 0
+  const dailyPiles = betonToplam
 
   // Bugüne kadar (bugün dahil) = son rapor sonu itibarıyla yapılan + bugün yapılan
   const totalCompletedIncludingToday = totalCompletedBeforeToday + dailyPiles
   // Kalan kazık = proje toplam − bugüne kadar (bugün dahil)
   const remainingPiles = projectTotalPiles - totalCompletedIncludingToday
 
+  const machineCols = productionSummary.filter((m) => m.machineId)
+  const singleMachineId = machineCols.length === 1 ? machineCols[0].machineId : null
+
   const addPile = () => {
     const newPileNumber = Math.max(...data.map((p) => p.pileNumber), 0) + 1
-    onChange([...data, { pileNumber: newPileNumber, drilled: "", notes: "" }])
+    onChange([
+      ...data,
+      {
+        pileNumber: newPileNumber,
+        drilled: "",
+        notes: "",
+        machineIds: singleMachineId ? [singleMachineId] : [],
+      },
+    ])
   }
 
   const removePile = (index: number) => {
@@ -78,10 +96,17 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
     }
   }
 
-  const updatePile = (index: number, field: keyof PileDetail, value: string | number | boolean) => {
+  const updatePile = (index: number, field: keyof PileDetail, value: string | number | boolean | string[]) => {
     const newData = [...data]
-    newData[index] = { ...newData[index], [field]: value }
+    newData[index] = { ...newData[index], [field]: value as never }
     onChange(newData)
+  }
+
+  const togglePileMachine = (index: number, machineId: string) => {
+    const row = data[index]
+    const cur = row.machineIds ?? []
+    const next = cur.includes(machineId) ? cur.filter((id) => id !== machineId) : [...cur, machineId]
+    updatePile(index, "machineIds", next)
   }
 
   const handleKeyPress = (event: React.KeyboardEvent, index: number) => {
@@ -104,6 +129,9 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
   const yapilanKazikSayisi = dailyPiles
   const doldurulanDetaySayisi = data.filter((p) => String(p.drilled ?? "").trim() || String(p.notes ?? "").trim()).length
   const detayEksik = yapilanKazikSayisi > 0 && doldurulanDetaySayisi < yapilanKazikSayisi
+  const cokluMakine = machineCols.length > 1
+  const betonluSatirlar = data.filter((p) => p.concretePoured)
+  const betonMakineEksik = cokluMakine && betonluSatirlar.some((p) => !(p.machineIds && p.machineIds.length > 0))
 
   return (
     <Box>
@@ -156,74 +184,10 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
             {t("pile_details_warning").replace(/\{count\}/g, String(yapilanKazikSayisi)).replace(/\{entered\}/g, String(doldurulanDetaySayisi))}
           </Alert>
         )}
-
-        {/* Makine Detayları */}
-        {productionSummary.length > 0 && (
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="subtitle1" gutterBottom sx={{ color: "#e65100", fontWeight: 600, mb: 2 }}>
-              📊 {t("machine_details_title")}
-            </Typography>
-            <Table size="small" sx={{ border: "2px solid #000", backgroundColor: "white" }}>
-              <TableHead>
-                <TableRow sx={{ backgroundColor: "#f0f0f0" }}>
-                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                    {t("machine")}
-                  </TableCell>
-                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                    {t("total_production")}
-                  </TableCell>
-                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                    {t("empty_borehole")}
-                  </TableCell>
-                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                    {t("pre_borehole")}
-                  </TableCell>
-                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                    {t("concrete_poured_short")}
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {productionSummary.map((machine, index) => (
-                  <TableRow key={index}>
-                    <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                      {machine.machineName}
-                    </TableCell>
-                    <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                      {machine.totalProduction || "0"}
-                    </TableCell>
-                    <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                      {machine.emptyBorehole || "0"}
-                    </TableCell>
-                    <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                      {machine.preBorehole || "0"}
-                    </TableCell>
-                    <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                      {machine.concretePoured || "0"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {/* Toplam Satırı */}
-                <TableRow sx={{ backgroundColor: "#f9f9f9" }}>
-                  <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                    {t("total").toUpperCase()}
-                  </TableCell>
-                  <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                    {totalProduction.toFixed(2)}
-                  </TableCell>
-                  <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                    {totalEmptyBorehole}
-                  </TableCell>
-                  <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                    {totalPreBorehole}
-                  </TableCell>
-                  <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                    {dailyPiles}
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </Box>
+        {betonMakineEksik && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Beton döküldü işaretli satırlarda hangi makineye ait olduğunu en az bir makine sütunundan işaretleyin.
+          </Alert>
         )}
 
         {/* Kazık Detayları Formu */}
@@ -233,19 +197,28 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
         <Table size="small" sx={{ border: "2px solid #000", backgroundColor: "white", mb: 3 }}>
           <TableHead>
             <TableRow sx={{ backgroundColor: "#f0f0f0" }}>
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "15%" }}>
+              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "12%" }}>
                 {t("pile_short").toUpperCase()}
               </TableCell>
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "25%" }}>
+              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "18%" }}>
                 {t("drilled_short").toUpperCase()}
               </TableCell>
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "40%" }}>
+              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "28%" }}>
                 {t("notes").toUpperCase()}
               </TableCell>
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "15%" }}>
+              {cokluMakine &&
+                machineCols.map((m) => (
+                  <TableCell
+                    key={m.machineId}
+                    sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", minWidth: 72, fontSize: "0.7rem" }}
+                  >
+                    {m.machineName}
+                  </TableCell>
+                ))}
+              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "12%" }}>
                 Beton döküldü
               </TableCell>
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "10%" }}>
+              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "8%" }}>
                 {t("action").toUpperCase()}
               </TableCell>
             </TableRow>
@@ -296,6 +269,20 @@ export default function PileDetailsStep({ data, onChange, productionSummary = []
                     sx={{ "& input": { fontSize: "0.9rem" } }}
                   />
                 </TableCell>
+                {cokluMakine &&
+                  machineCols.map((m) => {
+                    const checked = (pile.machineIds ?? []).includes(m.machineId)
+                    return (
+                      <TableCell key={m.machineId} sx={{ border: "1px solid #000", textAlign: "center", p: 0.25 }}>
+                        <Checkbox
+                          size="small"
+                          checked={checked}
+                          onChange={() => togglePileMachine(index, m.machineId)}
+                          inputProps={{ "aria-label": m.machineName }}
+                        />
+                      </TableCell>
+                    )
+                  })}
                 <TableCell sx={{ border: "1px solid #000", textAlign: "center", p: 0.5 }}>
                   <FormControlLabel
                     control={

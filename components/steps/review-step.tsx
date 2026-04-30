@@ -145,34 +145,27 @@ export default function ReviewStep({ data, onSubmit, siteSummary }: ReviewStepPr
   }
 
   const generatePrintableContent = (data: FormData, summary?: SiteSummaryForForm | null) => {
-    const isArray = Array.isArray(data.productionSummary)
-    const totalProduction = isArray
-      ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseFloat(m.totalProduction) || 0), 0)
-      : data.productionSummary.totalProduction
-    const concreteSum = isArray
-      ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.concretePoured) || 0), 0)
-      : (parseInt(data.productionSummary?.concretePoured ?? "", 10) || 0)
-    const totalPileCountFromForm = isArray
-      ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.totalPileCount) || 0), 0)
-      : (parseInt(data.productionSummary?.totalPileCount ?? "", 10) || 0)
+    const ps = data.productionSummary
+    const totalProduction = ps.reduce((sum: number, m) => sum + (parseFloat(m.totalProduction) || 0), 0)
+    const siteConcreteTrim = String(data.siteConcretePouredPiles ?? "").trim()
+    const siteBetonExplicit = siteConcreteTrim !== "" ? parseInt(siteConcreteTrim, 10) || 0 : null
+    const concreteSumLegacy = ps.reduce((sum: number, m) => sum + (parseInt(m.concretePoured ?? "", 10) || 0), 0)
+    const concreteSum = siteBetonExplicit !== null ? siteBetonExplicit : concreteSumLegacy
+    const totalPileCountFromForm = ps.reduce((sum: number, m) => sum + (parseInt(String((m as any).totalPileCount ?? ""), 10) || 0), 0)
     const totalPileCount = totalPileCountFromForm > 0 ? totalPileCountFromForm : concreteSum
-    const dailyPileCountFromForm = isArray
-      ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.dailyPileCount) || 0), 0)
-      : (parseInt(data.productionSummary?.dailyPileCount ?? "", 10) || 0)
+    const dailyDrilledSum = ps.reduce((sum: number, m) => sum + (parseInt(String(m.dailyDrilledPiles ?? "").trim(), 10) || 0), 0)
+    const dailyPileCountFromForm =
+      dailyDrilledSum > 0
+        ? dailyDrilledSum
+        : ps.reduce((sum: number, m) => sum + (parseInt(String((m as any).dailyPileCount ?? ""), 10) || 0), 0)
     const dailyPileCount = dailyPileCountFromForm > 0 ? dailyPileCountFromForm : concreteSum
-    const totalCompletedPiles = isArray
-      ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.totalCompletedPiles) || 0), 0)
-      : data.productionSummary.totalCompletedPiles
-    const remainingFromForm = isArray
-      ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.remainingPiles) || 0), 0)
-      : (parseInt(data.productionSummary?.remainingPiles ?? "", 10) || 0)
+    const totalCompletedPiles = ps.reduce((sum: number, m) => sum + (parseInt(String((m as any).totalCompletedPiles ?? ""), 10) || 0), 0)
+    const remainingFromForm = ps.reduce((sum: number, m) => sum + (parseInt(String((m as any).remainingPiles ?? ""), 10) || 0), 0)
     const remainingPiles =
       summary?.remainingPiles != null && summary.remainingPiles !== ""
         ? Math.max(0, (parseInt(summary.remainingPiles, 10) || 0) - concreteSum)
         : remainingFromForm
-    const steelLoweredPiles = isArray
-      ? data.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.steelLoweredPiles) || 0), 0)
-      : data.productionSummary.steelLoweredPiles
+    const steelLoweredPiles = ps.reduce((sum: number, m) => sum + (parseInt(String((m as any).steelLoweredPiles ?? ""), 10) || 0), 0)
     const concretePoured = concreteSum
     const fx = normalizeIqdPerUsd(summary?.iqdPerUsd)
     const expTotals = sumExpensesFx(data.expenses, fx)
@@ -205,7 +198,7 @@ export default function ReviewStep({ data, onSubmit, siteSummary }: ReviewStepPr
           </div>
           <div class="info-box">
             <div class="info-label">KAZIK DELİNEN</div>
-            <div class="info-value">${Array.isArray(data.basicInfo.machines) && data.basicInfo.machines.length > 0 ? (data.basicInfo.machines[0].drilledPile ?? data.productionSummary?.[0]?.totalPileCount ?? "-") : "-"}</div>
+            <div class="info-value">${Array.isArray(data.basicInfo.machines) && data.basicInfo.machines.length > 0 ? ((data.basicInfo.machines[0] as { drilledPile?: string }).drilledPile ?? (data.productionSummary[0] as { totalPileCount?: string })?.totalPileCount ?? "-") : "-"}</div>
           </div>
         </div>
 
@@ -391,10 +384,15 @@ export default function ReviewStep({ data, onSubmit, siteSummary }: ReviewStepPr
             GÜNLÜK ÇALIŞMA RAPORU - {data.basicInfo.date}
           </Typography>
           <Typography variant="body2" sx={{ mb: 1 }}>
-            📊 Temel Bilgiler: Makine Saat ({data.basicInfo.machineHours}), Kazık İmalatı (m): {data.basicInfo.totalProduction}
+            📊 Temel Bilgiler: Makine Saat (
+            {data.basicInfo.machines?.reduce((s, m) => s + (parseFloat(String(m.machineHours)) || 0), 0) ?? 0}), Kazık İmalatı (m):{" "}
+            {data.productionSummary.reduce((s, m) => s + (parseFloat(m.totalProduction) || 0), 0)}
           </Typography>
           <Typography variant="body2" sx={{ mb: 1 }}>
-            📈 Üretim Özeti: {data.productionSummary.dailyPileCount} günlük kazık (Ad.)
+            📈 Üretim Özeti:{" "}
+            {data.productionSummary.reduce((s, m) => s + (parseInt(String(m.dailyDrilledPiles ?? "").trim(), 10) || 0), 0) ||
+              data.productionSummary.reduce((s, m) => s + (parseInt(String((m as { dailyPileCount?: string }).dailyPileCount ?? "").trim(), 10) || 0), 0)}{" "}
+            günlük kazık (Ad.)
           </Typography>
           <Typography variant="body2" sx={{ mb: 1 }}>
             👥 Personel: {data.personnel.total} toplam personel

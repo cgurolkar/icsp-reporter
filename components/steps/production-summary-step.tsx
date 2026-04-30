@@ -1,15 +1,16 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
-import { 
-  TextField, 
-  Typography, 
-  Box, 
-  Paper, 
-  Table, 
-  TableBody, 
-  TableCell, 
+import { Fragment, useMemo, useState } from "react"
+import {
+  TextField,
+  Typography,
+  Box,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
   TableRow,
   Button,
   Dialog,
@@ -20,289 +21,303 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Alert
+  Alert,
 } from "@mui/material"
 import { Add } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
 import type { MachineProductionSummary, Machine } from "@/types/form-data"
 
-// Geçici olarak makine listesi
-const AVAILABLE_MACHINES: Machine[] = [
-  { id: "1", name: "XCMG SR220", type: "Drill Rig" },
-  { id: "2", name: "SANY 285", type: "Drill Rig" },
-  { id: "3", name: "BAUER BG 25", type: "Drill Rig" },
-  { id: "4", name: "SOILMEC R-625", type: "Drill Rig" },
-]
-
 interface ProductionSummaryStepProps {
   data: MachineProductionSummary[]
   onChange: (data: MachineProductionSummary[]) => void
-  currentMachineIndex: number
-  additionalMachines: Machine[]
-  onAddMachine: (machine: Machine) => void
-  onMachineIndexChange?: (index: number) => void // Makine indeksi değişikliği
+  siteConcretePouredPiles: string
+  onSiteConcreteChange: (value: string) => void
+  /** Makine ekleme listesi (şantiye + yedek); boşsa ekleme gösterilmez */
+  machinesAvailableToAdd?: Machine[]
+  onAddMachine?: (machine: Machine) => void
+  projectTotalPiles?: number
+  totalCompletedBeforeToday?: number
 }
 
-export default function ProductionSummaryStep({ 
-  data, 
-  onChange, 
-  currentMachineIndex,
-  additionalMachines,
+function parseNum(s: string | undefined): number {
+  const n = parseFloat(String(s ?? "").trim().replace(",", "."))
+  return Number.isFinite(n) ? n : NaN
+}
+
+function parseIntSafe(s: string | undefined): number {
+  const n = parseInt(String(s ?? "").trim(), 10)
+  return Number.isFinite(n) ? n : NaN
+}
+
+export default function ProductionSummaryStep({
+  data,
+  onChange,
+  siteConcretePouredPiles,
+  onSiteConcreteChange,
+  machinesAvailableToAdd = [],
   onAddMachine,
-  onMachineIndexChange
+  projectTotalPiles,
+  totalCompletedBeforeToday = 0,
 }: ProductionSummaryStepProps) {
   const { t } = useLanguage()
   const [showAddMachineDialog, setShowAddMachineDialog] = useState(false)
   const [selectedMachineId, setSelectedMachineId] = useState("")
 
-  const currentMachine = data[currentMachineIndex]
-  const allMachines = [data[0]?.machineName, ...additionalMachines.map(m => m.name)].filter(Boolean)
+  const totalDrilled = useMemo(
+    () => data.reduce((s, m) => s + (parseIntSafe(m.dailyDrilledPiles) || 0), 0),
+    [data],
+  )
+  const totalImalatM = useMemo(
+    () => data.reduce((s, m) => s + (parseNum(m.totalProduction) || 0), 0),
+    [data],
+  )
+  const totalEmpty = useMemo(
+    () => data.reduce((s, m) => s + (parseIntSafe(m.emptyBorehole) || 0), 0),
+    [data],
+  )
+  const totalPre = useMemo(
+    () => data.reduce((s, m) => s + (parseIntSafe(m.preBorehole) || 0), 0),
+    [data],
+  )
 
-  // O gün yapılan kazık sayısı = toplam Beton Dökülen (tek kaynak; ilk makineye yazılır)
-  const dailyPileCount = data.length > 0 ? String((parseInt(data[0].concretePoured, 10) || 0) + data.slice(1).reduce((s, m) => s + (parseInt(m.concretePoured, 10) || 0), 0)) : ""
+  const betonBugun = parseIntSafe(siteConcretePouredPiles) || 0
+  const kalanKazik =
+    projectTotalPiles != null && Number.isFinite(projectTotalPiles)
+      ? Math.max(0, projectTotalPiles - totalCompletedBeforeToday - betonBugun)
+      : null
 
-  const handleDailyPileCountChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const value = event.target.value
-    const num = value.trim() === "" ? "" : value
-    const updatedData = data.map((m, i) => ({
-      ...m,
-      concretePoured: i === 0 ? num : m.concretePoured,
-      dailyPileCount: i === 0 ? num : (m as any).dailyPileCount ?? "",
-    }))
-    onChange(updatedData)
-  }
-
-  const handleChange = (field: keyof MachineProductionSummary) => (event: React.ChangeEvent<HTMLInputElement>) => {
-    const updatedData = [...data]
-    updatedData[currentMachineIndex] = {
-      ...updatedData[currentMachineIndex],
-      [field]: event.target.value,
+  const handleField =
+    (machineIndex: number, field: keyof MachineProductionSummary) => (event: React.ChangeEvent<HTMLInputElement>) => {
+      const v = event.target.value
+      const next = data.map((row, i) => (i === machineIndex ? { ...row, [field]: v } : row))
+      onChange(next)
     }
-    onChange(updatedData)
-  }
+
+  const addable = machinesAvailableToAdd.filter(
+    (m) => !data.some((row) => String(row.machineId) === String(m.id)),
+  )
 
   const handleAddMachine = () => {
-    if (selectedMachineId) {
-      const machine = AVAILABLE_MACHINES.find(m => m.id === selectedMachineId)
-      if (machine) {
-        onAddMachine(machine)
-        setSelectedMachineId("")
-        setShowAddMachineDialog(false)
-      }
+    const machine = addable.find((m) => m.id === selectedMachineId)
+    if (machine && onAddMachine) {
+      onAddMachine(machine)
+      setSelectedMachineId("")
+      setShowAddMachineDialog(false)
     }
   }
 
-  if (!currentMachine) {
+  const machineTitle = data.map((m) => m.machineName).filter(Boolean).join(" · ") || t("no_machine_selected")
+
+  if (data.length === 0) {
     return (
       <Box>
-        <Alert severity="error">
-          {t("no_machine_info")}
-        </Alert>
+        <Alert severity="error">{t("no_machine_info")}</Alert>
       </Box>
     )
   }
 
+  const rowDefs: { key: keyof MachineProductionSummary; label: string; helper?: string }[] = [
+    { key: "dailyDrilledPiles", label: "O gün yapılan kazık sayısı (delgi, Ad.)" },
+    { key: "totalProduction", label: t("total_production") },
+    { key: "preBorehole", label: t("pre_borehole") },
+    { key: "emptyBorehole", label: t("empty_borehole") },
+  ]
+
   return (
     <Box>
-      <Typography variant="h6" gutterBottom sx={{ color: "info.main", fontWeight: 600, mb: 3 }}>
-        {t("production_summary")} - {currentMachine?.machineName || t("no_machine_selected")}
+      <Typography variant="h6" gutterBottom sx={{ color: "info.main", fontWeight: 600, mb: 2 }}>
+        {t("production_summary")} — {machineTitle}
       </Typography>
-      
-      {/* Makine Seçimi */}
-      {data.length > 0 && (
-        <Paper sx={{ p: 3, background: "linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)", border: "1px solid #2196f3", mb: 3 }}>
-          <Typography variant="subtitle1" gutterBottom sx={{ color: "#1565c0", fontWeight: 600, mb: 2 }}>
-            🔧 {t("machine_selection_title")}
-          </Typography>
-          <FormControl fullWidth>
-            <InputLabel>{t("select_machine")}</InputLabel>
-            <Select
-              value={currentMachineIndex}
-              onChange={(e) => {
-                const newIndex = e.target.value as number
-                if (onMachineIndexChange) {
-                  onMachineIndexChange(newIndex)
-                }
-              }}
-              label={t("select_machine")}
+
+      <Alert severity="info" sx={{ mb: 2 }}>
+        Üretim değerleri operatör girişinden bağımsızdır. Makinede çalışma olmadıysa ilgili alanlara <strong>0</strong> yazın.
+      </Alert>
+
+      <Paper sx={{ p: 2, background: "linear-gradient(135deg, #e1f5fe 0%, #b3e5fc 100%)", border: "1px solid #03a9f4", overflowX: "auto" }}>
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: `minmax(200px, 1fr) repeat(${data.length}, minmax(140px, 1fr))`,
+            gap: 1,
+            alignItems: "stretch",
+            minWidth: 280 + data.length * 140,
+          }}
+        >
+          <Box />
+          {data.map((m) => (
+            <Typography
+              key={m.machineId}
+              variant="subtitle2"
               sx={{
-                backgroundColor: "white",
-                "& .MuiOutlinedInput-root": {
-                  backgroundColor: "white",
-                },
+                fontWeight: 700,
+                textAlign: "center",
+                py: 1,
+                px: 0.5,
+                backgroundColor: "rgba(255,255,255,0.85)",
+                borderRadius: 1,
+                border: "1px solid #0288d1",
               }}
             >
-              {data.map((machine, index) => (
-                <MenuItem key={index} value={index}>
-                  {machine.machineName || `${t("machine_n")} ${index + 1}`}
-                </MenuItem>
+              {m.machineName}
+            </Typography>
+          ))}
+
+          {rowDefs.map((row) => (
+            <Fragment key={String(row.key)}>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  fontWeight: 600,
+                  fontSize: "0.875rem",
+                  pr: 1,
+                  py: 0.5,
+                }}
+              >
+                {row.label}
+              </Box>
+              {data.map((m, colIdx) => (
+                <TextField
+                  key={`${String(row.key)}-${m.machineId}`}
+                  size="small"
+                  fullWidth
+                  value={String(m[row.key] ?? "")}
+                  onChange={handleField(colIdx, row.key)}
+                  type={row.key === "totalProduction" ? "text" : "number"}
+                  inputProps={row.key === "totalProduction" ? { inputMode: "decimal" } : { min: 0 }}
+                  sx={{
+                    "& .MuiOutlinedInput-root": { backgroundColor: "white" },
+                  }}
+                />
               ))}
-            </Select>
-          </FormControl>
-        </Paper>
-      )}
-      
-      <Paper sx={{ p: 3, background: "linear-gradient(135deg, #e1f5fe 0%, #b3e5fc 100%)", border: "1px solid #03a9f4" }}>
-        {/* O gün yapılan kazık sayısı = Beton Dökülen Kazık (Ad.) ile aynı */}
-        <Box sx={{ mb: 3 }}>
-          <TextField
-            fullWidth
-            label={t("daily_pile_count_label")}
-            value={dailyPileCount}
-            onChange={handleDailyPileCountChange}
-            helperText={t("helper_beton_pile")}
-            sx={{
-              maxWidth: 320,
-              "& .MuiOutlinedInput-root": {
-                backgroundColor: "white",
-                "&:hover fieldset": { borderColor: "info.main" },
-              },
-            }}
-          />
+            </Fragment>
+          ))}
         </Box>
-        {/* Form Fields */}
-        <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 3 }}>
+
+        <Box sx={{ mt: 3, maxWidth: 400 }}>
           <TextField
             fullWidth
-            label={t("total_production")}
-            value={currentMachine.totalProduction}
-            onChange={handleChange("totalProduction")}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                backgroundColor: "white",
-                "&:hover fieldset": { borderColor: "info.main" },
-              },
-            }}
-          />
-          <TextField
-            fullWidth
-            label={t("empty_borehole")}
-            value={currentMachine.emptyBorehole}
-            onChange={handleChange("emptyBorehole")}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                backgroundColor: "white",
-                "&:hover fieldset": { borderColor: "info.main" },
-              },
-            }}
-          />
-          <TextField
-            fullWidth
-            label={t("pre_borehole")}
-            value={currentMachine.preBorehole}
-            onChange={handleChange("preBorehole")}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                backgroundColor: "white",
-                "&:hover fieldset": { borderColor: "info.main" },
-              },
-            }}
-          />
-          <TextField
-            fullWidth
-            label={t("concrete_pile_count")}
-            value={currentMachine.concretePoured}
-            onChange={handleChange("concretePoured")}
-            placeholder={dailyPileCount || t("same_as_daily")}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                backgroundColor: "white",
-                "&:hover fieldset": { borderColor: "info.main" },
-              },
-            }}
+            label="Beton dökülen kazık (Ad.) — şantiye toplamı"
+            type="number"
+            value={siteConcretePouredPiles}
+            onChange={(e) => onSiteConcreteChange(e.target.value)}
+            helperText="Tüm makinelerin o gün döktüğü betonlu kazık adedinin toplamıdır."
+            sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "white" } }}
           />
         </Box>
 
-        {/* Preview Table */}
         <Box sx={{ mt: 3 }}>
-          <Typography variant="h6" gutterBottom sx={{ color: "info.main" }}>
+          <Typography variant="subtitle1" sx={{ color: "info.main", fontWeight: 600, mb: 1 }}>
             {t("preview")}:
           </Typography>
-          <Table size="small" sx={{ border: "2px solid #000", backgroundColor: "white" }}>
+          <Table size="small" sx={{ border: "2px solid #000", backgroundColor: "white", minWidth: 400 }}>
+            <TableHead>
+              <TableRow sx={{ backgroundColor: "#e3f2fd" }}>
+                <TableCell sx={{ border: "1px solid #000", fontWeight: "bold" }} />
+                {data.map((m) => (
+                  <TableCell key={m.machineId} sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
+                    {m.machineName}
+                  </TableCell>
+                ))}
+                <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
+                  Toplam / şantiye
+                </TableCell>
+              </TableRow>
+            </TableHead>
             <TableBody>
+              <TableRow>
+                <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+                  O gün yapılan kazık (delgi, Ad.)
+                </TableCell>
+                {data.map((m) => (
+                  <TableCell key={m.machineId} sx={{ border: "1px solid #000", textAlign: "center" }}>
+                    {m.dailyDrilledPiles ?? ""}
+                  </TableCell>
+                ))}
+                <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>{totalDrilled}</TableCell>
+              </TableRow>
               <TableRow>
                 <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
                   {t("total_production")}
                 </TableCell>
+                {data.map((m) => (
+                  <TableCell key={m.machineId} sx={{ border: "1px solid #000", textAlign: "center" }}>
+                    {m.totalProduction}
+                  </TableCell>
+                ))}
                 <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                  {currentMachine.totalProduction}
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-                  {t("empty_borehole")}
-                </TableCell>
-                <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                  {currentMachine.emptyBorehole}
+                  {totalImalatM.toFixed(2)}
                 </TableCell>
               </TableRow>
               <TableRow>
                 <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
                   {t("pre_borehole")}
                 </TableCell>
-                <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                  {currentMachine.preBorehole}
+                {data.map((m) => (
+                  <TableCell key={m.machineId} sx={{ border: "1px solid #000", textAlign: "center" }}>
+                    {m.preBorehole}
+                  </TableCell>
+                ))}
+                <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>{totalPre}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+                  {t("empty_borehole")}
                 </TableCell>
+                {data.map((m) => (
+                  <TableCell key={m.machineId} sx={{ border: "1px solid #000", textAlign: "center" }}>
+                    {m.emptyBorehole}
+                  </TableCell>
+                ))}
+                <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>{totalEmpty}</TableCell>
               </TableRow>
               <TableRow>
                 <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
                   {t("total_concrete_piles")}
                 </TableCell>
-                <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                  {currentMachine.concretePoured}
+                <TableCell
+                  colSpan={Math.max(1, data.length + 1)}
+                  sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}
+                >
+                  {siteConcretePouredPiles || "—"}
                 </TableCell>
               </TableRow>
             </TableBody>
           </Table>
         </Box>
 
-        {/* Tüm Makinelerin Toplam Değerleri */}
-        {data.length > 1 && (
-          <Box sx={{ mt: 3 }}>
-            <Typography variant="h6" gutterBottom sx={{ color: "success.main" }}>
-              📊 {t("all_machines_totals")}
-            </Typography>
-            <Table size="small" sx={{ border: "2px solid #000", backgroundColor: "#f1f8e9" }}>
-              <TableBody>
-                <TableRow>
-                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#c8e6c9" }}>
-                    {t("total_production_summary_label")}
-                  </TableCell>
-                  <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                    {data.reduce((sum, m) => sum + (parseFloat(m.totalProduction) || 0), 0).toFixed(2)}
-                  </TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#c8e6c9" }}>
-                    {t("total_empty_borehole")}
-                  </TableCell>
-                  <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                    {data.reduce((sum, m) => sum + (parseInt(m.emptyBorehole) || 0), 0)}
-                  </TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#c8e6c9" }}>
-                    {t("total_pre_borehole")}
-                  </TableCell>
-                  <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                    {data.reduce((sum, m) => sum + (parseInt(m.preBorehole) || 0), 0)}
-                  </TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#c8e6c9" }}>
-                    {t("total_concrete_piles")}
-                  </TableCell>
-                  <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                    {data.reduce((sum, m) => sum + (parseInt(m.concretePoured) || 0), 0)}
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
+        {onAddMachine && addable.length > 0 && (
+          <Box sx={{ mt: 2 }}>
+            <Button startIcon={<Add />} variant="outlined" size="small" onClick={() => setShowAddMachineDialog(true)}>
+              {t("add_extra_machine")}
+            </Button>
           </Box>
         )}
       </Paper>
 
-      {/* Makine Ekleme Dialog */}
+      <Paper sx={{ p: 2, mt: 3, background: "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)", border: "1px solid #43a047" }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5, color: "#1b5e20" }}>
+          Özet bilgiler
+        </Typography>
+        <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 1.5 }}>
+          <TextField
+            size="small"
+            label="Toplam kazık (proje)"
+            value={projectTotalPiles != null ? projectTotalPiles : "—"}
+            InputProps={{ readOnly: true }}
+          />
+          <TextField size="small" label="O gün beton dökülen kazık (Ad.)" value={betonBugun} InputProps={{ readOnly: true }} />
+          <TextField size="small" label="O gün delgisi biten kazık (Ad., toplam)" value={totalDrilled} InputProps={{ readOnly: true }} />
+          <TextField
+            size="small"
+            label="Kalan kazık sayısı (tahmini)"
+            value={kalanKazik != null ? kalanKazik : "—"}
+            InputProps={{ readOnly: true }}
+          />
+          <TextField size="small" label="Toplam imalat (m)" value={totalImalatM.toFixed(2)} InputProps={{ readOnly: true }} />
+        </Box>
+      </Paper>
+
       <Dialog open={showAddMachineDialog} onClose={() => setShowAddMachineDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{t("add_extra_machine")}</DialogTitle>
         <DialogContent>
@@ -316,30 +331,21 @@ export default function ProductionSummaryStep({
               label={t("select_machine")}
               onChange={(e) => setSelectedMachineId(e.target.value)}
             >
-              {AVAILABLE_MACHINES
-                .filter(machine => 
-                  machine.id !== data[0]?.machineId && 
-                  !additionalMachines.find(m => m.id === machine.id)
-                )
-                .map((machine) => (
-                  <MenuItem key={machine.id} value={machine.id}>
-                    {machine.name}
-                  </MenuItem>
-                ))}
+              {addable.map((machine) => (
+                <MenuItem key={machine.id} value={machine.id}>
+                  {machine.name}
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowAddMachineDialog(false)}>{t("cancel")}</Button>
-          <Button 
-            onClick={handleAddMachine} 
-            variant="contained"
-            disabled={!selectedMachineId}
-          >
+          <Button onClick={handleAddMachine} variant="contained" disabled={!selectedMachineId}>
             {t("add")}
           </Button>
         </DialogActions>
       </Dialog>
     </Box>
   )
-} 
+}

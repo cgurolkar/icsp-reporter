@@ -81,6 +81,7 @@ export function formDataFromDbReport(data: {
       image1: (r.daily_image1 as string) ?? "",
       image2: (r.daily_image2 as string) ?? "",
     },
+    siteConcretePouredPiles: String(r.concrete_poured ?? "").trim(),
   }
   return formData
 }
