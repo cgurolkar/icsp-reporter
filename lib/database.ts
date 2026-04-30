@@ -2455,8 +2455,8 @@ const PERSONEL_GOREV_RANK_SQL = `(CASE
   WHEN p.gorev ~* 'mühendis|muhendis' THEN 3
   WHEN p.gorev ~* 'formen|foreman' THEN 4
   WHEN p.gorev ~* 'operatör|operator' THEN 5
-  WHEN p.gorev ~* 'satın.*alma|satin.*alma' THEN 6
-  WHEN p.gorev ~* 'yağcı|yagci' THEN 7
+  WHEN p.gorev ~* 'satın.*alma|satin.*alma|muhasebe' THEN 6
+  WHEN p.gorev ~* 'yağcı|yagci|kaynakçı|kaynakci' THEN 7
   WHEN p.gorev ~* 'teknisyen' THEN 8
   WHEN p.gorev ~* 'işçi|isci|işci' THEN 99
   ELSE 50

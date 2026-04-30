@@ -53,8 +53,8 @@ import { compressImageFileToDataUrl } from "@/lib/image-webp-client"
 import { SortableTh, type SortDir } from "@/components/idari/SortableTh"
 
 const GOREVLER = [
-  "İşçi", "Satın Alma", "Formen", "Operatör", "Mühendis",
-  "Yağcı", "Şantiye Şefi", "Proje Müdürü",
+  "İşçi", "Satın Alma", "Muhasebe", "Formen", "Operatör", "Mühendis",
+  "Yağcı", "Kaynakçı", "Şantiye Şefi", "Proje Müdürü",
 ]
 
 const IZIN_TIPLERI = ["Yıllık", "Mazeret", "Sağlık", "Ücretsiz", "Diğer"]
