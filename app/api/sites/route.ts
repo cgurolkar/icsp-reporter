@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getAllSites, getSitesWithReportCount, createSite, initializeDatabase } from "@/lib/database"
-import { getSessionFromRequest, canAccessAdmin, canViewAllSites } from "@/lib/auth"
+import { getSessionFromRequest, canAccessAdmin, canViewAllSites, getAllowedSiteIds } from "@/lib/auth"
 
 export async function GET(request: NextRequest) {
   const session = await getSessionFromRequest(request)
@@ -13,19 +13,24 @@ export async function GET(request: NextRequest) {
     const withReportCount = searchParams.get("withReportCount") === "1"
     const includeInactive = canAccessAdmin(session.role) && searchParams.get("includeInactive") === "1"
     let siteIdParam = searchParams.get("siteId")
-    // Kullanıcı/Personel sadece kendi şantiyesini görebilir
-    if (!canViewAllSites(session.role, session) && session.siteId != null) {
-      siteIdParam = String(session.siteId)
-    }
+    const allowedSiteIds = getAllowedSiteIds(session)
     const siteIdNum = siteIdParam ? parseInt(siteIdParam, 10) : NaN
-    const filterSiteId = Number.isInteger(siteIdNum) ? siteIdNum : undefined
+    let filterSiteId = Number.isInteger(siteIdNum) ? siteIdNum : undefined
+    if (allowedSiteIds != null) {
+      if (allowedSiteIds.length === 0) {
+        return NextResponse.json([])
+      }
+      if (filterSiteId != null && !allowedSiteIds.includes(filterSiteId)) {
+        return NextResponse.json({ error: "Bu şantiye için yetkiniz yok." }, { status: 403 })
+      }
+    }
     const sites = withReportCount
       ? await getSitesWithReportCount(filterSiteId, { includeInactive })
       : await getAllSites()
-    // Kullanıcı/Personel: sadece kendi şantiyesi dönsün
-    const allowed = canViewAllSites(session.role, session)
-      ? sites
-      : (Array.isArray(sites) ? sites : []).filter((s: { id: number }) => s.id === session.siteId)
+    const allowed =
+      allowedSiteIds == null
+        ? sites
+        : (Array.isArray(sites) ? sites : []).filter((s: { id: number }) => allowedSiteIds.includes(s.id))
     const isSuperAdmin = session.role === "super_admin"
     const sanitized = (allowed as Array<Record<string, unknown>>).map((s) => {
       if (isSuperAdmin) return s

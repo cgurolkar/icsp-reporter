@@ -31,10 +31,19 @@ export async function POST(request: NextRequest) {
     await initializeDatabase()
 
     const client = await pool.connect()
-    let row: { id: number; username: string; password_hash: string; role: string; site_id: number | null; must_change_password: boolean; module_permissions: Record<string, string> | null } | null = null
+    let row: {
+      id: number
+      username: string
+      password_hash: string
+      role: string
+      site_id: number | null
+      secondary_site_id: number | null
+      must_change_password: boolean
+      module_permissions: Record<string, string> | null
+    } | null = null
     try {
       const result = await client.query(
-        `SELECT id, username, password_hash, role, site_id, must_change_password, module_permissions FROM users WHERE username = $1`,
+        `SELECT id, username, password_hash, role, site_id, secondary_site_id, must_change_password, module_permissions FROM users WHERE username = $1`,
         [username]
       )
       row = result.rows[0] || null
@@ -86,6 +95,7 @@ export async function POST(request: NextRequest) {
       username: row.username,
       role,
       siteId: row.site_id ?? null,
+      secondarySiteId: row.secondary_site_id ?? null,
       mustChangePassword: row.must_change_password === true,
       modulePermissions,
       viewAllSites,
@@ -98,7 +108,16 @@ export async function POST(request: NextRequest) {
       (typeof request.url === "string" && request.url.startsWith("https://"))
     const response = NextResponse.json({
       success: true,
-      user: { id: row.id, username: row.username, role, siteId: row.site_id ?? null, mustChangePassword: row.must_change_password === true },
+      user: {
+        id: row.id,
+        username: row.username,
+        role,
+        siteId: row.site_id ?? null,
+        secondarySiteId: row.secondary_site_id ?? null,
+        mustChangePassword: row.must_change_password === true,
+        modulePermissions,
+        viewAllSites,
+      },
     })
     response.headers.set("Set-Cookie", setSessionCookie(token, isSecureRequest))
     return response

@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSiteById, updateSite, initializeDatabase, softDeleteSite, releaseMachinesFromSite } from "@/lib/database"
-import { canAccessAdmin, canViewAllSites, getSessionFromRequest } from "@/lib/auth"
+import { canAccessAdmin, canAccessSite, getSessionFromRequest } from "@/lib/auth"
 
 export async function GET(
   request: NextRequest,
@@ -14,7 +14,7 @@ export async function GET(
     if (isNaN(siteId)) {
       return NextResponse.json({ error: "Invalid site id" }, { status: 400 })
     }
-    if (!canViewAllSites(session.role, session) && session.siteId !== siteId) {
+    if (!canAccessSite(session, siteId)) {
       return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
     }
     const site = await getSiteById(siteId)

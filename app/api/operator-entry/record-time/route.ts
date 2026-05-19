@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getSessionFromRequest, canDoMachineEntry } from "@/lib/auth"
+import { getSessionFromRequest, canDoMachineEntry, canAccessSite } from "@/lib/auth"
 import { getSiteById, getTimezoneForCountry, updateOperatorEntryTime, initializeDatabase } from "@/lib/database"
 
 /** Operatör biniş/iniş ok butonu: motor saati + bölgesel saati kaydet */
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     if (!siteId || !reportDate || !machineId || type === null) {
       return NextResponse.json({ error: "siteId, reportDate, machineId ve type (start/end) gerekli." }, { status: 400 })
     }
-    if (session.role === "operator" && session.siteId != null && session.siteId !== siteId) {
+    if (session.role === "operator" && !canAccessSite(session, siteId)) {
       return NextResponse.json({ error: "Sadece atandığınız şantiye için giriş yapabilirsiniz." }, { status: 403 })
     }
 

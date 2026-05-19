@@ -14,10 +14,32 @@ function FormContent() {
   const { user } = useAuth()
   const isRestrictedUser =
     user?.role === "user" || user?.role === "personel" || user?.role === "engineer"
+  const allowedSiteIds = (() => {
+    if (!isRestrictedUser || user?.viewAllSites) return null
+    const ids: number[] = []
+    if (user?.siteId != null) ids.push(user.siteId)
+    if (user?.secondarySiteId != null && user.secondarySiteId !== user.siteId) {
+      ids.push(user.secondarySiteId)
+    }
+    return ids
+  })()
+  const hasMultipleSites = allowedSiteIds != null && allowedSiteIds.length > 1
   const siteIdFromUrl = searchParams.get("siteId")
   const initialSiteIdFromUrl = siteIdFromUrl ? parseInt(siteIdFromUrl, 10) : undefined
-  const initialSiteId = isRestrictedUser && user?.siteId != null ? user.siteId : initialSiteIdFromUrl
-  const lockedSiteId = isRestrictedUser ? user?.siteId ?? undefined : undefined
+  const urlSiteAllowed =
+    initialSiteIdFromUrl != null &&
+    !Number.isNaN(initialSiteIdFromUrl) &&
+    (allowedSiteIds == null || allowedSiteIds.includes(initialSiteIdFromUrl))
+  const initialSiteId =
+    isRestrictedUser && !hasMultipleSites && user?.siteId != null
+      ? user.siteId
+      : urlSiteAllowed
+        ? initialSiteIdFromUrl
+        : isRestrictedUser && user?.siteId != null
+          ? user.siteId
+          : initialSiteIdFromUrl
+  const lockedSiteId =
+    isRestrictedUser && !hasMultipleSites ? user?.siteId ?? undefined : undefined
   const [initialSiteName, setInitialSiteName] = useState<string>("")
 
   useEffect(() => {

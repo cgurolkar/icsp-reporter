@@ -355,6 +355,15 @@ async function _doInitializeDatabase() {
 
     await client.query(`
       DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'secondary_site_id') THEN
+          ALTER TABLE users ADD COLUMN secondary_site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'users secondary_site_id: %', SQLERRM;
+      END $$
+    `)
+
+    await client.query(`
+      DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'module_permissions') THEN
           ALTER TABLE users ADD COLUMN module_permissions JSONB DEFAULT '{}'::jsonb;
         END IF;

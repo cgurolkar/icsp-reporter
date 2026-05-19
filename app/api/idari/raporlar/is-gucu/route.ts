@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getSessionFromRequest } from "@/lib/auth"
-import { canAccessIdari } from "@/lib/auth"
+import { getSessionFromRequest, canAccessIdari, canAccessSite } from "@/lib/auth"
 import { initializeDatabase, getIsGucuRaporu } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
@@ -13,7 +12,7 @@ export async function GET(request: NextRequest) {
   const bitis = searchParams.get("bitis")?.trim().slice(0, 10)
   const siteId = siteIdParam ? parseInt(siteIdParam, 10) : NaN
   if (!siteId || !baslangic || !bitis) return NextResponse.json({ error: "siteId, baslangic ve bitis gerekli." }, { status: 400 })
-  if (session.role !== "admin" && session.role !== "manager" && session.siteId !== siteId) {
+  if (!canAccessSite(session, siteId)) {
     return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   }
   try {

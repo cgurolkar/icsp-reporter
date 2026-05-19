@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getWorkReportById, getOperatorEntriesBySiteAndDate, initializeDatabase, getSiteById, getCumulativeTotalProduction } from "@/lib/database"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
-import { canViewAllSites, canViewReports, getSessionFromRequest } from "@/lib/auth"
+import { canAccessSite, canViewReports, getSessionFromRequest } from "@/lib/auth"
 import { formDataFromDbReport } from "@/lib/report-db-formdata"
 
 export const dynamic = "force-dynamic"
@@ -24,7 +24,7 @@ export async function GET(
     // Rapor erişim sınırı: user/personel sadece kendi şantiyesi
     const rawReport = data.report as Record<string, unknown>
     const siteId = rawReport.site_id != null ? Number(rawReport.site_id) : null
-    if (!canViewAllSites(session.role, session) && session.siteId !== siteId) {
+    if (siteId != null && !canAccessSite(session, siteId)) {
       return new NextResponse("Yetkisiz.", { status: 403 })
     }
 

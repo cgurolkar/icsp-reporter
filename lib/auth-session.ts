@@ -17,6 +17,8 @@ export interface SessionUser {
   username: string
   role: Role
   siteId: number | null
+  /** İkinci atanmış şantiye (opsiyonel) */
+  secondarySiteId?: number | null
   mustChangePassword: boolean
   /** Per-module permissions from the DB (off/view/write) */
   modulePermissions?: Record<string, string>
@@ -44,6 +46,10 @@ export async function verifyToken(token: string): Promise<SessionUser | null> {
       username: String(payload.username),
       role: payload.role as Role,
       siteId: payload.siteId != null ? Number(payload.siteId) : null,
+      secondarySiteId:
+        payload.secondarySiteId != null && payload.secondarySiteId !== ""
+          ? Number(payload.secondarySiteId)
+          : null,
       mustChangePassword: payload.mustChangePassword === true,
       modulePermissions,
       viewAllSites: payload.viewAllSites === true,

@@ -189,6 +189,7 @@ function AdminPanel() {
     email: "",
     role: "user" as string,
     siteId: "" as string | number,
+    secondarySiteId: "" as string | number,
     personelMode: "none" as "none" | "list" | "new",
     personelId: "" as string | number,
     newPersonelAd: "",
@@ -1002,6 +1003,7 @@ function AdminPanel() {
         siteId: user.site_id != null
           ? Number(user.site_id)
           : ((user.module_permissions as Record<string, string> | null)?.view_all_sites === "write" ? "genel" : ""),
+        secondarySiteId: user.secondary_site_id != null ? Number(user.secondary_site_id) : "",
         personelMode: "none",
         personelId: "",
         newPersonelAd: "",
@@ -1017,6 +1019,7 @@ function AdminPanel() {
         email: "",
         role: "user",
         siteId: "",
+        secondarySiteId: "",
         personelMode: "none",
         personelId: "",
         newPersonelAd: "",
@@ -1608,6 +1611,9 @@ function AdminPanel() {
                     <>
                       {(user as { email?: string }).email ? `${(user as { email?: string }).email} · ` : ""}
                       Şantiye: {(user as { site_name?: string }).site_name ? <strong>{(user as { site_name?: string }).site_name}</strong> : "—"}
+                      {(user as { secondary_site_name?: string }).secondary_site_name ? (
+                        <> + <strong>{(user as { secondary_site_name?: string }).secondary_site_name}</strong></>
+                      ) : null}
                       {" · "}
                       Kullanıcı tipi: {roleLabelTr(String(user.role))}
                     </>
@@ -2733,12 +2739,15 @@ function AdminPanel() {
                     setDbUserForm((p) => ({
                       ...p,
                       siteId: "genel",
+                      secondarySiteId: "",
                       modulePerms: { ...p.modulePerms, view_all_sites: "write" },
                     }))
                   } else {
                     setDbUserForm((p) => ({
                       ...p,
                       siteId: val === "" ? "" : Number(val),
+                      secondarySiteId:
+                        p.secondarySiteId !== "" && Number(p.secondarySiteId) === Number(val) ? "" : p.secondarySiteId,
                       modulePerms: { ...p.modulePerms, view_all_sites: "off" },
                     }))
                   }
@@ -2751,6 +2760,31 @@ function AdminPanel() {
                 ))}
               </Select>
             </FormControl>
+            {dbUserForm.siteId !== "" && dbUserForm.siteId !== "genel" && (
+              <FormControl fullWidth margin="dense" size="small" variant="outlined">
+                <InputLabel>İkinci şantiye (opsiyonel)</InputLabel>
+                <Select
+                  value={dbUserForm.secondarySiteId === "" ? "" : dbUserForm.secondarySiteId}
+                  label="İkinci şantiye (opsiyonel)"
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setDbUserForm((p) => ({
+                      ...p,
+                      secondarySiteId: val === "" ? "" : Number(val),
+                    }))
+                  }}
+                >
+                  <MenuItem value="">— Yok —</MenuItem>
+                  {dbSites
+                    .filter((s) => s.id !== dbUserForm.siteId)
+                    .map((s) => (
+                      <MenuItem key={s.id} value={s.id}>
+                        {s.name} ({s.code})
+                      </MenuItem>
+                    ))}
+                </Select>
+              </FormControl>
+            )}
             <FormControl fullWidth margin="dense" size="small" variant="outlined">
               <InputLabel>Kullanıcı tipi (oturum rolü)</InputLabel>
               <Select value={dbUserForm.role} label="Kullanıcı tipi (oturum rolü)" onChange={(e) => setDbUserForm((p) => ({ ...p, role: e.target.value }))}>
@@ -2870,10 +2904,24 @@ function AdminPanel() {
                   }
                 }
                 try {
-                  if (dbUserEditingId != null) {
+                  if (
+                  dbUserForm.siteId !== "" &&
+                  dbUserForm.siteId !== "genel" &&
+                  dbUserForm.secondarySiteId !== "" &&
+                  Number(dbUserForm.siteId) === Number(dbUserForm.secondarySiteId)
+                ) {
+                  alert("İkinci şantiye birinciden farklı olmalıdır.")
+                  return
+                }
+                const secondarySitePayload =
+                  dbUserForm.siteId === "" || dbUserForm.siteId === "genel" || dbUserForm.secondarySiteId === ""
+                    ? null
+                    : dbUserForm.secondarySiteId
+                if (dbUserEditingId != null) {
                     const body: Record<string, unknown> = {
                       role: dbUserForm.role,
                       siteId: (dbUserForm.siteId === "" || dbUserForm.siteId === "genel") ? null : dbUserForm.siteId,
+                      secondarySiteId: secondarySitePayload,
                       modulePermissions: dbUserForm.modulePerms,
                       email: dbUserForm.email.trim() || null,
                     }
@@ -2904,6 +2952,7 @@ function AdminPanel() {
                         password: dbUserForm.password,
                         role: dbUserForm.role,
                         siteId: (dbUserForm.siteId === "" || dbUserForm.siteId === "genel") ? null : dbUserForm.siteId,
+                        secondarySiteId: secondarySitePayload,
                         email: dbUserForm.email.trim() || null,
                         modulePermissions: dbUserForm.modulePerms,
                         personelId: personelIdToLink,

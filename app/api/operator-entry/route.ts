@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getSessionFromRequest, canDoMachineEntry, canViewAllSites } from "@/lib/auth"
+import { getSessionFromRequest, canDoMachineEntry, canAccessSite } from "@/lib/auth"
 import { saveOperatorEntry, getOperatorEntriesBySiteAndDate, initializeDatabase, getSiteById } from "@/lib/database"
 import { publishNotification } from "@/lib/notification-bus"
 
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   if (!Number.isInteger(siteId) || siteId < 1 || !reportDate) {
     return NextResponse.json({ error: "siteId ve reportDate gerekli." }, { status: 400 })
   }
-  if (!canViewAllSites(session.role, session) && session.siteId !== siteId) {
+  if (!canAccessSite(session, siteId)) {
     return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   }
   try {
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     if (!siteId || !reportDate || !machineId || !machineName) {
       return NextResponse.json({ error: "Şantiye, tarih, makine seçimi zorunludur." }, { status: 400 })
     }
-    if (session.role === "operator" && session.siteId != null && session.siteId !== siteId) {
+    if (session.role === "operator" && !canAccessSite(session, siteId)) {
       return NextResponse.json({ error: "Sadece atandığınız şantiye için giriş yapabilirsiniz." }, { status: 403 })
     }
     const pileDepths = Array.isArray(body.pileDepths)

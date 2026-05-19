@@ -5,7 +5,7 @@ import path from "path"
 import { saveWorkReport, initializeDatabase, getMergedNotificationEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativeTotalProduction } from "@/lib/database"
 import { fullReportHtmlAttachment, isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
-import { getSessionFromRequest, canDoDataEntry } from "@/lib/auth"
+import { getSessionFromRequest, canDoDataEntry, canAccessSite, getAllowedSiteIds } from "@/lib/auth"
 import { buildReportNotificationEmail, buildOperatorReportEmail } from "@/lib/email-templates"
 import { detectReportAnomalies } from "@/lib/anomaly-detection"
 import { publishNotification } from "@/lib/notification-bus"
@@ -86,15 +86,15 @@ export async function POST(request: NextRequest) {
     const siteId = rawSiteId == null || rawSiteId === "" ? null : Number(rawSiteId)
     let siteIdForDb = siteId != null && !Number.isNaN(siteId) ? siteId : null
     if (session.role === "user" || session.role === "personel" || session.role === "engineer") {
-      if (session.siteId == null) {
+      const allowed = getAllowedSiteIds(session)
+      if (allowed == null || allowed.length === 0) {
         return NextResponse.json({ error: "Size atanmış şantiye yok. Bilgi girişi yapamazsınız.", ref }, { status: 403 })
       }
-      const sessionSite = Number(session.siteId)
-      // İstemci siteId göndermeyebilir (eski taslak / yükleme yarışı); atanmış şantiye ile tamamla
+      // İstemci siteId göndermeyebilir (eski taslak / yükleme yarışı); birincil şantiye ile tamamla
       if (siteIdForDb == null) {
-        siteIdForDb = sessionSite
+        siteIdForDb = allowed[0]
       }
-      if (Number(siteIdForDb) !== sessionSite) {
+      if (!canAccessSite(session, Number(siteIdForDb))) {
         return NextResponse.json({ error: "Sadece görevli olduğunuz şantiye için rapor gönderebilirsiniz.", ref }, { status: 403 })
       }
     }

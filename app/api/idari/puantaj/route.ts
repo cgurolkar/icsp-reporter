@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
   const rows = Array.isArray(body?.rows) ? body.rows : []
 
   if (!siteId || !tarih) return NextResponse.json({ error: "siteId ve tarih gerekli." }, { status: 400 })
-  if (!canEnterTimesheet(session.role, session.siteId, siteId)) {
+  if (!canEnterTimesheet(session.role, session, siteId)) {
     return NextResponse.json({ error: "Bu şantiye için puantaj girişi yetkiniz yok." }, { status: 403 })
   }
 

@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getSessionFromRequest, canViewReports, canViewAllSites } from "@/lib/auth"
+import { getSessionFromRequest, canViewReports, canViewAllSites, canAccessSite, getAllowedSiteIds } from "@/lib/auth"
 import { getAdminDashboardSiteSummaries, initializeDatabase } from "@/lib/database"
 
 export const dynamic = "force-dynamic"
@@ -14,8 +14,17 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     let siteId: number | null = searchParams.get("siteId") ? parseInt(searchParams.get("siteId")!, 10) : null
     if (!canViewAllSites(session.role, session)) {
-      if (session.siteId == null) return NextResponse.json({ error: "Şantiye atanmamış." }, { status: 403 })
-      siteId = session.siteId
+      const allowed = getAllowedSiteIds(session)
+      if (allowed == null || allowed.length === 0) {
+        return NextResponse.json({ error: "Şantiye atanmamış." }, { status: 403 })
+      }
+      if (siteId != null && !Number.isNaN(siteId)) {
+        if (!canAccessSite(session, siteId)) {
+          return NextResponse.json({ error: "Bu şantiye için yetkiniz yok." }, { status: 403 })
+        }
+      } else {
+        siteId = allowed[0]
+      }
     } else if (siteId != null && Number.isNaN(siteId)) {
       siteId = null
     }

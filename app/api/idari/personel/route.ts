@@ -1,7 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { getSessionFromRequest } from "@/lib/auth"
-import { canAccessIdari, canManageIdariCentral, canWriteIdariModule } from "@/lib/auth"
+import { getSessionFromRequest, canAccessIdari, canManageIdariCentral, canWriteIdariModule, canAccessSite, getAllowedSiteIds } from "@/lib/auth"
 import { initializeDatabase, getPersoneller, getPersonellerCount, createPersonel, upsertPersonelAtama } from "@/lib/database"
 
 const PERSONEL_SORT_KEYS = new Set(["ad_soyad", "gorev", "gorev_yeri"])
@@ -58,12 +57,23 @@ export async function GET(request: NextRequest) {
     const sortDir = sortDirRaw === "desc" || sortDirRaw === "asc" ? (sortDirRaw as "asc" | "desc") : undefined
 
     const restrictedToOwnSite = !canManageIdariCentral(session.role)
-    if (restrictedToOwnSite && session.siteId == null) {
+    const allowed = getAllowedSiteIds(session)
+    if (restrictedToOwnSite && (allowed == null || allowed.length === 0)) {
       return NextResponse.json({ error: "Size atanmış şantiye yok." }, { status: 403 })
     }
-    const effectiveSiteId = restrictedToOwnSite
-      ? session.siteId ?? undefined
-      : (siteId && !Number.isNaN(siteId) ? siteId : undefined)
+    let effectiveSiteId: number | undefined
+    if (restrictedToOwnSite) {
+      if (siteId && !Number.isNaN(siteId)) {
+        if (!canAccessSite(session, siteId)) {
+          return NextResponse.json({ error: "Bu şantiye için yetkiniz yok." }, { status: 403 })
+        }
+        effectiveSiteId = siteId
+      } else {
+        effectiveSiteId = allowed!.length === 1 ? allowed![0] : undefined
+      }
+    } else {
+      effectiveSiteId = siteId && !Number.isNaN(siteId) ? siteId : undefined
+    }
     const opts = {
       siteId: effectiveSiteId,
       gorev,
@@ -96,10 +106,11 @@ export async function POST(request: NextRequest) {
     const data = parsed.data
     const restrictedToOwnSite = !canManageIdariCentral(session.role)
     if (restrictedToOwnSite) {
-      if (session.siteId == null) {
+      const allowedPost = getAllowedSiteIds(session)
+      if (allowedPost == null || allowedPost.length === 0) {
         return NextResponse.json({ error: "Size atanmış şantiye yok." }, { status: 403 })
       }
-      if (data.site_id != null && data.site_id !== session.siteId) {
+      if (data.site_id != null && !canAccessSite(session, data.site_id)) {
         return NextResponse.json({ error: "Sadece atanmış olduğunuz şantiye için kayıt yapabilirsiniz." }, { status: 403 })
       }
     }
@@ -128,7 +139,9 @@ export async function POST(request: NextRequest) {
       aylik_maas_iqd: data.aylik_maas_iqd ?? null,
       foto_yolu: data.foto_yolu ?? null,
     })
-    const targetSiteId = restrictedToOwnSite ? session.siteId : data.site_id
+    const targetSiteId = restrictedToOwnSite
+      ? (data.site_id != null && canAccessSite(session, data.site_id) ? data.site_id : getAllowedSiteIds(session)?.[0])
+      : data.site_id
     if (targetSiteId) {
       await upsertPersonelAtama(id, targetSiteId, data.ise_giris_tarihi ?? undefined)
     }

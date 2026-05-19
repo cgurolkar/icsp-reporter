@@ -2,8 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import path from "path"
 import fs from "fs"
 import { z } from "zod"
-import { getSessionFromRequest } from "@/lib/auth"
-import { canAccessIdari, canManageIdariCentral } from "@/lib/auth"
+import { getSessionFromRequest, canAccessIdari, canManageIdariCentral, canAccessSite } from "@/lib/auth"
 import { initializeDatabase, getIslemler, createIslem } from "@/lib/database"
 
 const IslemSchema = z.object({
@@ -44,7 +43,7 @@ export async function GET(request: NextRequest) {
   const baslangic = searchParams.get("baslangic")?.trim().slice(0, 10)
   const bitis = searchParams.get("bitis")?.trim().slice(0, 10)
   const siteId = siteIdParam ? parseInt(siteIdParam, 10) : undefined
-  if (session.role !== "admin" && session.role !== "manager" && session.siteId != null && siteId !== session.siteId) {
+  if (siteId != null && !Number.isNaN(siteId) && !canAccessSite(session, siteId)) {
     return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   }
   try {

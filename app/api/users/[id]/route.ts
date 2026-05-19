@@ -14,10 +14,36 @@ export async function PUT(
     await initializeDatabase();
     const userId = parseInt(params.id);
     const body = await request.json();
-    const { role, siteId, modulePermissions, personelId, password, email } = body;
+    const { role, siteId, secondarySiteId, modulePermissions, personelId, password, email } = body;
     const ALLOWED_ROLES = ['super_admin', 'admin', 'manager', 'user', 'personel', 'operator', 'engineer'];
     const requestedRole = role !== undefined && ALLOWED_ROLES.includes(role) ? role : undefined;
     const roleVal = requestedRole === 'super_admin' && session.role !== 'super_admin' ? 'admin' : requestedRole;
+
+    const siteIdNum =
+      siteId !== undefined && siteId != null && siteId !== ''
+        ? typeof siteId === 'number'
+          ? siteId
+          : parseInt(String(siteId), 10)
+        : siteId === null || siteId === ''
+          ? null
+          : undefined;
+    const secondarySiteIdNum =
+      secondarySiteId !== undefined && secondarySiteId != null && secondarySiteId !== ''
+        ? typeof secondarySiteId === 'number'
+          ? secondarySiteId
+          : parseInt(String(secondarySiteId), 10)
+        : secondarySiteId === null || secondarySiteId === ''
+          ? null
+          : undefined;
+    if (
+      siteIdNum !== undefined &&
+      secondarySiteIdNum !== undefined &&
+      siteIdNum != null &&
+      secondarySiteIdNum != null &&
+      siteIdNum === secondarySiteIdNum
+    ) {
+      return NextResponse.json({ success: false, error: 'İkinci şantiye birinciden farklı olmalıdır.' }, { status: 400 });
+    }
 
     const client = await pool.connect();
 
@@ -31,6 +57,16 @@ export async function PUT(
     if (siteId !== undefined) {
       updates.push(`site_id = $${i++}`);
       values.push(siteId != null && siteId !== '' ? (typeof siteId === 'number' ? siteId : parseInt(String(siteId), 10)) : null);
+    }
+    if (secondarySiteId !== undefined) {
+      updates.push(`secondary_site_id = $${i++}`);
+      values.push(
+        secondarySiteId != null && secondarySiteId !== ''
+          ? typeof secondarySiteId === 'number'
+            ? secondarySiteId
+            : parseInt(String(secondarySiteId), 10)
+          : null
+      );
     }
     if (modulePermissions !== undefined && typeof modulePermissions === 'object') {
       updates.push(`module_permissions = $${i++}::jsonb`);
@@ -50,7 +86,7 @@ export async function PUT(
       UPDATE users 
       SET ${updates.join(', ')}
       WHERE id = $${i}
-      RETURNING id, username, role, email, site_id, module_permissions
+      RETURNING id, username, role, email, site_id, secondary_site_id, module_permissions
     `, values);
 
     if (Object.prototype.hasOwnProperty.call(body, 'personelId')) {

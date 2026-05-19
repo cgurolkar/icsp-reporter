@@ -15,10 +15,12 @@ export async function GET(request: NextRequest) {
     const client = await pool.connect();
     
     const result = await client.query(`
-      SELECT u.id, u.username, u.role, u.email, u.created_at, u.site_id, u.module_permissions,
-        s.name AS site_name, s.code AS site_code
+      SELECT u.id, u.username, u.role, u.email, u.created_at, u.site_id, u.secondary_site_id, u.module_permissions,
+        s.name AS site_name, s.code AS site_code,
+        s2.name AS secondary_site_name, s2.code AS secondary_site_code
       FROM users u
       LEFT JOIN sites s ON u.site_id = s.id
+      LEFT JOIN sites s2 ON u.secondary_site_id = s2.id
       ORDER BY u.created_at DESC
     `);
     
@@ -45,11 +47,24 @@ export async function POST(request: NextRequest) {
   try {
     await initializeDatabase();
     const body = await request.json();
-    const { username, password, role, email, siteId, modulePermissions, personelId } = body;
+    const { username, password, role, email, siteId, secondarySiteId, modulePermissions, personelId } = body;
     const requestedRole = role && ALLOWED_ROLES.includes(role) ? role : 'user';
     const roleVal = (requestedRole === "super_admin" && session.role !== "super_admin") ? "admin" : requestedRole;
     const passwordHash = await hashPassword(password);
     const siteIdVal = siteId != null && siteId !== '' ? (typeof siteId === 'number' ? siteId : parseInt(String(siteId), 10)) : null;
+    const secondarySiteIdVal =
+      secondarySiteId != null && secondarySiteId !== ''
+        ? typeof secondarySiteId === 'number'
+          ? secondarySiteId
+          : parseInt(String(secondarySiteId), 10)
+        : null;
+    if (
+      Number.isInteger(siteIdVal) &&
+      Number.isInteger(secondarySiteIdVal) &&
+      siteIdVal === secondarySiteIdVal
+    ) {
+      return NextResponse.json({ success: false, error: 'İkinci şantiye birinciden farklı olmalıdır.' }, { status: 400 });
+    }
     const permsJson = modulePermissions && typeof modulePermissions === 'object'
       ? JSON.stringify(modulePermissions)
       : '{}';
@@ -58,10 +73,19 @@ export async function POST(request: NextRequest) {
     // Operatör: sahada hızlı giriş; admin zaten şifreyi belirliyor — ilk girişte zorunlu şifre değişimini kapat
     const mustChangePassword = roleVal !== "operator"
     const result = await client.query(`
-      INSERT INTO users (username, password_hash, role, email, site_id, module_permissions, must_change_password)
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
-      RETURNING id, username, role, email, site_id, module_permissions, must_change_password
-    `, [username, passwordHash, roleVal, email || null, Number.isInteger(siteIdVal) ? siteIdVal : null, permsJson, mustChangePassword]);
+      INSERT INTO users (username, password_hash, role, email, site_id, secondary_site_id, module_permissions, must_change_password)
+      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+      RETURNING id, username, role, email, site_id, secondary_site_id, module_permissions, must_change_password
+    `, [
+      username,
+      passwordHash,
+      roleVal,
+      email || null,
+      Number.isInteger(siteIdVal) ? siteIdVal : null,
+      Number.isInteger(secondarySiteIdVal) ? secondarySiteIdVal : null,
+      permsJson,
+      mustChangePassword,
+    ]);
 
     const newUserId = result.rows[0]?.id as number;
     if (newUserId && personelIdVal != null && !Number.isNaN(personelIdVal) && personelIdVal > 0) {

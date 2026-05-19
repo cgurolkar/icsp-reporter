@@ -109,10 +109,32 @@ export function canWriteIdariModule(session: SessionUser, moduleKey: string): bo
   return canAccessModule(session, moduleKey, "write")
 }
 
-/** Puantaj girişi: sadece o şantiyenin sorumlusu veya admin */
-export function canEnterTimesheet(role: Role, sessionSiteId: number | null | undefined, targetSiteId: number): boolean {
+/** Kullanıcının erişebildiği şantiye id listesi; null = tüm şantiyeler */
+export function getAllowedSiteIds(session: SessionUser): number[] | null {
+  if (canViewAllSites(session.role, session)) return null
+  const ids: number[] = []
+  if (session.siteId != null) ids.push(session.siteId)
+  if (
+    session.secondarySiteId != null &&
+    session.secondarySiteId !== session.siteId &&
+    !ids.includes(session.secondarySiteId)
+  ) {
+    ids.push(session.secondarySiteId)
+  }
+  return ids
+}
+
+/** Belirli bir şantiyeye erişim */
+export function canAccessSite(session: SessionUser, siteId: number): boolean {
+  if (canViewAllSites(session.role, session)) return true
+  const allowed = getAllowedSiteIds(session)
+  return allowed != null && allowed.includes(siteId)
+}
+
+/** Puantaj girişi: sadece atanmış şantiyelerin sorumlusu veya admin */
+export function canEnterTimesheet(role: Role, session: SessionUser, targetSiteId: number): boolean {
   if (role === "super_admin" || role === "admin") return true
-  return sessionSiteId != null && sessionSiteId === targetSiteId
+  return canAccessSite(session, targetSiteId)
 }
 
 /** Puantaj onaylama: merkez (admin/manager) */

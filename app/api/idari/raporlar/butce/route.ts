@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getSessionFromRequest } from "@/lib/auth"
-import { canAccessIdari } from "@/lib/auth"
+import { getSessionFromRequest, canAccessIdari, canAccessSite } from "@/lib/auth"
 import { initializeDatabase, getButceRaporu } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
@@ -11,7 +10,7 @@ export async function GET(request: NextRequest) {
   const siteIdParam = searchParams.get("siteId")
   const siteId = siteIdParam ? parseInt(siteIdParam, 10) : NaN
   if (!siteId) return NextResponse.json({ error: "siteId gerekli." }, { status: 400 })
-  if (session.role !== "admin" && session.role !== "manager" && session.siteId !== siteId) {
+  if (!canAccessSite(session, siteId)) {
     return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   }
   const baslangic = searchParams.get("baslangic")?.trim().slice(0, 10)

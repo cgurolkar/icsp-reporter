@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getSessionFromRequest } from "@/lib/auth"
-import { canAccessIdari } from "@/lib/auth"
+import { getSessionFromRequest, canAccessIdari, canAccessSite } from "@/lib/auth"
 import { initializeDatabase, getBelgeUyarilari } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
@@ -10,7 +9,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const siteIdParam = searchParams.get("siteId")
   const siteId = siteIdParam ? parseInt(siteIdParam, 10) : undefined
-  if (session.role !== "admin" && session.role !== "manager" && session.siteId != null && siteId !== session.siteId) {
+  if (siteId != null && !Number.isNaN(siteId) && !canAccessSite(session, siteId)) {
     return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   }
   try {

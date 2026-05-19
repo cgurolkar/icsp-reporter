@@ -9,6 +9,7 @@ export interface AuthUser {
   username: string
   role: Role
   siteId: number | null
+  secondarySiteId?: number | null
   mustChangePassword?: boolean
   modulePermissions?: Record<string, string>
   viewAllSites?: boolean

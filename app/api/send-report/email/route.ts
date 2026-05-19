@@ -15,7 +15,7 @@ import {
 } from "@/lib/database"
 import { fullReportHtmlAttachment, isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
-import { canViewAllSites, canDoDataEntry, getSessionFromRequest } from "@/lib/auth"
+import { canAccessSite, canDoDataEntry, getSessionFromRequest } from "@/lib/auth"
 import { buildReportNotificationEmail, buildOperatorReportEmail } from "@/lib/email-templates"
 import { detectReportAnomalies } from "@/lib/anomaly-detection"
 import { formDataFromDbReport } from "@/lib/report-db-formdata"
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     const siteId = rawReport.site_id != null ? Number(rawReport.site_id) : null
     const siteIdForDb = siteId != null && !Number.isNaN(siteId) ? siteId : null
 
-    if (!canViewAllSites(session.role, session) && session.siteId !== siteIdForDb) {
+    if (siteIdForDb != null && !canAccessSite(session, siteIdForDb)) {
       return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
     }
 
