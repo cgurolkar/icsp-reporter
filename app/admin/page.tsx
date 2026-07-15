@@ -44,8 +44,9 @@ import {
   AppBar,
   Toolbar,
   Divider,
+  CircularProgress,
 } from "@mui/material"
-import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility, Notifications, NotificationsActive, Close, Engineering, ArrowBack, Construction } from "@mui/icons-material"
+import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility, Notifications, NotificationsActive, Close, Engineering, ArrowBack, Construction, Email } from "@mui/icons-material"
 import Badge from "@mui/material/Badge"
 import Snackbar from "@mui/material/Snackbar"
 import Alert from "@mui/material/Alert"
@@ -288,6 +289,8 @@ function AdminPanel() {
   /** Super admin: varsayılan form alanlarıyla kayıt; işaretlenirse JSON’daki tüm work_reports kolonları uygulanır */
   const [reportSaveFromFullJson, setReportSaveFromFullJson] = useState(false)
   const [reportDeleteId, setReportDeleteId] = useState<number | null>(null)
+  const [reportResendingId, setReportResendingId] = useState<number | null>(null)
+  const [emailSnack, setEmailSnack] = useState<{ open: boolean; message: string; severity: "success" | "error" }>({ open: false, message: "", severity: "success" })
   const [webpMigrateLoading, setWebpMigrateLoading] = useState(false)
 
   // Super admin — operatör girişleri sekmesi
@@ -698,6 +701,37 @@ function AdminPanel() {
       setReportList([])
     } finally {
       setReportListLoading(false)
+    }
+  }
+
+  const handleResendReportEmail = async (reportId: number) => {
+    if (reportResendingId != null) return
+    setReportResendingId(reportId)
+    try {
+      const res = await fetch("/api/send-report/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ reportId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.success) {
+        setEmailSnack({
+          open: true,
+          severity: "success",
+          message: `Rapor e-postası gönderildi${Array.isArray(data.recipients) && data.recipients.length ? `: ${data.recipients.join(", ")}` : "."}`,
+        })
+      } else {
+        setEmailSnack({
+          open: true,
+          severity: "error",
+          message: data.error || data.emailError || data.detail || "E-posta gönderilemedi.",
+        })
+      }
+    } catch (e) {
+      setEmailSnack({ open: true, severity: "error", message: "Bağlantı hatası: e-posta gönderilemedi." })
+    } finally {
+      setReportResendingId(null)
     }
   }
 
@@ -1926,6 +1960,15 @@ function AdminPanel() {
                       <TableCell>
                         <IconButton size="small" onClick={() => openReportPreview(Number(r.id))} title="Görüntüle" sx={{ color: "#1976d2" }}>
                           <Visibility />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleResendReportEmail(Number(r.id))}
+                          disabled={reportResendingId != null}
+                          title="E-posta gönder"
+                          sx={{ color: "#2e7d32" }}
+                        >
+                          {reportResendingId === Number(r.id) ? <CircularProgress size={18} /> : <Email />}
                         </IconButton>
                         <IconButton
                           size="small"
@@ -3257,6 +3300,22 @@ function AdminPanel() {
           onClick={() => { setNotifDrawerOpen(true); setNewNotifSnack((s) => ({ ...s, open: false })) }}
         >
           {newNotifSnack.message}
+        </Alert>
+      </Snackbar>
+
+      {/* Rapor e-posta gönderim sonucu */}
+      <Snackbar
+        open={emailSnack.open}
+        autoHideDuration={6000}
+        onClose={() => setEmailSnack((s) => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          severity={emailSnack.severity}
+          onClose={() => setEmailSnack((s) => ({ ...s, open: false }))}
+          sx={{ width: "100%" }}
+        >
+          {emailSnack.message}
         </Alert>
       </Snackbar>
     </Box>
