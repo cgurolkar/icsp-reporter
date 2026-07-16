@@ -1659,13 +1659,14 @@ function AdminPanel() {
                   </IconButton>
                   <IconButton
                     onClick={async () => {
-                      if (!confirm("Bu veritabanı kullanıcısını silmek istediğinize emin misiniz?")) return
+                      if (!confirm(`"${user.username}" kullanıcısını silmek istediğinize emin misiniz?`)) return
                       try {
                         const res = await fetch(`/api/users/${user.id}`, { method: "DELETE" })
-                        if (res.ok) await loadUsersAndProjects()
-                        else {
-                          const data = await res.json().catch(() => ({}))
-                          alert(data.error || "Silinemedi.")
+                        const data = await res.json().catch(() => ({}))
+                        if (res.ok) {
+                          await loadUsersAndProjects()
+                        } else {
+                          alert([data.error || "Silinemedi.", data.detail].filter(Boolean).join("\n"))
                         }
                       } catch {
                         alert("İstek gönderilemedi.")

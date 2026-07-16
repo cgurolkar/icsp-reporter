@@ -135,14 +135,73 @@ export async function DELETE(
     await initializeDatabase();
     const client = await pool.connect();
     try {
+      await client.query('BEGIN');
+
+      const target = await client.query(`SELECT id, role, username FROM users WHERE id = $1`, [userId]);
+      if (target.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı.' }, { status: 404 });
+      }
+
+      // Son super_admin silinmesin
+      if (target.rows[0].role === 'super_admin') {
+        const saCount = await client.query(
+          `SELECT COUNT(*)::int AS c FROM users WHERE role = 'super_admin'`
+        );
+        if ((saCount.rows[0]?.c ?? 0) <= 1) {
+          await client.query('ROLLBACK');
+          return NextResponse.json(
+            { success: false, error: 'Son super admin hesabı silinemez.' },
+            { status: 400 }
+          );
+        }
+      }
+
+      // FK’ler ON DELETE SET NULL/CASCADE olmayan tablolar: önce bağlantıyı kopar
+      // (aksi halde rapor/harcama/puantaj oluşturmuş kullanıcılar silinemez)
       await client.query(`UPDATE personeller SET user_id = NULL WHERE user_id = $1`, [userId]);
-      await client.query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await client.query(`UPDATE islemler SET olusturan_id = NULL WHERE olusturan_id = $1`, [userId]);
+      await client.query(`UPDATE puantaj SET olusturan_id = NULL WHERE olusturan_id = $1`, [userId]);
+      await client.query(`UPDATE puantaj SET onaylayan_id = NULL WHERE onaylayan_id = $1`, [userId]);
+      await client.query(`UPDATE envanter_hareket SET olusturan_id = NULL WHERE olusturan_id = $1`, [userId]);
+      await client.query(`UPDATE personel_izin SET olusturan_id = NULL WHERE olusturan_id = $1`, [userId]);
+      await client.query(`UPDATE work_reports SET submitted_by_user_id = NULL WHERE submitted_by_user_id = $1`, [userId]);
+
+      const del = await client.query(`DELETE FROM users WHERE id = $1 RETURNING id`, [userId]);
+      if (del.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı.' }, { status: 404 });
+      }
+
+      await client.query('COMMIT');
+    } catch (inner) {
+      try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+      throw inner;
     } finally {
       client.release();
     }
     return NextResponse.json({ success: true });
   } catch (error) {
+    const e = error as { code?: string; constraint?: string; detail?: string; message?: string };
     console.error('Error deleting user:', error);
-    return NextResponse.json({ success: false, error: 'Failed to delete user' }, { status: 500 });
+    // PostgreSQL foreign_key_violation
+    if (e.code === '23503') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Bu kullanıcıya bağlı kayıtlar olduğu için silinemedi. Bağlı kayıtlar temizlendikten sonra tekrar deneyin.',
+          detail: e.detail || e.constraint || e.message,
+        },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Kullanıcı silinemedi.',
+        detail: e.message || String(error),
+      },
+      { status: 500 }
+    );
   }
 } 
