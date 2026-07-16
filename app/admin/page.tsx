@@ -143,6 +143,52 @@ type SseNotification = {
   timestamp: number
 }
 
+type DashboardPeriod =
+  | "7d"
+  | "30d"
+  | "90d"
+  | "this_month"
+  | "last_month"
+  | "this_year"
+  | "custom"
+
+function formatLocalYmd(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
+function getDashboardRangeForPeriod(period: Exclude<DashboardPeriod, "custom">, now = new Date()): { start: string; end: string } {
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const start = new Date(end)
+  if (period === "7d") {
+    start.setDate(start.getDate() - 6)
+  } else if (period === "30d") {
+    start.setDate(start.getDate() - 29)
+  } else if (period === "90d") {
+    start.setDate(start.getDate() - 89)
+  } else if (period === "this_month") {
+    start.setDate(1)
+  } else if (period === "last_month") {
+    start.setMonth(start.getMonth() - 1, 1)
+    end.setDate(0) // last day of previous month
+  } else if (period === "this_year") {
+    start.setMonth(0, 1)
+  }
+  return { start: formatLocalYmd(start), end: formatLocalYmd(end) }
+}
+
+const DASHBOARD_PERIOD_LABELS: Record<DashboardPeriod, string> = {
+  "7d": "Son 7 gün",
+  "30d": "Son 30 gün",
+  "90d": "Son 90 gün",
+  this_month: "Bu ay",
+  last_month: "Geçen ay",
+  this_year: "Bu yıl",
+  custom: "Özel aralık",
+}
+
 function AdminPanel() {
   const { user } = useAuth()
   const currentRole = String(user?.role ?? "")
@@ -263,6 +309,9 @@ function AdminPanel() {
   const [dashboardLoading, setDashboardLoading] = useState(true)
   const [dashboardSiteId, setDashboardSiteId] = useState<string>("")
   const [dashboardChartMetric, setDashboardChartMetric] = useState<"piles" | "fuel" | "production" | "expenses">("piles")
+  const [dashboardPeriod, setDashboardPeriod] = useState<DashboardPeriod>("90d")
+  const [dashboardStartDate, setDashboardStartDate] = useState(() => getDashboardRangeForPeriod("90d").start)
+  const [dashboardEndDate, setDashboardEndDate] = useState(() => getDashboardRangeForPeriod("90d").end)
   const [siteDashboardSummary, setSiteDashboardSummary] = useState<{
     sites: {
       siteId: number
@@ -364,7 +413,7 @@ function AdminPanel() {
 
   useEffect(() => {
     loadDashboard()
-  }, [dashboardSiteId])
+  }, [dashboardSiteId, dashboardStartDate, dashboardEndDate])
 
   useEffect(() => {
     if (tabValue === 2 || tabValue === 3) {
@@ -735,16 +784,30 @@ function AdminPanel() {
     }
   }
 
+  const applyDashboardPeriod = (period: DashboardPeriod) => {
+    setDashboardPeriod(period)
+    if (period === "custom") return
+    const range = getDashboardRangeForPeriod(period)
+    setDashboardStartDate(range.start)
+    setDashboardEndDate(range.end)
+  }
+
   const loadDashboard = async () => {
     setDashboardLoading(true)
     try {
-      const end = new Date()
-      const start = new Date()
-      start.setDate(start.getDate() - 90)
-      const params = new URLSearchParams({
-        startDate: start.toISOString().slice(0, 10),
-        endDate: end.toISOString().slice(0, 10),
-      })
+      let startDate = dashboardStartDate
+      let endDate = dashboardEndDate
+      if (!startDate || !endDate) {
+        const fallback = getDashboardRangeForPeriod("90d")
+        startDate = startDate || fallback.start
+        endDate = endDate || fallback.end
+      }
+      if (startDate > endDate) {
+        const tmp = startDate
+        startDate = endDate
+        endDate = tmp
+      }
+      const params = new URLSearchParams({ startDate, endDate })
       if (dashboardSiteId) params.set("siteId", dashboardSiteId)
       const siteDashParams = new URLSearchParams()
       if (dashboardSiteId) siteDashParams.set("siteId", dashboardSiteId)
@@ -1346,6 +1409,48 @@ function AdminPanel() {
                 </Grid>
               </Grid>
               <Box sx={{ mb: 2, display: "flex", flexWrap: "wrap", gap: 2, alignItems: "center" }}>
+                <FormControl size="small" sx={{ minWidth: 180 }}>
+                  <InputLabel id="dashboard-period-label">Zaman dilimi</InputLabel>
+                  <Select
+                    labelId="dashboard-period-label"
+                    label="Zaman dilimi"
+                    value={dashboardPeriod}
+                    onChange={(e) => applyDashboardPeriod(e.target.value as DashboardPeriod)}
+                    sx={{ background: "#fff" }}
+                  >
+                    <MenuItem value="7d">Son 7 gün</MenuItem>
+                    <MenuItem value="30d">Son 30 gün</MenuItem>
+                    <MenuItem value="90d">Son 90 gün</MenuItem>
+                    <MenuItem value="this_month">Bu ay</MenuItem>
+                    <MenuItem value="last_month">Geçen ay</MenuItem>
+                    <MenuItem value="this_year">Bu yıl</MenuItem>
+                    <MenuItem value="custom">Özel aralık</MenuItem>
+                  </Select>
+                </FormControl>
+                <TextField
+                  size="small"
+                  type="date"
+                  label="Başlangıç"
+                  value={dashboardStartDate}
+                  onChange={(e) => {
+                    setDashboardPeriod("custom")
+                    setDashboardStartDate(e.target.value)
+                  }}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{ background: "#fff", minWidth: 160 }}
+                />
+                <TextField
+                  size="small"
+                  type="date"
+                  label="Bitiş"
+                  value={dashboardEndDate}
+                  onChange={(e) => {
+                    setDashboardPeriod("custom")
+                    setDashboardEndDate(e.target.value)
+                  }}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{ background: "#fff", minWidth: 160 }}
+                />
                 <FormControl size="small" sx={{ minWidth: 220 }}>
                   <InputLabel id="dashboard-site-label">Şantiye</InputLabel>
                   <Select
@@ -1378,7 +1483,18 @@ function AdminPanel() {
                     <MenuItem value="expenses">Harcama (IQD)</MenuItem>
                   </Select>
                 </FormControl>
+                <Typography variant="caption" sx={{ color: "#64748b", width: "100%" }}>
+                  Grafikler: {dashboardStartDate} — {dashboardEndDate}
+                  {dashboardPeriod !== "custom" ? ` (${DASHBOARD_PERIOD_LABELS[dashboardPeriod]})` : ""}
+                </Typography>
               </Box>
+              {(dashboardStats?.daily?.length ?? 0) === 0 && (
+                <Paper sx={{ p: 3, mb: 3, background: "#fff", border: "1px solid var(--icsp-nav-border)", textAlign: "center" }}>
+                  <Typography variant="body2" sx={{ color: "#64748b" }}>
+                    Seçilen dönemde ({dashboardStartDate} — {dashboardEndDate}) grafik verisi bulunamadı.
+                  </Typography>
+                </Paper>
+              )}
               {(dashboardStats?.daily?.length ?? 0) > 0 && (
                 <>
                   <Grid container spacing={2} sx={{ mb: 3 }}>
@@ -1445,7 +1561,7 @@ function AdminPanel() {
               {(dashboardStats?.machineComparison?.length ?? 0) > 1 && (
                 <Paper sx={{ p: 2, mb: 3, background: "#fff", border: "1px solid var(--icsp-nav-border)" }}>
                   <Typography variant="subtitle2" sx={{ color: "var(--icsp-lacivert)", mb: 2, fontWeight: 600 }}>
-                    Makine karşılaştırması (son 90 gün)
+                    Makine karşılaştırması ({dashboardStartDate} — {dashboardEndDate})
                   </Typography>
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={dashboardStats?.machineComparison ?? []} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
