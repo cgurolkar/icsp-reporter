@@ -266,6 +266,7 @@ function AdminPanel() {
     projectStartDate: string
     isOngoing: boolean
     initialPilesDone: string
+    initialEmptyBorehole: string
     assignedMachineIds: string[]
     assignedOperatorIds: number[]
     assignedMachineOperators: { machineId: string; personelId: number }[]
@@ -285,6 +286,7 @@ function AdminPanel() {
     projectStartDate: "",
     isOngoing: false,
     initialPilesDone: "",
+    initialEmptyBorehole: "",
     assignedMachineIds: [],
     assignedOperatorIds: [],
     assignedMachineOperators: [],
@@ -1830,7 +1832,7 @@ function AdminPanel() {
               variant="contained"
               startIcon={<Add />}
               onClick={() => {
-                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", iqdPerUsd: "1320", contractUnitPrice: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [], isActive: true, releaseMachinesWhenClosed: true })
+                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", iqdPerUsd: "1320", contractUnitPrice: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", initialEmptyBorehole: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [], isActive: true, releaseMachinesWhenClosed: true })
                 if (personelList.length === 0) fetch("/api/idari/personel?limit=500").then((r) => (r.ok ? r.json() : { data: [] })).then((res: any) => setPersonelList(Array.isArray(res) ? res : (res.data ?? []))).catch(() => {})
                 setSiteDialogOpen(true)
               }}
@@ -1927,6 +1929,7 @@ function AdminPanel() {
                       projectStartDate: (site as any).project_start_date ? String((site as any).project_start_date).slice(0, 10) : "",
                       isOngoing: (site as any).is_ongoing === true,
                       initialPilesDone: (site as any).initial_piles_done != null ? String((site as any).initial_piles_done) : "",
+                      initialEmptyBorehole: (site as any).initial_empty_borehole != null ? String((site as any).initial_empty_borehole) : "",
                       assignedMachineIds: assignedIds,
                       assignedOperatorIds: Array.isArray((site as any).assigned_operator_ids) ? (site as any).assigned_operator_ids.map((x: unknown) => Number(x)).filter((n: number) => !Number.isNaN(n)) : [],
                       assignedMachineOperators: ops.map((o: any) => ({ machineId: String(o.machineId ?? o.machine_id ?? ""), personelId: Number(o.personelId ?? o.personel_id ?? 0) })).filter((o: { machineId: string; personelId: number }) => o.machineId && o.personelId > 0),
@@ -2547,20 +2550,32 @@ function AdminPanel() {
                   onChange={(e) => setSiteDialogData((prev) => ({ ...prev, isOngoing: e.target.checked }))}
                 />
               }
-              label="Devam Eden (rapor başlamadan önce yapılan kazık sayısı girilecek)"
+              label="Devam Eden (rapor başlamadan önce yapılan kazık sayıları girilecek)"
             />
             {siteDialogData.isOngoing && (
-              <TextField
-                margin="dense"
-                fullWidth
-                type="number"
-                label="Raporların başladığı gün yapılan toplam kazık sayısı (Ad.)"
-                value={siteDialogData.initialPilesDone}
-                onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialPilesDone: e.target.value }))}
-                placeholder="Rapor öncesi kümülatif yapılan"
-                inputProps={{ min: 0 }}
-                helperText="Kalan kazık = Proje toplamı − bu değer − günlük yapılanlar. Değişiklikten sonra şantiyeyi kaydedin; ardından alttaki düğmeyle eski raporlardaki kalan kazıkları güncelleyin."
-              />
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, mt: 0.5 }}>
+                <TextField
+                  margin="dense"
+                  fullWidth
+                  type="number"
+                  label="Rapor öncesi boş foraj (Ad.)"
+                  value={siteDialogData.initialEmptyBorehole}
+                  onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialEmptyBorehole: e.target.value }))}
+                  placeholder="Rapor başlamadan önce yapılan boş foraj"
+                  inputProps={{ min: 0 }}
+                />
+                <TextField
+                  margin="dense"
+                  fullWidth
+                  type="number"
+                  label="Rapor öncesi yapılan kazık (Ad.)"
+                  value={siteDialogData.initialPilesDone}
+                  onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialPilesDone: e.target.value }))}
+                  placeholder="Rapor öncesi kümülatif yapılan kazık"
+                  inputProps={{ min: 0 }}
+                  helperText="Kalan kazık = Proje toplamı − (boş foraj + yapılan kazık) − günlük yapılanlar. Kaydettikten sonra alttaki düğmeyle eski raporlardaki kalan kazıkları güncelleyin."
+                />
+              </Box>
             )}
             <Typography variant="body2" sx={{ mt: 2, mb: 1 }} color="text.secondary">
               Rapor PDF’inin gideceği e-posta adresleri (her satıra bir adres)
@@ -2657,6 +2672,7 @@ function AdminPanel() {
                   projectStartDate: siteDialogData.projectStartDate.trim() || null,
                   isOngoing: siteDialogData.isOngoing,
                   initialPilesDone: siteDialogData.isOngoing && siteDialogData.initialPilesDone.trim() ? parseInt(siteDialogData.initialPilesDone, 10) || null : null,
+                  initialEmptyBorehole: siteDialogData.isOngoing && siteDialogData.initialEmptyBorehole.trim() ? parseInt(siteDialogData.initialEmptyBorehole, 10) || null : null,
                   ...(isSuperAdmin ? { contractUnitPrice: siteDialogData.contractUnitPrice.trim() ? Number(siteDialogData.contractUnitPrice) : null } : {}),
                   assignedMachineIds: kazikIds,
                   assignedOperatorIds: siteDialogData.assignedOperatorIds || [],

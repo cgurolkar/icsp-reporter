@@ -123,8 +123,10 @@ export async function POST(request: NextRequest) {
       let cumulativeDoneBeforeToday = 0
       if (last?.remainingPiles != null && totalPiles != null) {
         cumulativeDoneBeforeToday = totalPiles - (parseInt(String(last.remainingPiles), 10) || 0)
-      } else if (site.is_ongoing && site.initial_piles_done != null) {
-        cumulativeDoneBeforeToday = Number(site.initial_piles_done)
+      } else if (site.is_ongoing && (site.initial_piles_done != null || site.initial_empty_borehole != null)) {
+        cumulativeDoneBeforeToday =
+          (site.initial_piles_done != null ? Number(site.initial_piles_done) : 0) +
+          (site.initial_empty_borehole != null ? Number(site.initial_empty_borehole) : 0)
       }
       const todayPiles = concretePouredSum || 0
       if (totalPiles != null) {

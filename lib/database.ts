@@ -318,6 +318,9 @@ async function _doInitializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'initial_piles_done') THEN
           ALTER TABLE sites ADD COLUMN initial_piles_done INTEGER DEFAULT NULL;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'initial_empty_borehole') THEN
+          ALTER TABLE sites ADD COLUMN initial_empty_borehole INTEGER DEFAULT NULL;
+        END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'assigned_machine_ids') THEN
           ALTER TABLE sites ADD COLUMN assigned_machine_ids JSONB DEFAULT '[]';
         END IF;
@@ -1817,6 +1820,14 @@ export async function recalculateRemainingPilesForSite(siteId: number): Promise<
     site.initial_piles_done != null && !Number.isNaN(Number(site.initial_piles_done))
       ? Number(site.initial_piles_done)
       : null
+  const initialEmptyBorehole =
+    site.initial_empty_borehole != null && !Number.isNaN(Number(site.initial_empty_borehole))
+      ? Number(site.initial_empty_borehole)
+      : null
+  const initialBaselineDone =
+    isOngoing && (initialPilesDone != null || initialEmptyBorehole != null)
+      ? (initialPilesDone ?? 0) + (initialEmptyBorehole ?? 0)
+      : null
 
   const client = await pool.connect()
   const rows: RecalculateRemainingPilesRow[] = []
@@ -1838,8 +1849,8 @@ export async function recalculateRemainingPilesForSite(siteId: number): Promise<
       let cumulativeDoneBeforeToday = 0
       if (prevRemaining != null) {
         cumulativeDoneBeforeToday = totalPiles - prevRemaining
-      } else if (isOngoing && initialPilesDone != null) {
-        cumulativeDoneBeforeToday = initialPilesDone
+      } else if (initialBaselineDone != null) {
+        cumulativeDoneBeforeToday = initialBaselineDone
       }
       let todayPiles = 0
       const dailyRaw = row.daily_pile_count != null ? String(row.daily_pile_count).trim() : ""
@@ -1951,6 +1962,7 @@ export async function createSite(data: {
   projectStartDate?: string | null
   isOngoing?: boolean
   initialPilesDone?: number | null
+  initialEmptyBorehole?: number | null
   assignedMachineIds?: string[]
   assignedOperatorIds?: number[]
   assignedMachineOperators?: { machineId: string; personelId: number }[]
@@ -1964,8 +1976,8 @@ export async function createSite(data: {
     const ops = data.assignedMachineOperators || []
     const iqdUsd = data.iqdPerUsd != null && !Number.isNaN(Number(data.iqdPerUsd)) && Number(data.iqdPerUsd) > 0 ? Number(data.iqdPerUsd) : 1320
     const result = await client.query(
-      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators, timezone, contract_unit_price, iqd_per_usd)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
+      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, initial_empty_borehole, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators, timezone, contract_unit_price, iqd_per_usd)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING *`,
       [
         data.name,
         data.code,
@@ -1979,6 +1991,7 @@ export async function createSite(data: {
         data.projectStartDate?.trim() || null,
         data.isOngoing ?? false,
         data.initialPilesDone ?? null,
+        data.initialEmptyBorehole ?? null,
         JSON.stringify(data.assignedMachineIds || []),
         JSON.stringify(data.assignedOperatorIds || []),
         JSON.stringify(ops),
@@ -2026,6 +2039,7 @@ export async function updateSite(id: number, data: {
   projectStartDate?: string | null
   isOngoing?: boolean
   initialPilesDone?: number | null
+  initialEmptyBorehole?: number | null
   assignedMachineIds?: string[]
   assignedOperatorIds?: number[]
   assignedMachineOperators?: { machineId: string; personelId: number }[]
@@ -2056,6 +2070,7 @@ export async function updateSite(id: number, data: {
     if (data.projectStartDate !== undefined) { updates.push(`project_start_date = $${i++}`); values.push(data.projectStartDate?.trim() || null) }
     if (data.isOngoing !== undefined) { updates.push(`is_ongoing = $${i++}`); values.push(data.isOngoing) }
     if (data.initialPilesDone !== undefined) { updates.push(`initial_piles_done = $${i++}`); values.push(data.initialPilesDone) }
+    if (data.initialEmptyBorehole !== undefined) { updates.push(`initial_empty_borehole = $${i++}`); values.push(data.initialEmptyBorehole) }
     if (data.assignedMachineIds !== undefined) { updates.push(`assigned_machine_ids = $${i++}`); values.push(JSON.stringify(data.assignedMachineIds)) }
     if (data.assignedOperatorIds !== undefined) { updates.push(`assigned_operator_ids = $${i++}`); values.push(JSON.stringify(data.assignedOperatorIds)) }
     if (data.assignedMachineOperators !== undefined) { updates.push(`assigned_machine_operators = $${i++}`); values.push(JSON.stringify(data.assignedMachineOperators)) }

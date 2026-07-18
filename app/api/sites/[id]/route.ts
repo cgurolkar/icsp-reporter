@@ -43,7 +43,7 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid site id" }, { status: 400 })
     }
     const body = await request.json()
-    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, budget, timezone, contractUnitPrice, iqdPerUsd, releaseMachinesFromSite: releaseMachinesFlag } = body
+    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, initialEmptyBorehole, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, budget, timezone, contractUnitPrice, iqdPerUsd, releaseMachinesFromSite: releaseMachinesFlag } = body
     const site = await updateSite(siteId, {
       ...(name !== undefined && { name }),
       ...(code !== undefined && { code }),
@@ -58,6 +58,7 @@ export async function PUT(
       ...(projectStartDate !== undefined && { projectStartDate: projectStartDate != null ? String(projectStartDate).trim() || null : undefined }),
       ...(isOngoing !== undefined && { isOngoing: isOngoing === true }),
       ...(initialPilesDone !== undefined && { initialPilesDone: initialPilesDone != null ? (typeof initialPilesDone === "number" ? initialPilesDone : parseInt(String(initialPilesDone), 10) || null) : null }),
+      ...(initialEmptyBorehole !== undefined && { initialEmptyBorehole: initialEmptyBorehole != null ? (typeof initialEmptyBorehole === "number" ? initialEmptyBorehole : parseInt(String(initialEmptyBorehole), 10) || null) : null }),
       ...(assignedMachineIds !== undefined && { assignedMachineIds: Array.isArray(assignedMachineIds) ? assignedMachineIds.filter((x: unknown) => typeof x === "string") : [] }),
       ...(assignedOperatorIds !== undefined && { assignedOperatorIds: Array.isArray(assignedOperatorIds) ? assignedOperatorIds.map((x: unknown) => typeof x === "number" ? x : parseInt(String(x), 10)).filter((n: number) => !Number.isNaN(n)) : [] }),
       ...(assignedMachineOperators !== undefined && { assignedMachineOperators: Array.isArray(assignedMachineOperators) ? assignedMachineOperators.filter((x: unknown) => x != null && typeof (x as any).machineId === "string" && typeof (x as any).personelId === "number") : [] }),

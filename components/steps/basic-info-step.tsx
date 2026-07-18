@@ -19,6 +19,7 @@ export interface SiteSummaryForForm {
   projectStartDate?: string | null
   isOngoing?: boolean
   initialPilesDone?: number | null
+  initialEmptyBorehole?: number | null
   /** 1 USD = kaç IQD (şantiye kuru) */
   iqdPerUsd?: number | null
 }
@@ -50,7 +51,7 @@ export default function BasicInfoStep({
 }: BasicInfoStepProps) {
   const { t } = useLanguage()
   const [sites, setSites] = useState<SiteOption[]>([])
-  const [siteSummary, setSiteSummary] = useState<SiteSummaryForForm>({ totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, iqdPerUsd: null })
+  const [siteSummary, setSiteSummary] = useState<SiteSummaryForForm>({ totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, initialEmptyBorehole: null, iqdPerUsd: null })
 
   useEffect(() => {
     fetch("/api/sites")
@@ -61,14 +62,14 @@ export default function BasicInfoStep({
 
   useEffect(() => {
     if (data.siteId == null) {
-      const empty: SiteSummaryForForm = { totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, iqdPerUsd: null }
+      const empty: SiteSummaryForForm = { totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, initialEmptyBorehole: null, iqdPerUsd: null }
       setSiteSummary(empty)
       onSiteSummaryChange?.(empty)
       return
     }
     fetch(`/api/sites/${data.siteId}/last-report`)
       .then((res) => (res.ok ? res.json() : {}))
-      .then((d: { totalPiles?: number | null; lastDate?: string | null; remainingPiles?: string | null; projectStartDate?: string | null; isOngoing?: boolean; initialPilesDone?: number | null; iqd_per_usd?: number | null }) => {
+      .then((d: { totalPiles?: number | null; lastDate?: string | null; remainingPiles?: string | null; projectStartDate?: string | null; isOngoing?: boolean; initialPilesDone?: number | null; initialEmptyBorehole?: number | null; iqd_per_usd?: number | null }) => {
         const next: SiteSummaryForForm = {
           totalPiles: d.totalPiles ?? null,
           lastDate: d.lastDate ?? null,
@@ -76,13 +77,14 @@ export default function BasicInfoStep({
           projectStartDate: d.projectStartDate ?? null,
           isOngoing: d.isOngoing === true,
           initialPilesDone: d.initialPilesDone ?? null,
+          initialEmptyBorehole: d.initialEmptyBorehole ?? null,
           iqdPerUsd: d.iqd_per_usd != null && Number(d.iqd_per_usd) > 0 ? Number(d.iqd_per_usd) : 1320,
         }
         setSiteSummary(next)
         onSiteSummaryChange?.(next)
       })
       .catch(() => {
-        const empty: SiteSummaryForForm = { totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, iqdPerUsd: null }
+        const empty: SiteSummaryForForm = { totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, initialEmptyBorehole: null, iqdPerUsd: null }
         setSiteSummary(empty)
         onSiteSummaryChange?.(empty)
       })
@@ -170,7 +172,7 @@ export default function BasicInfoStep({
             </Typography>
           )}
         </Box>
-        {(siteSummary.totalPiles != null || siteSummary.remainingPiles != null || siteSummary.initialPilesDone != null) && (
+        {(siteSummary.totalPiles != null || siteSummary.remainingPiles != null || siteSummary.initialPilesDone != null || siteSummary.initialEmptyBorehole != null) && (
           <Box sx={{ mt: 2 }}>
             <Typography variant="subtitle2" sx={{ color: "#e65100", fontWeight: 600, mb: 1.5 }}>
               {t("project_summary")}
@@ -207,6 +209,16 @@ export default function BasicInfoStep({
                   sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#fff8e1" } }}
                 />
               )}
+              {siteSummary.isOngoing && siteSummary.initialEmptyBorehole != null && (
+                <TextField
+                  fullWidth
+                  label={t("initial_empty_borehole_label")}
+                  value={siteSummary.initialEmptyBorehole}
+                  InputProps={{ readOnly: true }}
+                  size="small"
+                  sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#e3f2fd" } }}
+                />
+              )}
               {siteSummary.isOngoing && siteSummary.initialPilesDone != null && (
                 <TextField
                   fullWidth
@@ -219,13 +231,16 @@ export default function BasicInfoStep({
               )}
               {siteSummary.totalPiles != null && (() => {
                 const remainingValid = siteSummary.remainingPiles != null && String(siteSummary.remainingPiles).trim() !== ""
-                const initialDone = siteSummary.initialPilesDone != null
+                const initialBaseline =
+                  siteSummary.initialPilesDone != null || siteSummary.initialEmptyBorehole != null
+                    ? (siteSummary.initialPilesDone ?? 0) + (siteSummary.initialEmptyBorehole ?? 0)
+                    : null
                 const buguneKadar = remainingValid
                   ? siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles!, 10) || 0)
-                  : (initialDone ? siteSummary.initialPilesDone! : null)
+                  : initialBaseline
                 const kalan = remainingValid
                   ? siteSummary.remainingPiles
-                  : (initialDone ? String(siteSummary.totalPiles - siteSummary.initialPilesDone!) : null)
+                  : (initialBaseline != null ? String(siteSummary.totalPiles - initialBaseline) : null)
                 return (
                   <>
                     <TextField

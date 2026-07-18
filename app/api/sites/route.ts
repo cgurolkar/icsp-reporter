@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
     const projectStartDate = body.projectStartDate != null ? String(body.projectStartDate).trim() || null : null
     const isOngoing = body.isOngoing === true
     const initialPilesDone = body.initialPilesDone != null ? (typeof body.initialPilesDone === "number" ? body.initialPilesDone : parseInt(String(body.initialPilesDone), 10) || null) : null
+    const initialEmptyBorehole = body.initialEmptyBorehole != null ? (typeof body.initialEmptyBorehole === "number" ? body.initialEmptyBorehole : parseInt(String(body.initialEmptyBorehole), 10) || null) : null
     const assignedMachineIds = Array.isArray(body.assignedMachineIds) ? body.assignedMachineIds.filter((x: unknown) => typeof x === "string") : []
     const assignedOperatorIds = Array.isArray(body.assignedOperatorIds) ? body.assignedOperatorIds.filter((x: unknown) => typeof x === "number" || (typeof x === "string" && /^\d+$/.test(x))).map(Number) : []
     const assignedMachineOperators = Array.isArray(body.assignedMachineOperators)
@@ -80,7 +81,7 @@ export async function POST(request: NextRequest) {
     if (!name || !code) {
       return NextResponse.json({ error: "Şantiye adı ve kod zorunludur." }, { status: 400 })
     }
-    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, timezone, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, contractUnitPrice, iqdPerUsd })
+    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, timezone, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, initialEmptyBorehole, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, contractUnitPrice, iqdPerUsd })
     if (session.role === "super_admin") return NextResponse.json(site)
     const { contract_unit_price, ...rest } = site as Record<string, unknown>
     return NextResponse.json(rest)
