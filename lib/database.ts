@@ -1820,14 +1820,6 @@ export async function recalculateRemainingPilesForSite(siteId: number): Promise<
     site.initial_piles_done != null && !Number.isNaN(Number(site.initial_piles_done))
       ? Number(site.initial_piles_done)
       : null
-  const initialEmptyBorehole =
-    site.initial_empty_borehole != null && !Number.isNaN(Number(site.initial_empty_borehole))
-      ? Number(site.initial_empty_borehole)
-      : null
-  const initialBaselineDone =
-    isOngoing && (initialPilesDone != null || initialEmptyBorehole != null)
-      ? (initialPilesDone ?? 0) + (initialEmptyBorehole ?? 0)
-      : null
 
   const client = await pool.connect()
   const rows: RecalculateRemainingPilesRow[] = []
@@ -1849,8 +1841,8 @@ export async function recalculateRemainingPilesForSite(siteId: number): Promise<
       let cumulativeDoneBeforeToday = 0
       if (prevRemaining != null) {
         cumulativeDoneBeforeToday = totalPiles - prevRemaining
-      } else if (initialBaselineDone != null) {
-        cumulativeDoneBeforeToday = initialBaselineDone
+      } else if (isOngoing && initialPilesDone != null) {
+        cumulativeDoneBeforeToday = initialPilesDone
       }
       let todayPiles = 0
       const dailyRaw = row.daily_pile_count != null ? String(row.daily_pile_count).trim() : ""

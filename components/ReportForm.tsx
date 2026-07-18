@@ -463,11 +463,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
   const totalCompletedBeforeToday =
     siteSummary?.totalPiles != null && remainingValid
       ? siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles!, 10) || 0)
-      : (
-          (siteSummary?.initialPilesDone != null || siteSummary?.initialEmptyBorehole != null)
-            ? (siteSummary?.initialPilesDone ?? 0) + (siteSummary?.initialEmptyBorehole ?? 0)
-            : 0
-        )
+      : (siteSummary?.initialPilesDone != null ? siteSummary.initialPilesDone : 0)
 
   const renderStepContent = (step: number) => {
     const machineNamesHeader = formData.basicInfo.machines.map((m) => m.machineName).filter(Boolean).join(", ") || "—"

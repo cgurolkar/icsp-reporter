@@ -2573,7 +2573,7 @@ function AdminPanel() {
                   onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialPilesDone: e.target.value }))}
                   placeholder="Rapor öncesi kümülatif yapılan kazık"
                   inputProps={{ min: 0 }}
-                  helperText="Kalan kazık = Proje toplamı − (boş foraj + yapılan kazık) − günlük yapılanlar. Kaydettikten sonra alttaki düğmeyle eski raporlardaki kalan kazıkları güncelleyin."
+                  helperText="Kalan kazık = Proje toplamı − yapılan kazık − günlük yapılanlar (boş foraj bu hesaba katılmaz). Kaydettikten sonra alttaki düğmeyle eski raporlardaki kalan kazıkları güncelleyin."
                 />
               </Box>
             )}

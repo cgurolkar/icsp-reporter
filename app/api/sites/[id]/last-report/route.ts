@@ -18,16 +18,8 @@ export async function GET(
     const totalPiles = site.total_piles ?? null
     let remainingPiles = last?.remainingPiles ?? null
     if (remainingPiles != null && String(remainingPiles).trim() === "") remainingPiles = null
-    const initialPilesDone = site.initial_piles_done != null ? Number(site.initial_piles_done) : null
-    const initialEmptyBorehole = site.initial_empty_borehole != null ? Number(site.initial_empty_borehole) : null
-    if (
-      remainingPiles == null &&
-      totalPiles != null &&
-      site.is_ongoing &&
-      (initialPilesDone != null || initialEmptyBorehole != null) &&
-      !last
-    ) {
-      remainingPiles = String(Number(totalPiles) - (initialPilesDone ?? 0) - (initialEmptyBorehole ?? 0))
+    if (remainingPiles == null && totalPiles != null && site.is_ongoing && site.initial_piles_done != null && !last) {
+      remainingPiles = String(Number(totalPiles) - Number(site.initial_piles_done))
     }
     return NextResponse.json({
       totalPiles,

@@ -231,16 +231,13 @@ export default function BasicInfoStep({
               )}
               {siteSummary.totalPiles != null && (() => {
                 const remainingValid = siteSummary.remainingPiles != null && String(siteSummary.remainingPiles).trim() !== ""
-                const initialBaseline =
-                  siteSummary.initialPilesDone != null || siteSummary.initialEmptyBorehole != null
-                    ? (siteSummary.initialPilesDone ?? 0) + (siteSummary.initialEmptyBorehole ?? 0)
-                    : null
+                const initialDone = siteSummary.initialPilesDone != null
                 const buguneKadar = remainingValid
                   ? siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles!, 10) || 0)
-                  : initialBaseline
+                  : (initialDone ? siteSummary.initialPilesDone! : null)
                 const kalan = remainingValid
                   ? siteSummary.remainingPiles
-                  : (initialBaseline != null ? String(siteSummary.totalPiles - initialBaseline) : null)
+                  : (initialDone ? String(siteSummary.totalPiles - siteSummary.initialPilesDone!) : null)
                 return (
                   <>
                     <TextField
