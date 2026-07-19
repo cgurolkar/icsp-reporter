@@ -2881,7 +2881,7 @@ function AdminPanel() {
               onChange={(e) => setDbUserForm((p) => ({ ...p, username: e.target.value }))}
               variant="outlined"
               size="small"
-              disabled={dbUserEditingId != null}
+              helperText={dbUserEditingId != null ? "Girişte kullanılan adı buradan değiştirebilirsiniz." : undefined}
             />
             <TextField
               margin="dense"
@@ -3095,6 +3095,7 @@ function AdminPanel() {
                     : dbUserForm.secondarySiteId
                 if (dbUserEditingId != null) {
                     const body: Record<string, unknown> = {
+                      username: dbUserForm.username.trim(),
                       role: dbUserForm.role,
                       siteId: (dbUserForm.siteId === "" || dbUserForm.siteId === "genel") ? null : dbUserForm.siteId,
                       secondarySiteId: secondarySitePayload,

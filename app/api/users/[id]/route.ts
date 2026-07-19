@@ -14,10 +14,18 @@ export async function PUT(
     await initializeDatabase();
     const userId = parseInt(params.id);
     const body = await request.json();
-    const { role, siteId, secondarySiteId, modulePermissions, personelId, password, email } = body;
+    const { role, siteId, secondarySiteId, modulePermissions, personelId, password, email, username } = body;
     const ALLOWED_ROLES = ['super_admin', 'admin', 'manager', 'user', 'personel', 'operator', 'engineer'];
     const requestedRole = role !== undefined && ALLOWED_ROLES.includes(role) ? role : undefined;
     const roleVal = requestedRole === 'super_admin' && session.role !== 'super_admin' ? 'admin' : requestedRole;
+    const usernameVal =
+      username !== undefined ? String(username).trim() : undefined;
+    if (usernameVal !== undefined && (usernameVal.length < 2 || usernameVal.length > 100)) {
+      return NextResponse.json(
+        { success: false, error: 'Kullanıcı adı 2–100 karakter olmalıdır.' },
+        { status: 400 }
+      );
+    }
 
     const siteIdNum =
       siteId !== undefined && siteId != null && siteId !== ''
@@ -47,9 +55,27 @@ export async function PUT(
 
     const client = await pool.connect();
 
+    if (usernameVal !== undefined) {
+      const taken = await client.query(
+        `SELECT id FROM users WHERE LOWER(username) = LOWER($1) AND id <> $2 LIMIT 1`,
+        [usernameVal, userId]
+      );
+      if (taken.rows.length > 0) {
+        client.release();
+        return NextResponse.json(
+          { success: false, error: 'Bu kullanıcı adı zaten kullanılıyor.' },
+          { status: 400 }
+        );
+      }
+    }
+
     const updates: string[] = ['updated_at = CURRENT_TIMESTAMP'];
     const values: (string | number | null | boolean)[] = [];
     let i = 1;
+    if (usernameVal !== undefined) {
+      updates.push(`username = $${i++}`);
+      values.push(usernameVal);
+    }
     if (roleVal !== undefined) {
       updates.push(`role = $${i++}`);
       values.push(roleVal);
