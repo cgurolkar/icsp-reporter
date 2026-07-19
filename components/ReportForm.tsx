@@ -190,7 +190,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     }
   }, [formData.basicInfo.siteId, initialSiteId, lockedSiteId])
 
-  // Şantiye seçilince İdari → Makineler: tüm atanmış aktif makineleri otomatik seç ve satırları senkronize et
+  // Şantiye seçilince atanmış tüm aktif makineleri yükle (assigned_machine_ids + current_site_id)
   useEffect(() => {
     const siteId = formData.basicInfo?.siteId
     if (siteId == null || !siteId) {
@@ -198,23 +198,43 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
       return
     }
     let cancelled = false
-    fetch(`/api/idari/makineler?siteId=${siteId}&status=aktif`)
-      .then((res) => (res.ok ? res.json() : []))
-      .then((list: { id: number; name: string; machine_type: string; marka?: string | null; model?: string | null; plaka_no?: string | null; seri_no?: string | null; status?: string | null; notlar?: string | null }[]) => {
+    const mapRow = (m: {
+      id: number
+      name: string
+      machine_type: string
+      marka?: string | null
+      model?: string | null
+      plaka_no?: string | null
+      seri_no?: string | null
+      status?: string | null
+      notlar?: string | null
+    }): Machine => ({
+      id: String(m.id),
+      name: m.name,
+      type: m.machine_type || "Kazık Makinesi",
+      marka: m.marka ?? undefined,
+      model: m.model ?? undefined,
+      plaka_no: m.plaka_no ?? undefined,
+      seri_no: m.seri_no ?? undefined,
+      status: m.status ?? undefined,
+      notlar: m.notlar ?? undefined,
+    })
+    // Önce şantiye makineleri endpoint'i; olmazsa idari liste
+    Promise.all([
+      fetch(`/api/sites/${siteId}/machines`).then((res) => (res.ok ? res.json() : [])),
+      fetch(`/api/idari/makineler?siteId=${siteId}&status=aktif`).then((res) => (res.ok ? res.json() : [])),
+    ])
+      .then(([siteList, idariList]) => {
         if (cancelled) return
-        const fromDb: Machine[] = Array.isArray(list)
-          ? list.map((m) => ({
-              id: String(m.id),
-              name: m.name,
-              type: m.machine_type || "Kazık Makinesi",
-              marka: m.marka ?? undefined,
-              model: m.model ?? undefined,
-              plaka_no: m.plaka_no ?? undefined,
-              seri_no: m.seri_no ?? undefined,
-              status: m.status ?? undefined,
-              notlar: m.notlar ?? undefined,
-            }))
-          : []
+        const byId = new Map<string, Machine>()
+        for (const raw of [...(Array.isArray(siteList) ? siteList : []), ...(Array.isArray(idariList) ? idariList : [])]) {
+          const m = mapRow(raw)
+          byId.set(String(m.id), m)
+        }
+        const merged = [...byId.values()]
+        // Bilgi girişi: kazık makineleri öncelikli; yoksa tüm atanmışlar
+        const kazik = merged.filter((m) => (m.type || "").toLowerCase().includes("kazık") || (m.type || "").toLowerCase().includes("kazik"))
+        const fromDb = kazik.length > 0 ? kazik : merged
         const options = fromDb.length > 0 ? fromDb : AVAILABLE_MACHINES
         setReportMachineOptions(options)
         setFormData((prev) => {

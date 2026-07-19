@@ -3775,7 +3775,24 @@ export async function getMachines(opts: { siteId?: number | null; status?: strin
     const conditions: string[] = []
     const params: unknown[] = []
     let i = 1
-    if (opts.siteId != null) { conditions.push(`m.current_site_id = $${i++}`); params.push(opts.siteId) }
+    if (opts.siteId != null) {
+      // Hem current_site_id hem sites.assigned_machine_ids (yönetici panelindeki atama)
+      conditions.push(`(
+        m.current_site_id = $${i}
+        OR m.id IN (
+          SELECT CASE
+            WHEN jsonb_typeof(elem) = 'number' THEN (elem #>> '{}')::int
+            WHEN jsonb_typeof(elem) = 'string' AND (elem #>> '{}') ~ '^[0-9]+$' THEN (elem #>> '{}')::int
+            ELSE NULL
+          END
+          FROM sites s
+          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(s.assigned_machine_ids, '[]'::jsonb)) AS elem
+          WHERE s.id = $${i}
+        )
+      )`)
+      params.push(opts.siteId)
+      i++
+    }
     if (opts.status) { conditions.push(`m.status = $${i++}`); params.push(opts.status) }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
     const r = await client.query(
@@ -3917,7 +3934,20 @@ export async function getMachinesForSite(siteId: number): Promise<{ id: number; 
           WHERE moa.machine_id = m.id AND (moa.bitis_tarihi IS NULL OR moa.bitis_tarihi >= CURRENT_DATE)
         ), '[]') AS operators
       FROM machines m
-      WHERE m.current_site_id = $1 AND m.status = 'aktif'
+      WHERE m.status = 'aktif'
+        AND (
+          m.current_site_id = $1
+          OR m.id IN (
+            SELECT CASE
+              WHEN jsonb_typeof(elem) = 'number' THEN (elem #>> '{}')::int
+              WHEN jsonb_typeof(elem) = 'string' AND (elem #>> '{}') ~ '^[0-9]+$' THEN (elem #>> '{}')::int
+              ELSE NULL
+            END
+            FROM sites s
+            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(s.assigned_machine_ids, '[]'::jsonb)) AS elem
+            WHERE s.id = $1
+          )
+        )
       ORDER BY m.name
     `, [siteId])
     return r.rows

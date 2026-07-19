@@ -126,75 +126,67 @@ export default function ProductionSummaryStep({
   return (
     <Box>
       <Typography variant="h6" gutterBottom sx={{ color: "info.main", fontWeight: 600, mb: 2 }}>
-        {t("production_summary")} — {machineTitle}
+        {t("production_summary")}
+        {data.length > 1 ? ` — ${data.length} makine` : machineTitle ? ` — ${machineTitle}` : ""}
       </Typography>
 
       <Alert severity="info" sx={{ mb: 2 }}>
         Üretim değerleri operatör girişinden bağımsızdır. Makinede çalışma olmadıysa ilgili alanlara <strong>0</strong> yazın.
+        {data.length > 1 ? " Şantiyedeki her makine için ayrı giriş yapın." : ""}
       </Alert>
 
-      <Paper sx={{ p: 2, background: "linear-gradient(135deg, #e1f5fe 0%, #b3e5fc 100%)", border: "1px solid #03a9f4", overflowX: "auto" }}>
-        <Box
-          sx={{
-            display: "grid",
-            gridTemplateColumns: `minmax(200px, 1fr) repeat(${data.length}, minmax(140px, 1fr))`,
-            gap: 1,
-            alignItems: "stretch",
-            minWidth: 280 + data.length * 140,
-          }}
-        >
-          <Box />
-          {data.map((m) => (
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {data.map((m, colIdx) => (
+          <Paper
+            key={m.machineId}
+            sx={{ p: 2, background: "linear-gradient(135deg, #e1f5fe 0%, #b3e5fc 100%)", border: "1px solid #03a9f4" }}
+          >
             <Typography
-              key={m.machineId}
-              variant="subtitle2"
+              variant="subtitle1"
               sx={{
                 fontWeight: 700,
-                textAlign: "center",
+                mb: 2,
                 py: 1,
-                px: 0.5,
-                backgroundColor: "rgba(255,255,255,0.85)",
+                px: 1.5,
+                backgroundColor: "rgba(255,255,255,0.9)",
                 borderRadius: 1,
                 border: "1px solid #0288d1",
+                color: "#01579b",
               }}
             >
-              {m.machineName}
+              {m.machineName || `Makine ${colIdx + 1}`}
             </Typography>
-          ))}
-
-          {rowDefs.map((row) => (
-            <Fragment key={String(row.key)}>
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  fontWeight: 600,
-                  fontSize: "0.875rem",
-                  pr: 1,
-                  py: 0.5,
-                }}
-              >
-                {row.label}
-              </Box>
-              {data.map((m, colIdx) => (
-                <TextField
-                  key={`${String(row.key)}-${m.machineId}`}
-                  size="small"
-                  fullWidth
-                  value={String(m[row.key] ?? "")}
-                  onChange={handleField(colIdx, row.key)}
-                  type={row.key === "totalProduction" ? "text" : "number"}
-                  inputProps={row.key === "totalProduction" ? { inputMode: "decimal" } : { min: 0 }}
-                  sx={{
-                    "& .MuiOutlinedInput-root": { backgroundColor: "white" },
-                  }}
-                />
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", sm: "minmax(200px, 1fr) minmax(160px, 1fr)" },
+                gap: 1.5,
+                alignItems: "center",
+              }}
+            >
+              {rowDefs.map((row) => (
+                <Fragment key={`${String(row.key)}-${m.machineId}`}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {row.label}
+                  </Typography>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    value={String(m[row.key] ?? "")}
+                    onChange={handleField(colIdx, row.key)}
+                    type={row.key === "totalProduction" ? "text" : "number"}
+                    inputProps={row.key === "totalProduction" ? { inputMode: "decimal" } : { min: 0 }}
+                    sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "white" } }}
+                  />
+                </Fragment>
               ))}
-            </Fragment>
-          ))}
-        </Box>
+            </Box>
+          </Paper>
+        ))}
+      </Box>
 
-        <Box sx={{ mt: 3, maxWidth: 400 }}>
+      <Paper sx={{ p: 2, mt: 2, background: "linear-gradient(135deg, #e1f5fe 0%, #b3e5fc 100%)", border: "1px solid #03a9f4" }}>
+        <Box sx={{ maxWidth: 400 }}>
           <TextField
             fullWidth
             label="Beton dökülen kazık (Ad.) — şantiye toplamı"
