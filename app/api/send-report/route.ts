@@ -190,6 +190,7 @@ export async function POST(request: NextRequest) {
       selectedMachine: formData.machineSelection.selectedMachine,
       additionalMachines: formData.machineSelection.additionalMachines,
       fuelMachines: formData.fuel.machines,
+      productionSummary: formData.productionSummary,
       submittedByUserId: session.id,
     })
 

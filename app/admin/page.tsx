@@ -46,7 +46,7 @@ import {
   Divider,
   CircularProgress,
 } from "@mui/material"
-import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility, Notifications, NotificationsActive, Close, Engineering, ArrowBack, Construction, Email } from "@mui/icons-material"
+import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility, Notifications, NotificationsActive, Close, Engineering, ArrowBack, Construction, Email, PictureAsPdf } from "@mui/icons-material"
 import Badge from "@mui/material/Badge"
 import Snackbar from "@mui/material/Snackbar"
 import Alert from "@mui/material/Alert"
@@ -1170,7 +1170,7 @@ function AdminPanel() {
             flexDirection: "column",
           }}
         >
-          <AppBar position="static" elevation={1} sx={{ bgcolor: "#1a237e" }}>
+          <AppBar position="static" elevation={1} sx={{ bgcolor: "#1a237e" }} className="report-preview-appbar">
             <Toolbar>
               <IconButton edge="start" color="inherit" onClick={() => setReportPreviewId(null)} aria-label="Geri" size="large">
                 <ArrowBack />
@@ -1178,10 +1178,29 @@ function AdminPanel() {
               <Typography variant="h6" sx={{ flexGrow: 1, ml: 1, fontWeight: 600 }}>
                 Rapor önizleme
               </Typography>
+              <Button
+                color="inherit"
+                variant="outlined"
+                startIcon={<PictureAsPdf />}
+                onClick={() => {
+                  const frame = document.getElementById("report-preview-iframe") as HTMLIFrameElement | null
+                  const win = frame?.contentWindow
+                  if (win) {
+                    win.focus()
+                    win.print()
+                  } else {
+                    window.open(`/api/reports/${reportPreviewId}/preview`, "_blank")
+                  }
+                }}
+                sx={{ borderColor: "rgba(255,255,255,0.5)", textTransform: "none", fontWeight: 600 }}
+              >
+                PDF olarak kaydet
+              </Button>
             </Toolbar>
           </AppBar>
           <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>
             <iframe
+              id="report-preview-iframe"
               title="Rapor önizleme"
               src={`/api/reports/${reportPreviewId}/preview`}
               style={{ flex: 1, border: "none", width: "100%", height: "100%" }}

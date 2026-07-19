@@ -9,14 +9,75 @@ export function formDataFromDbReport(data: {
 }) {
   const r = data.report
   const dateVal = r.date instanceof Date ? r.date.toISOString().slice(0, 10) : (typeof r.date === "string" ? r.date.slice(0, 10) : "")
-  const machines = (data.machines || []).map((m: Record<string, unknown>, i: number) => ({
-    machineName: m.machine_name ?? "",
-    machineHours: i === 0 ? (r.machine_hours ?? "") : "",
-    totalProduction: i === 0 ? (r.total_production ?? "") : "",
-    pileCount: i === 0 ? (r.pile_count ?? "") : "",
-    drilledPile: i === 0 ? (r.drilled_pile ?? "") : "",
-    concretePile: i === 0 ? (r.concrete_pile ?? "") : "",
+  const dbMachines = Array.isArray(data.machines) ? data.machines : []
+
+  const machines = dbMachines.map((m: Record<string, unknown>, i: number) => ({
+    machineId: String(m.machine_id ?? ""),
+    machineName: String(m.machine_name ?? ""),
+    machineHours: i === 0 ? String(r.machine_hours ?? "") : "",
+    totalProduction: i === 0 ? String(r.total_production ?? "") : "",
+    pileCount: i === 0 ? String(r.pile_count ?? "") : "",
+    drilledPile: i === 0 ? String(r.drilled_pile ?? "") : "",
+    concretePile: i === 0 ? String(r.concrete_pile ?? "") : "",
   }))
+
+  const primary = dbMachines.find((m) => m.is_primary === true) ?? dbMachines[0]
+  const additional = dbMachines.filter((m) => m !== primary)
+
+  // Kayıtlı makine bazlı üretim özeti (yeni raporlar)
+  let productionSummary: Record<string, unknown>[] = []
+  const rawPs = r.production_summary_json
+  if (Array.isArray(rawPs) && rawPs.length > 0) {
+    productionSummary = rawPs.map((row) => {
+      const m = row as Record<string, unknown>
+      return {
+        machineId: String(m.machineId ?? m.machine_id ?? ""),
+        machineName: String(m.machineName ?? m.machine_name ?? ""),
+        totalProduction: String(m.totalProduction ?? m.total_production ?? ""),
+        emptyBorehole: String(m.emptyBorehole ?? m.empty_borehole ?? ""),
+        preBorehole: String(m.preBorehole ?? m.pre_borehole ?? ""),
+        concretePoured: String(m.concretePoured ?? m.concrete_poured ?? ""),
+        dailyDrilledPiles: String(m.dailyDrilledPiles ?? m.daily_drilled_piles ?? m.dailyPileCount ?? ""),
+        totalPileCount: String(m.totalPileCount ?? m.total_pile_count ?? ""),
+        dailyPileCount: String(m.dailyPileCount ?? m.daily_pile_count ?? ""),
+        totalCompletedPiles: String(m.totalCompletedPiles ?? m.total_completed_piles ?? ""),
+        remainingPiles: String(m.remainingPiles ?? m.remaining_piles ?? ""),
+        steelLoweredPiles: String(m.steelLoweredPiles ?? m.steel_lowered_piles ?? ""),
+      }
+    })
+  } else if (dbMachines.length > 0) {
+    // Eski raporlar: her seçili makine için satır; özet alanlar birincil makinede
+    productionSummary = dbMachines.map((m, i) => ({
+      machineId: String(m.machine_id ?? ""),
+      machineName: String(m.machine_name ?? ""),
+      totalProduction: i === 0 ? String(r.total_production_summary ?? "") : "",
+      emptyBorehole: "",
+      preBorehole: "",
+      concretePoured: i === 0 ? String(r.concrete_poured ?? "") : "",
+      dailyDrilledPiles: i === 0 ? String(r.daily_pile_count ?? "") : "",
+      totalPileCount: i === 0 ? String(r.total_pile_count ?? "") : "",
+      dailyPileCount: i === 0 ? String(r.daily_pile_count ?? "") : "",
+      totalCompletedPiles: i === 0 ? String(r.total_completed_piles ?? "") : "",
+      remainingPiles: i === 0 ? String(r.remaining_piles ?? "") : "",
+      steelLoweredPiles: i === 0 ? String(r.steel_lowered_piles ?? "") : "",
+    }))
+  } else {
+    productionSummary = [{
+      machineId: String(r.selected_machine_id ?? ""),
+      machineName: String(r.selected_machine_name ?? ""),
+      totalProduction: String(r.total_production_summary ?? ""),
+      emptyBorehole: "",
+      preBorehole: "",
+      concretePoured: String(r.concrete_poured ?? ""),
+      dailyDrilledPiles: String(r.daily_pile_count ?? ""),
+      totalPileCount: String(r.total_pile_count ?? ""),
+      dailyPileCount: String(r.daily_pile_count ?? ""),
+      totalCompletedPiles: String(r.total_completed_piles ?? ""),
+      remainingPiles: String(r.remaining_piles ?? ""),
+      steelLoweredPiles: String(r.steel_lowered_piles ?? ""),
+    }]
+  }
+
   const formData = {
     basicInfo: {
       date: dateVal,
@@ -25,20 +86,19 @@ export function formDataFromDbReport(data: {
       machines,
     },
     machineSelection: {
-      selectedMachine: { id: r.selected_machine_id ?? "", name: r.selected_machine_name ?? "" },
-      additionalMachines: (data.machines || []).slice(1).map((m: Record<string, unknown>) => ({ name: m.machine_name ?? "" })),
+      selectedMachine: {
+        id: String(primary?.machine_id ?? r.selected_machine_id ?? ""),
+        name: String(primary?.machine_name ?? r.selected_machine_name ?? ""),
+        type: String(primary?.machine_type ?? "Kazık Makinesi"),
+      },
+      additionalMachines: additional.map((m: Record<string, unknown>) => ({
+        id: String(m.machine_id ?? ""),
+        name: String(m.machine_name ?? ""),
+        type: String(m.machine_type ?? "Kazık Makinesi"),
+      })),
       currentMachineIndex: 0,
     },
-    productionSummary: [{
-      machineName: r.selected_machine_name ?? "",
-      totalProduction: r.total_production_summary ?? "",
-      totalPileCount: r.total_pile_count ?? "",
-      dailyPileCount: r.daily_pile_count ?? "",
-      totalCompletedPiles: r.total_completed_piles ?? "",
-      remainingPiles: r.remaining_piles ?? "",
-      steelLoweredPiles: r.steel_lowered_piles ?? "",
-      concretePoured: r.concrete_poured ?? "",
-    }],
+    productionSummary,
     personnel: {
       engineer: r.engineer_count ?? 0,
       foreman: r.foreman_count ?? 0,

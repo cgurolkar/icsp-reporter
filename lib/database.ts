@@ -90,6 +90,9 @@ async function _doInitializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'work_reports' AND column_name = 'daily_images') THEN
           ALTER TABLE work_reports ADD COLUMN daily_images JSONB DEFAULT '[]';
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'work_reports' AND column_name = 'production_summary_json') THEN
+          ALTER TABLE work_reports ADD COLUMN production_summary_json JSONB DEFAULT NULL;
+        END IF;
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'daily_* columns: %', SQLERRM;
       END $$
     `)
@@ -731,8 +734,8 @@ export async function saveWorkReport(reportData: any) {
         engineer_count, foreman_count, operator_count, oiler_count, welder_count, other_count, personnel_total,
         crane_count, loader_count, truck_count, pickup_count, car_count, service_count, vehicles_total,
         daily_fuel_usage, expenses, pile_details, notes, daily_notes, daily_image1, daily_image2, next_day_planned, daily_images,
-        submitted_by_user_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41)
+        submitted_by_user_id, production_summary_json
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42)
       RETURNING id
     `, [
       reportData.date,
@@ -777,6 +780,9 @@ export async function saveWorkReport(reportData: any) {
       JSON.stringify(Array.isArray(reportData.dailyImages) ? reportData.dailyImages : []),
       reportData.submittedByUserId != null && reportData.submittedByUserId !== ""
         ? (Number(reportData.submittedByUserId) || null)
+        : null,
+      reportData.productionSummary != null
+        ? JSON.stringify(reportData.productionSummary)
         : null,
     ])
 
@@ -2264,7 +2270,10 @@ export async function getWorkReportById(id: number) {
       LEFT JOIN users u ON u.id = wr.submitted_by_user_id
       WHERE wr.id = $1
     `, [id])
-    const machinesResult = await client.query(`SELECT * FROM machine_selections WHERE report_id = $1`, [id])
+    const machinesResult = await client.query(
+      `SELECT * FROM machine_selections WHERE report_id = $1 ORDER BY is_primary DESC, id ASC`,
+      [id]
+    )
     const fuelResult = await client.query(`SELECT * FROM fuel_records WHERE report_id = $1`, [id])
     return {
       report: reportResult.rows[0],
