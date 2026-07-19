@@ -22,6 +22,8 @@ export interface SiteSummaryForForm {
   initialEmptyBorehole?: number | null
   /** 1 USD = kaç IQD (şantiye kuru) */
   iqdPerUsd?: number | null
+  /** Çap seçenekleri (fiyat yok) */
+  pileRates?: import("@/types/form-data").SitePileRateOption[]
 }
 
 interface BasicInfoStepProps {
@@ -51,7 +53,7 @@ export default function BasicInfoStep({
 }: BasicInfoStepProps) {
   const { t } = useLanguage()
   const [sites, setSites] = useState<SiteOption[]>([])
-  const [siteSummary, setSiteSummary] = useState<SiteSummaryForForm>({ totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, initialEmptyBorehole: null, iqdPerUsd: null })
+  const [siteSummary, setSiteSummary] = useState<SiteSummaryForForm>({ totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, initialEmptyBorehole: null, iqdPerUsd: null, pileRates: [] })
 
   useEffect(() => {
     fetch("/api/sites")
@@ -62,14 +64,14 @@ export default function BasicInfoStep({
 
   useEffect(() => {
     if (data.siteId == null) {
-      const empty: SiteSummaryForForm = { totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, initialEmptyBorehole: null, iqdPerUsd: null }
+      const empty: SiteSummaryForForm = { totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, initialEmptyBorehole: null, iqdPerUsd: null, pileRates: [] }
       setSiteSummary(empty)
       onSiteSummaryChange?.(empty)
       return
     }
     fetch(`/api/sites/${data.siteId}/last-report`)
       .then((res) => (res.ok ? res.json() : {}))
-      .then((d: { totalPiles?: number | null; lastDate?: string | null; remainingPiles?: string | null; projectStartDate?: string | null; isOngoing?: boolean; initialPilesDone?: number | null; initialEmptyBorehole?: number | null; iqd_per_usd?: number | null }) => {
+      .then((d: { totalPiles?: number | null; lastDate?: string | null; remainingPiles?: string | null; projectStartDate?: string | null; isOngoing?: boolean; initialPilesDone?: number | null; initialEmptyBorehole?: number | null; iqd_per_usd?: number | null; pileRates?: { id: number; diameterMm: number; label: string }[] }) => {
         const next: SiteSummaryForForm = {
           totalPiles: d.totalPiles ?? null,
           lastDate: d.lastDate ?? null,
@@ -79,12 +81,13 @@ export default function BasicInfoStep({
           initialPilesDone: d.initialPilesDone ?? null,
           initialEmptyBorehole: d.initialEmptyBorehole ?? null,
           iqdPerUsd: d.iqd_per_usd != null && Number(d.iqd_per_usd) > 0 ? Number(d.iqd_per_usd) : 1320,
+          pileRates: Array.isArray(d.pileRates) ? d.pileRates : [],
         }
         setSiteSummary(next)
         onSiteSummaryChange?.(next)
       })
       .catch(() => {
-        const empty: SiteSummaryForForm = { totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, initialEmptyBorehole: null, iqdPerUsd: null }
+        const empty: SiteSummaryForForm = { totalPiles: null, lastDate: null, remainingPiles: null, projectStartDate: null, isOngoing: false, initialPilesDone: null, initialEmptyBorehole: null, iqdPerUsd: null, pileRates: [] }
         setSiteSummary(empty)
         onSiteSummaryChange?.(empty)
       })

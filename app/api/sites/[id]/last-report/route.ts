@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getSiteById, getLastReportRemainingBySite, initializeDatabase } from "@/lib/database"
+import { getSiteById, getLastReportRemainingBySite, initializeDatabase, getSitePileRates } from "@/lib/database"
+import { publicPileRateOptions } from "@/lib/hakedis"
 
 export async function GET(
   _request: NextRequest,
@@ -21,6 +22,7 @@ export async function GET(
     if (remainingPiles == null && totalPiles != null && site.is_ongoing && site.initial_piles_done != null && !last) {
       remainingPiles = String(Number(totalPiles) - Number(site.initial_piles_done))
     }
+    const rates = await getSitePileRates(siteId, { activeOnly: true })
     return NextResponse.json({
       totalPiles,
       lastDate: last?.date ?? null,
@@ -30,6 +32,8 @@ export async function GET(
       initialPilesDone: site.initial_piles_done ?? null,
       initialEmptyBorehole: site.initial_empty_borehole ?? null,
       iqd_per_usd: site.iqd_per_usd != null ? Number(site.iqd_per_usd) : 1320,
+      /** Çap seçenekleri — birim fiyatlar dahil değil (form için) */
+      pileRates: publicPileRateOptions(rates),
     })
   } catch (error) {
     console.error("Error fetching last report:", error)

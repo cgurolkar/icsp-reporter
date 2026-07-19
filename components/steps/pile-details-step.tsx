@@ -17,10 +17,13 @@ import {
   Alert,
   Checkbox,
   FormControlLabel,
+  Select,
+  MenuItem,
+  FormControl,
 } from "@mui/material"
 import { Add, Delete } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
-import type { PileDetail, MachineProductionSummary } from "@/types/form-data"
+import type { PileDetail, MachineProductionSummary, SitePileRateOption, PriceTier } from "@/types/form-data"
 
 interface PileDetailsStepProps {
   data: PileDetail[]
@@ -28,6 +31,8 @@ interface PileDetailsStepProps {
   productionSummary?: MachineProductionSummary[]
   /** Şantiye toplam beton dökülen kazık (üretim özeti) */
   siteConcretePouredPiles?: string
+  /** Şantiye çap tarifeleri (fiyatlar olmadan) */
+  pileRateOptions?: SitePileRateOption[]
 }
 
 export default function PileDetailsStep({
@@ -35,6 +40,7 @@ export default function PileDetailsStep({
   onChange,
   productionSummary = [],
   siteConcretePouredPiles = "",
+  pileRateOptions = [],
 }: PileDetailsStepProps) {
   const { t } = useLanguage()
 
@@ -43,6 +49,8 @@ export default function PileDetailsStep({
 
   const machineCols = productionSummary.filter((m) => m.machineId)
   const singleMachineId = machineCols.length === 1 ? machineCols[0].machineId : null
+  const hasRates = pileRateOptions.length > 0
+  const defaultRateId = hasRates ? String(pileRateOptions[0].id) : ""
 
   const addPile = () => {
     const newPileNumber = Math.max(...data.map((p) => p.pileNumber), 0) + 1
@@ -53,6 +61,8 @@ export default function PileDetailsStep({
         drilled: "",
         notes: "",
         machineIds: singleMachineId ? [singleMachineId] : [],
+        diameterRateId: defaultRateId || "",
+        priceTier: "primary",
       },
     ])
   }
@@ -79,11 +89,9 @@ export default function PileDetailsStep({
   const handleKeyPress = (event: React.KeyboardEvent, index: number) => {
     if (event.key === "Enter") {
       event.preventDefault()
-      // If this is the last row, add a new one
       if (index === data.length - 1) {
         addPile()
       }
-      // Focus on the next row
       setTimeout(() => {
         const nextInput = document.querySelector(`input[data-pile-index="${index + 1}"]`) as HTMLInputElement
         if (nextInput) {
@@ -99,6 +107,8 @@ export default function PileDetailsStep({
   const cokluMakine = machineCols.length > 1
   const betonluSatirlar = data.filter((p) => p.concretePoured)
   const betonMakineEksik = cokluMakine && betonluSatirlar.some((p) => !(p.machineIds && p.machineIds.length > 0))
+  const betonCapEksik =
+    hasRates && betonluSatirlar.some((p) => p.diameterRateId == null || String(p.diameterRateId).trim() === "")
 
   return (
     <Box>
@@ -116,26 +126,42 @@ export default function PileDetailsStep({
             Beton döküldü işaretli satırlarda hangi makineye ait olduğunu en az bir makine sütunundan işaretleyin.
           </Alert>
         )}
+        {betonCapEksik && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Beton döküldü işaretli satırlarda kazık çapını seçin.
+          </Alert>
+        )}
         <Alert severity="info" sx={{ mb: 2 }}>
-          «Beton döküldü» işaretli satırların Delinen (m) toplamı, Üretim Özeti’ndeki <strong>Toplam boy</strong> alanına yazılır ve hakediş hesabında kullanılır.
+          «Beton döküldü» işaretli satırların Delinen (m) toplamı, Üretim Özeti’ndeki <strong>Toplam boy</strong> alanına yazılır
+          {hasRates ? "; çap ve fiyat tipi (primary/secondary) hakediş için kullanılır" : ""}.
         </Alert>
 
-        {/* Kazık Detayları Formu */}
         <Typography variant="subtitle1" gutterBottom sx={{ color: "#e65100", fontWeight: 600, mb: 2 }}>
-          📝 {t("pile_details_form_title")}
+          {t("pile_details_form_title")}
         </Typography>
-        <Table size="small" sx={{ border: "2px solid #000", backgroundColor: "white", mb: 3 }}>
+        <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <Table size="small" sx={{ border: "2px solid #000", backgroundColor: "white", mb: 3, minWidth: hasRates ? 720 : 520 }}>
           <TableHead>
             <TableRow sx={{ backgroundColor: "#f0f0f0" }}>
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "12%" }}>
+              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
                 {t("pile_short").toUpperCase()}
               </TableCell>
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "18%" }}>
+              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
                 {t("drilled_short").toUpperCase()}
               </TableCell>
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "28%" }}>
+              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
                 {t("notes").toUpperCase()}
               </TableCell>
+              {hasRates && (
+                <>
+                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", minWidth: 100 }}>
+                    ÇAP
+                  </TableCell>
+                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", minWidth: 100 }}>
+                    FİYAT TİPİ
+                  </TableCell>
+                </>
+              )}
               {cokluMakine &&
                 machineCols.map((m) => (
                   <TableCell
@@ -145,10 +171,10 @@ export default function PileDetailsStep({
                     {m.machineName}
                   </TableCell>
                 ))}
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "12%" }}>
+              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
                 Beton döküldü
               </TableCell>
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", width: "8%" }}>
+              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
                 {t("action").toUpperCase()}
               </TableCell>
             </TableRow>
@@ -199,6 +225,43 @@ export default function PileDetailsStep({
                     sx={{ "& input": { fontSize: "0.9rem" } }}
                   />
                 </TableCell>
+                {hasRates && (
+                  <>
+                    <TableCell sx={{ border: "1px solid #000", p: 0.5 }}>
+                      <FormControl fullWidth size="small" variant="standard">
+                        <Select
+                          displayEmpty
+                          value={pile.diameterRateId != null ? String(pile.diameterRateId) : ""}
+                          onChange={(e) => updatePile(index, "diameterRateId", e.target.value)}
+                          disableUnderline
+                          sx={{ fontSize: "0.85rem", "& .MuiSelect-select": { py: 0.5, textAlign: "center" } }}
+                        >
+                          <MenuItem value="">
+                            <em>Seç</em>
+                          </MenuItem>
+                          {pileRateOptions.map((opt) => (
+                            <MenuItem key={opt.id} value={String(opt.id)}>
+                              {opt.label}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </TableCell>
+                    <TableCell sx={{ border: "1px solid #000", p: 0.5 }}>
+                      <FormControl fullWidth size="small" variant="standard">
+                        <Select
+                          value={(pile.priceTier as PriceTier) || "primary"}
+                          onChange={(e) => updatePile(index, "priceTier", e.target.value)}
+                          disableUnderline
+                          sx={{ fontSize: "0.85rem", "& .MuiSelect-select": { py: 0.5, textAlign: "center" } }}
+                        >
+                          <MenuItem value="primary">Primary</MenuItem>
+                          <MenuItem value="secondary">Secondary</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </TableCell>
+                  </>
+                )}
                 {cokluMakine &&
                   machineCols.map((m) => {
                     const checked = (pile.machineIds ?? []).includes(m.machineId)
@@ -219,7 +282,18 @@ export default function PileDetailsStep({
                       <Checkbox
                         size="small"
                         checked={!!pile.concretePoured}
-                        onChange={(e) => updatePile(index, "concretePoured", e.target.checked)}
+                        onChange={(e) => {
+                          const checked = e.target.checked
+                          const newData = [...data]
+                          newData[index] = {
+                            ...newData[index],
+                            concretePoured: checked,
+                            ...(checked && hasRates && !newData[index].diameterRateId
+                              ? { diameterRateId: defaultRateId, priceTier: newData[index].priceTier || "primary" }
+                              : {}),
+                          }
+                          onChange(newData)
+                        }}
                       />
                     }
                     label=""
@@ -240,6 +314,7 @@ export default function PileDetailsStep({
             ))}
           </TableBody>
         </Table>
+        </Box>
 
         <Box sx={{ display: "flex", justifyContent: "center" }}>
           <Button

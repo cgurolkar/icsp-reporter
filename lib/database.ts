@@ -352,6 +352,23 @@ async function _doInitializeDatabase() {
       END $$
     `)
 
+    // Şantiye kazık çapı / birim fiyat tarifeleri (primary + secondary)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS site_pile_rates (
+        id SERIAL PRIMARY KEY,
+        site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+        diameter_mm INTEGER NOT NULL,
+        label VARCHAR(100) DEFAULT NULL,
+        price_primary DECIMAL(14,4) NOT NULL,
+        price_secondary DECIMAL(14,4) DEFAULT NULL,
+        sort_order INTEGER DEFAULT 0,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_site_pile_rates_site ON site_pile_rates(site_id)`)
+
     // users tablosuna sorumlu şantiye (site_id)
     await client.query(`
       DO $$ BEGIN
@@ -1936,6 +1953,160 @@ export async function getSiteById(id: number) {
   } catch (error) {
     console.error('Error fetching site:', error)
     throw error
+  } finally {
+    client.release()
+  }
+}
+
+export type SitePileRateRow = {
+  id: number
+  site_id: number
+  diameter_mm: number
+  label: string | null
+  price_primary: number
+  price_secondary: number | null
+  sort_order: number
+  is_active: boolean
+}
+
+export async function getSitePileRates(siteId: number, opts?: { activeOnly?: boolean }): Promise<SitePileRateRow[]> {
+  const client = await pool.connect()
+  try {
+    const activeOnly = opts?.activeOnly !== false
+    const result = await client.query(
+      `SELECT id, site_id, diameter_mm, label, price_primary, price_secondary, sort_order, is_active
+       FROM site_pile_rates
+       WHERE site_id = $1 ${activeOnly ? "AND is_active = true" : ""}
+       ORDER BY sort_order ASC, diameter_mm ASC, id ASC`,
+      [siteId],
+    )
+    return result.rows.map((r) => ({
+      id: Number(r.id),
+      site_id: Number(r.site_id),
+      diameter_mm: Number(r.diameter_mm),
+      label: r.label != null ? String(r.label) : null,
+      price_primary: Number(r.price_primary) || 0,
+      price_secondary: r.price_secondary != null ? Number(r.price_secondary) : null,
+      sort_order: Number(r.sort_order) || 0,
+      is_active: r.is_active !== false,
+    }))
+  } finally {
+    client.release()
+  }
+}
+
+/** Şantiye tarifelerini tamamen değiştir (super_admin). Boş dizi tüm tarifeleri siler. */
+export async function replaceSitePileRates(
+  siteId: number,
+  rates: Array<{
+    id?: number | null
+    diameterMm: number
+    label?: string | null
+    pricePrimary: number
+    priceSecondary?: number | null
+    sortOrder?: number
+    isActive?: boolean
+  }>,
+): Promise<SitePileRateRow[]> {
+  const client = await pool.connect()
+  try {
+    await client.query("BEGIN")
+    await client.query(`DELETE FROM site_pile_rates WHERE site_id = $1`, [siteId])
+    let order = 0
+    for (const rate of rates) {
+      const diameter = Number(rate.diameterMm)
+      const primary = Number(rate.pricePrimary)
+      if (!Number.isFinite(diameter) || diameter <= 0) continue
+      if (!Number.isFinite(primary) || primary < 0) continue
+      const secondary =
+        rate.priceSecondary != null && String(rate.priceSecondary).trim() !== "" && Number.isFinite(Number(rate.priceSecondary))
+          ? Number(rate.priceSecondary)
+          : null
+      await client.query(
+        `INSERT INTO site_pile_rates (site_id, diameter_mm, label, price_primary, price_secondary, sort_order, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          siteId,
+          Math.round(diameter),
+          rate.label != null && String(rate.label).trim() ? String(rate.label).trim() : null,
+          primary,
+          secondary,
+          rate.sortOrder != null ? Number(rate.sortOrder) : order,
+          rate.isActive !== false,
+        ],
+      )
+      order += 1
+    }
+    await client.query("COMMIT")
+  } catch (e) {
+    await client.query("ROLLBACK")
+    throw e
+  } finally {
+    client.release()
+  }
+  return getSitePileRates(siteId, { activeOnly: false })
+}
+
+/**
+ * Şantiye bazında kümülatif hakediş kırılımı (beton dökülen m × satır fiyatı).
+ * Tarife varsa pile_details üzerinden; yoksa concrete_total_length × contract_unit_price.
+ */
+export async function getCumulativeHakedisBreakdown(
+  siteId: number,
+  date: string,
+): Promise<{
+  totalMeters: number
+  totalAmount: number
+  lines: Array<{
+    diameterMm: number | null
+    label: string
+    priceTier: string
+    unitPrice: number
+    meters: number
+    amount: number
+  }>
+  usedRates: boolean
+}> {
+  const { computeHakedisFromReports } = await import("@/lib/hakedis")
+  const client = await pool.connect()
+  try {
+    const d = (date || "").slice(0, 10)
+    const site = await client.query(
+      `SELECT contract_unit_price FROM sites WHERE id = $1`,
+      [siteId],
+    )
+    const fallbackPrice =
+      site.rows[0]?.contract_unit_price != null ? Number(site.rows[0].contract_unit_price) : null
+    const ratesResult = await client.query(
+      `SELECT id, site_id, diameter_mm, label, price_primary, price_secondary, sort_order, is_active
+       FROM site_pile_rates WHERE site_id = $1 ORDER BY sort_order ASC, diameter_mm ASC`,
+      [siteId],
+    )
+    const rates = ratesResult.rows.map((r) => ({
+      id: Number(r.id),
+      site_id: Number(r.site_id),
+      diameter_mm: Number(r.diameter_mm),
+      label: r.label != null ? String(r.label) : null,
+      price_primary: Number(r.price_primary) || 0,
+      price_secondary: r.price_secondary != null ? Number(r.price_secondary) : null,
+      sort_order: Number(r.sort_order) || 0,
+      is_active: r.is_active !== false,
+    }))
+    const reports = await client.query(
+      `SELECT pile_details, concrete_total_length, concrete_poured
+       FROM work_reports
+       WHERE site_id = $1 AND date <= $2
+       ORDER BY date ASC, id ASC`,
+      [siteId, d],
+    )
+    return computeHakedisFromReports(
+      reports.rows.map((r) => ({
+        pile_details: r.pile_details,
+        concrete_total_length: r.concrete_total_length,
+      })),
+      rates,
+      fallbackPrice,
+    )
   } finally {
     client.release()
   }

@@ -126,6 +126,19 @@ export interface PileDetail {
   concretePoured?: boolean
   /** Birden fazla makinede bu kazık satırı hangi makinelerle ilişkili */
   machineIds?: string[]
+  /** site_pile_rates.id */
+  diameterRateId?: string | number | null
+  /** Primary / secondary birim fiyat seçimi */
+  priceTier?: PriceTier | ""
+}
+
+export type PriceTier = "primary" | "secondary"
+
+/** Şantiye tarife satırı (formda fiyatlar gizlenebilir) */
+export interface SitePileRateOption {
+  id: number
+  diameterMm: number
+  label: string
 }
 
 export interface PuantajEntry {

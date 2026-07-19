@@ -63,7 +63,19 @@ function reportBasicErrors(fd: FormData): string[] {
   return e
 }
 
-function reportProductionErrors(fd: FormData): string[] {
+function reportProductionErrors(fd: FormData, pileRateOptions?: { id: number }[]): string[] {
+  const e = reportProductionErrorsBase(fd)
+  const rates = pileRateOptions ?? []
+  if (rates.length > 0) {
+    const missingCap = (fd.pileDetails || []).some(
+      (p) => p.concretePoured === true && (p.diameterRateId == null || String(p.diameterRateId).trim() === ""),
+    )
+    if (missingCap) e.push("Kazık detayları: Beton döküldü satırlarında kazık çapı seçilmelidir.")
+  }
+  return e
+}
+
+function reportProductionErrorsBase(fd: FormData): string[] {
   const e: string[] = []
   if (fd.productionSummary.length === 0) e.push("Şantiye için makine listesi yüklenemedi; şantiye seçimini kontrol edin.")
   for (const m of fd.productionSummary) {
@@ -181,7 +193,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     let cancelled = false
     fetch(`/api/sites/${sid}/last-report`)
       .then((res) => (res.ok ? res.json() : {}))
-      .then((d: { iqd_per_usd?: number | null }) => {
+      .then((d: { iqd_per_usd?: number | null; pileRates?: { id: number; diameterMm: number; label: string }[] }) => {
         if (cancelled) return
         const iq = d.iqd_per_usd != null && Number(d.iqd_per_usd) > 0 ? Number(d.iqd_per_usd) : 1320
         setSiteSummary((prev) => ({
@@ -193,6 +205,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
           initialPilesDone: prev?.initialPilesDone ?? null,
           initialEmptyBorehole: prev?.initialEmptyBorehole ?? null,
           iqdPerUsd: iq,
+          pileRates: Array.isArray(d.pileRates) ? d.pileRates : (prev?.pileRates ?? []),
         }))
       })
       .catch(() => {})
@@ -399,7 +412,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     setStepErrors([])
     if (isRestricted) {
       if (activeStep === 0) {
-        const errs = [...reportBasicErrors(formData), ...reportProductionErrors(formData)]
+        const errs = [...reportBasicErrors(formData), ...reportProductionErrors(formData, siteSummary?.pileRates)]
         if (errs.length) {
           setStepErrors(errs)
           return
@@ -420,7 +433,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
       return
     }
     if (activeStep === 1) {
-      const errs = reportProductionErrors(formData)
+      const errs = reportProductionErrors(formData, siteSummary?.pileRates)
       if (errs.length) {
         setStepErrors(errs)
         return
@@ -632,6 +645,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
           onChange={(d) => updateFormData("pileDetails", d)}
           productionSummary={formData.productionSummary}
           siteConcretePouredPiles={formData.siteConcretePouredPiles}
+          pileRateOptions={siteSummary?.pileRates ?? []}
         />
       </Box>
     )

@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getAllSites, getSitesWithReportCount, createSite, initializeDatabase } from "@/lib/database"
+import { getAllSites, getSitesWithReportCount, createSite, initializeDatabase, replaceSitePileRates, getSitePileRates } from "@/lib/database"
 import { getSessionFromRequest, canAccessAdmin, canViewAllSites, getAllowedSiteIds } from "@/lib/auth"
 
 export async function GET(request: NextRequest) {
@@ -82,7 +82,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Şantiye adı ve kod zorunludur." }, { status: 400 })
     }
     const site = await createSite({ name, code, emailList, totalPiles, region, city, country, timezone, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, initialEmptyBorehole, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, contractUnitPrice, iqdPerUsd })
-    if (session.role === "super_admin") return NextResponse.json(site)
+    let pile_rates: Awaited<ReturnType<typeof getSitePileRates>> = []
+    if (session.role === "super_admin" && Array.isArray(body.pileRates) && site?.id) {
+      const parsed = (body.pileRates as Array<Record<string, unknown>>)
+        .map((r, idx) => ({
+          diameterMm: Number(r.diameterMm ?? r.diameter_mm),
+          label: r.label != null ? String(r.label) : null,
+          pricePrimary: Number(r.pricePrimary ?? r.price_primary),
+          priceSecondary:
+            r.priceSecondary != null && String(r.priceSecondary).trim() !== ""
+              ? Number(r.priceSecondary)
+              : null,
+          sortOrder: idx,
+          isActive: r.isActive !== false,
+        }))
+        .filter((r) => Number.isFinite(r.diameterMm) && r.diameterMm > 0 && Number.isFinite(r.pricePrimary) && r.pricePrimary >= 0)
+      pile_rates = await replaceSitePileRates(Number(site.id), parsed)
+    }
+    if (session.role === "super_admin") return NextResponse.json({ ...site, pile_rates })
     const { contract_unit_price, ...rest } = site as Record<string, unknown>
     return NextResponse.json(rest)
   } catch (error: unknown) {

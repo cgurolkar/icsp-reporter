@@ -155,7 +155,21 @@ export function formDataFromDbReport(data: {
         return ordered.length > 0 ? ordered : records
       })(),
     },
-    pileDetails: Array.isArray(r.pile_details) ? r.pile_details : [],
+    pileDetails: Array.isArray(r.pile_details)
+      ? (r.pile_details as Record<string, unknown>[]).map((p) => ({
+          pileNumber: Number(p.pileNumber ?? p.pile_number ?? 0) || 0,
+          drilled: String(p.drilled ?? ""),
+          notes: String(p.notes ?? ""),
+          concretePoured: p.concretePoured === true || p.concrete_poured === true,
+          machineIds: Array.isArray(p.machineIds)
+            ? (p.machineIds as string[])
+            : Array.isArray(p.machine_ids)
+              ? (p.machine_ids as string[])
+              : [],
+          diameterRateId: p.diameterRateId ?? p.diameter_rate_id ?? "",
+          priceTier: (p.priceTier ?? p.price_tier ?? "primary") as string,
+        }))
+      : [],
     notes: (r.notes as string) ?? "",
     expenses: Array.isArray(r.expenses) ? r.expenses : [],
     dailyInfo: {

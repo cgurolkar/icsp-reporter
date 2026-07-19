@@ -1,6 +1,38 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getSiteById, updateSite, initializeDatabase, softDeleteSite, releaseMachinesFromSite } from "@/lib/database"
+import { getSiteById, updateSite, initializeDatabase, softDeleteSite, releaseMachinesFromSite, getSitePileRates, replaceSitePileRates } from "@/lib/database"
 import { canAccessAdmin, canAccessSite, getSessionFromRequest } from "@/lib/auth"
+import { publicPileRateOptions } from "@/lib/hakedis"
+
+function parsePileRatesBody(body: unknown): Array<{
+  diameterMm: number
+  label?: string | null
+  pricePrimary: number
+  priceSecondary?: number | null
+  sortOrder?: number
+  isActive?: boolean
+}> | null {
+  if (!body || typeof body !== "object") return null
+  const pileRates = (body as { pileRates?: unknown }).pileRates
+  if (!Array.isArray(pileRates)) return null
+  return pileRates
+    .map((row, idx) => {
+      const r = row as Record<string, unknown>
+      return {
+        diameterMm: Number(r.diameterMm ?? r.diameter_mm),
+        label: r.label != null ? String(r.label) : null,
+        pricePrimary: Number(r.pricePrimary ?? r.price_primary),
+        priceSecondary:
+          r.priceSecondary != null && String(r.priceSecondary).trim() !== ""
+            ? Number(r.priceSecondary)
+            : r.price_secondary != null && String(r.price_secondary).trim() !== ""
+              ? Number(r.price_secondary)
+              : null,
+        sortOrder: idx,
+        isActive: r.isActive !== false,
+      }
+    })
+    .filter((r) => Number.isFinite(r.diameterMm) && r.diameterMm > 0 && Number.isFinite(r.pricePrimary) && r.pricePrimary >= 0)
+}
 
 export async function GET(
   request: NextRequest,
@@ -17,11 +49,21 @@ export async function GET(
     if (!canAccessSite(session, siteId)) {
       return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
     }
+    await initializeDatabase()
     const site = await getSiteById(siteId)
     if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
-    if (session.role === "super_admin") return NextResponse.json(site)
+    const rates = await getSitePileRates(siteId, { activeOnly: false })
+    if (session.role === "super_admin") {
+      return NextResponse.json({
+        ...site,
+        pile_rates: rates,
+      })
+    }
     const { contract_unit_price, ...rest } = site as Record<string, unknown>
-    return NextResponse.json(rest)
+    return NextResponse.json({
+      ...rest,
+      pile_rates: publicPileRateOptions(rates),
+    })
   } catch (error) {
     console.error("Error fetching site:", error)
     return NextResponse.json({ error: "Failed to fetch site" }, { status: 500 })
@@ -71,12 +113,17 @@ export async function PUT(
         Number(iqdPerUsd) > 0 && { iqdPerUsd: Number(iqdPerUsd) }),
     })
     if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
+    let pile_rates = await getSitePileRates(siteId, { activeOnly: false })
+    if (session.role === "super_admin" && Array.isArray(body.pileRates)) {
+      const parsed = parsePileRatesBody(body)
+      pile_rates = await replaceSitePileRates(siteId, parsed ?? [])
+    }
     if (isActive === false && releaseMachinesFlag === true) {
       await releaseMachinesFromSite(siteId)
     }
-    if (session.role === "super_admin") return NextResponse.json(site)
+    if (session.role === "super_admin") return NextResponse.json({ ...site, pile_rates })
     const { contract_unit_price, ...rest } = site as Record<string, unknown>
-    return NextResponse.json(rest)
+    return NextResponse.json({ ...rest, pile_rates: publicPileRateOptions(pile_rates) })
   } catch (error) {
     console.error("Error updating site:", error)
     return NextResponse.json({ error: "Failed to update site" }, { status: 500 })

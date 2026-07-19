@@ -261,6 +261,8 @@ function AdminPanel() {
     totalPiles: string
     iqdPerUsd: string
     contractUnitPrice: string
+    /** Çap tarifeleri: diameterMm, label, pricePrimary, priceSecondary */
+    pileRates: { diameterMm: string; label: string; pricePrimary: string; priceSecondary: string }[]
     authorizedPerson: string
     employer: string
     projectStartDate: string
@@ -281,6 +283,7 @@ function AdminPanel() {
     totalPiles: "",
     iqdPerUsd: "1320",
     contractUnitPrice: "",
+    pileRates: [],
     authorizedPerson: "",
     employer: "",
     projectStartDate: "",
@@ -1851,7 +1854,7 @@ function AdminPanel() {
               variant="contained"
               startIcon={<Add />}
               onClick={() => {
-                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", iqdPerUsd: "1320", contractUnitPrice: "", authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", initialEmptyBorehole: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [], isActive: true, releaseMachinesWhenClosed: true })
+                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", iqdPerUsd: "1320", contractUnitPrice: "", pileRates: [], authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", initialEmptyBorehole: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [], isActive: true, releaseMachinesWhenClosed: true })
                 if (personelList.length === 0) fetch("/api/idari/personel?limit=500").then((r) => (r.ok ? r.json() : { data: [] })).then((res: any) => setPersonelList(Array.isArray(res) ? res : (res.data ?? []))).catch(() => {})
                 setSiteDialogOpen(true)
               }}
@@ -1933,6 +1936,23 @@ function AdminPanel() {
                         }
                       }
                     } catch { /* ignore */ }
+                    let pileRates: { diameterMm: string; label: string; pricePrimary: string; priceSecondary: string }[] = []
+                    try {
+                      const sr = await fetch(`/api/sites/${site.id}`)
+                      if (sr.ok) {
+                        const full = await sr.json()
+                        const rawRates = Array.isArray(full.pile_rates) ? full.pile_rates : []
+                        pileRates = rawRates.map((row: Record<string, unknown>) => ({
+                          diameterMm: String(row.diameter_mm ?? row.diameterMm ?? ""),
+                          label: String(row.label ?? ""),
+                          pricePrimary: String(row.price_primary ?? row.pricePrimary ?? ""),
+                          priceSecondary:
+                            row.price_secondary != null || row.priceSecondary != null
+                              ? String(row.price_secondary ?? row.priceSecondary ?? "")
+                              : "",
+                        }))
+                      }
+                    } catch { /* ignore */ }
                     setSiteDialogData({
                       id: site.id,
                       name: site.name,
@@ -1943,6 +1963,7 @@ function AdminPanel() {
                       totalPiles: site.total_piles != null ? String(site.total_piles) : "",
                       iqdPerUsd: (site as any).iqd_per_usd != null ? String((site as any).iqd_per_usd) : "1320",
                       contractUnitPrice: (site as any).contract_unit_price != null ? String((site as any).contract_unit_price) : "",
+                      pileRates,
                       authorizedPerson: (site as any).authorized_person != null ? String((site as any).authorized_person) : "",
                       employer: (site as any).employer != null ? String((site as any).employer) : "",
                       projectStartDate: (site as any).project_start_date ? String((site as any).project_start_date).slice(0, 10) : "",
@@ -2517,16 +2538,109 @@ function AdminPanel() {
               inputProps={{ min: 0 }}
             />
             {isSuperAdmin && (
-              <TextField
-                margin="dense"
-                fullWidth
-                type="number"
-                label="Sözleşme birim fiyatı (USD / metre)"
-                value={siteDialogData.contractUnitPrice}
-                onChange={(e) => setSiteDialogData((prev) => ({ ...prev, contractUnitPrice: e.target.value }))}
-                placeholder="Örn: 85"
-                inputProps={{ min: 0, step: "0.01" }}
-              />
+              <Box sx={{ mt: 1, mb: 1 }}>
+                <TextField
+                  margin="dense"
+                  fullWidth
+                  type="number"
+                  label="Varsayılan tek fiyat (USD / m) — tarife yoksa"
+                  value={siteDialogData.contractUnitPrice}
+                  onChange={(e) => setSiteDialogData((prev) => ({ ...prev, contractUnitPrice: e.target.value }))}
+                  placeholder="Örn: 85"
+                  inputProps={{ min: 0, step: "0.01" }}
+                  helperText="Çap tarifesi tanımlıysa hakediş tarifeden hesaplanır; yoksa bu fiyat kullanılır."
+                />
+                <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }} color="text.secondary">
+                  Kazık çapı tarifeleri (primary / secondary)
+                </Typography>
+                {(siteDialogData.pileRates || []).map((row, idx) => (
+                  <Box key={idx} sx={{ display: "flex", flexWrap: "wrap", gap: 1, alignItems: "center", mb: 1 }}>
+                    <TextField
+                      size="small"
+                      label="Çap (mm)"
+                      type="number"
+                      value={row.diameterMm}
+                      onChange={(e) =>
+                        setSiteDialogData((prev) => {
+                          const next = [...prev.pileRates]
+                          next[idx] = { ...next[idx], diameterMm: e.target.value }
+                          return { ...prev, pileRates: next }
+                        })
+                      }
+                      sx={{ width: 110 }}
+                      inputProps={{ min: 1 }}
+                    />
+                    <TextField
+                      size="small"
+                      label="Etiket"
+                      value={row.label}
+                      onChange={(e) =>
+                        setSiteDialogData((prev) => {
+                          const next = [...prev.pileRates]
+                          next[idx] = { ...next[idx], label: e.target.value }
+                          return { ...prev, pileRates: next }
+                        })
+                      }
+                      placeholder="Ø800"
+                      sx={{ width: 100 }}
+                    />
+                    <TextField
+                      size="small"
+                      label="Primary USD/m"
+                      type="number"
+                      value={row.pricePrimary}
+                      onChange={(e) =>
+                        setSiteDialogData((prev) => {
+                          const next = [...prev.pileRates]
+                          next[idx] = { ...next[idx], pricePrimary: e.target.value }
+                          return { ...prev, pileRates: next }
+                        })
+                      }
+                      sx={{ width: 130 }}
+                      inputProps={{ min: 0, step: "0.01" }}
+                    />
+                    <TextField
+                      size="small"
+                      label="Secondary USD/m"
+                      type="number"
+                      value={row.priceSecondary}
+                      onChange={(e) =>
+                        setSiteDialogData((prev) => {
+                          const next = [...prev.pileRates]
+                          next[idx] = { ...next[idx], priceSecondary: e.target.value }
+                          return { ...prev, pileRates: next }
+                        })
+                      }
+                      sx={{ width: 140 }}
+                      inputProps={{ min: 0, step: "0.01" }}
+                    />
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() =>
+                        setSiteDialogData((prev) => ({
+                          ...prev,
+                          pileRates: prev.pileRates.filter((_, i) => i !== idx),
+                        }))
+                      }
+                    >
+                      <Delete fontSize="small" />
+                    </IconButton>
+                  </Box>
+                ))}
+                <Button
+                  size="small"
+                  startIcon={<Add />}
+                  onClick={() =>
+                    setSiteDialogData((prev) => ({
+                      ...prev,
+                      pileRates: [...prev.pileRates, { diameterMm: "", label: "", pricePrimary: "", priceSecondary: "" }],
+                    }))
+                  }
+                >
+                  Çap tarife satırı ekle
+                </Button>
+              </Box>
             )}
             <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }} color="text.secondary">Şantiye durumu</Typography>
             <FormControlLabel
@@ -2692,7 +2806,21 @@ function AdminPanel() {
                   isOngoing: siteDialogData.isOngoing,
                   initialPilesDone: siteDialogData.isOngoing && siteDialogData.initialPilesDone.trim() ? parseInt(siteDialogData.initialPilesDone, 10) || null : null,
                   initialEmptyBorehole: siteDialogData.isOngoing && siteDialogData.initialEmptyBorehole.trim() ? parseInt(siteDialogData.initialEmptyBorehole, 10) || null : null,
-                  ...(isSuperAdmin ? { contractUnitPrice: siteDialogData.contractUnitPrice.trim() ? Number(siteDialogData.contractUnitPrice) : null } : {}),
+                  ...(isSuperAdmin
+                    ? {
+                        contractUnitPrice: siteDialogData.contractUnitPrice.trim()
+                          ? Number(siteDialogData.contractUnitPrice)
+                          : null,
+                        pileRates: (siteDialogData.pileRates || [])
+                          .map((r) => ({
+                            diameterMm: Number(r.diameterMm),
+                            label: r.label.trim() || null,
+                            pricePrimary: Number(r.pricePrimary),
+                            priceSecondary: r.priceSecondary.trim() ? Number(r.priceSecondary) : null,
+                          }))
+                          .filter((r) => Number.isFinite(r.diameterMm) && r.diameterMm > 0 && Number.isFinite(r.pricePrimary) && r.pricePrimary >= 0),
+                      }
+                    : {}),
                   assignedMachineIds: kazikIds,
                   assignedOperatorIds: siteDialogData.assignedOperatorIds || [],
                   assignedMachineOperators: (siteDialogData.assignedMachineOperators || []).filter((o) => o.personelId > 0 && kazikIds.includes(o.machineId)),
