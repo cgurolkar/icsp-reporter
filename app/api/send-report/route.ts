@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { randomUUID } from "crypto"
 import fs from "fs"
 import path from "path"
-import { saveWorkReport, initializeDatabase, getMergedNotificationEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativeTotalProduction, getCumulativePileCounts } from "@/lib/database"
+import { saveWorkReport, initializeDatabase, getMergedNotificationEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativePileCounts } from "@/lib/database"
 import { formatMeters, sumConcretePouredDrilledMeters } from "@/lib/concrete-meters"
 import { fullReportHtmlAttachment, isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
@@ -112,9 +112,6 @@ export async function POST(request: NextRequest) {
     const reportDateStr = (formData.basicInfo?.date ?? "").slice(0, 10)
     const daysElapsed = projectStartDate && reportDateStr
       ? Math.max(0, Math.floor((new Date(`${reportDateStr}T00:00:00Z`).getTime() - new Date(`${projectStartDate}T00:00:00Z`).getTime()) / 86400000) + 1)
-      : null
-    const cumulativeTotalProduction = siteIdForDb && reportDateStr
-      ? await getCumulativeTotalProduction(siteIdForDb, reportDateStr)
       : null
     // Kalan kazık: Yeni proje = 0 başlangıç; Devam eden = rapor başlangıcında girilen yapılan düşülür. Kümülatif = önceki yapılan + bugün
     let remainingPilesForDb = currentProductionSummary?.remainingPiles ?? ""
@@ -287,9 +284,7 @@ export async function POST(request: NextRequest) {
     // E-posta: SMTP_USER + global admin listesi (Postgres) + şantiye email_list
     const reportRecipients = await getMergedNotificationEmails({ siteId: siteIdForDb })
 
-    // Kayıt sonrası kümülatifler (bugünkü rapor dahil)
-    const cumulativeAfterSave =
-      siteIdForDb && reportDateStr ? await getCumulativeTotalProduction(siteIdForDb, reportDateStr) : cumulativeTotalProduction
+    // Kayıt sonrası kümülatif delgi/beton (hakediş e-postada yok — yalnızca önizleme)
     const pileCountsAfterSave =
       siteIdForDb && reportDateStr ? await getCumulativePileCounts(siteIdForDb, reportDateStr) : null
 
@@ -300,9 +295,7 @@ export async function POST(request: NextRequest) {
       concretePouredSum,
       projectStartDate,
       daysElapsed,
-      showHakedis: session.role === "super_admin",
-      contractUnitPrice: site?.contract_unit_price != null ? Number(site.contract_unit_price) : null,
-      cumulativeTotalProduction: cumulativeAfterSave,
+      showHakedis: false,
       cumulativeDrilledPiles: pileCountsAfterSave?.drilled ?? null,
       cumulativeConcretePiles: pileCountsAfterSave?.concrete ?? null,
       operatorEntries,

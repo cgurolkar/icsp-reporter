@@ -8,7 +8,6 @@ import {
   getMergedNotificationEmails,
   getSiteById,
   getOperatorEntriesBySiteAndDate,
-  getCumulativeTotalProduction,
   getCumulativePileCounts,
   getSuperAdminEmails,
   getWorkReportById,
@@ -89,8 +88,6 @@ export async function POST(request: NextRequest) {
             ) + 1,
           )
         : null
-    const cumulativeTotalProduction =
-      siteIdForDb && reportDateStr ? await getCumulativeTotalProduction(siteIdForDb, reportDateStr) : null
     const pileCounts =
       siteIdForDb && reportDateStr ? await getCumulativePileCounts(siteIdForDb, reportDateStr) : null
 
@@ -129,9 +126,7 @@ export async function POST(request: NextRequest) {
       concretePouredSum,
       projectStartDate,
       daysElapsed,
-      showHakedis: session.role === "super_admin",
-      contractUnitPrice: site?.contract_unit_price != null ? Number(site.contract_unit_price) : null,
-      cumulativeTotalProduction,
+      showHakedis: false,
       cumulativeDrilledPiles: pileCounts?.drilled ?? null,
       cumulativeConcretePiles: pileCounts?.concrete ?? null,
       operatorEntries,
