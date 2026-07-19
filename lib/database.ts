@@ -1701,8 +1701,9 @@ export async function syncSiteMachineAssignments(
         `UPDATE machines SET current_site_id = NULL, updated_at = NOW() WHERE current_site_id = $1 AND NOT (id = ANY($2::int[]))`,
         [siteId, numericIds],
       )
+      // Şantiyeye atanan makineler bilgi girişinde görünsün diye aktif yapılır
       await client.query(
-        `UPDATE machines SET current_site_id = $1, updated_at = NOW() WHERE id = ANY($2::int[])`,
+        `UPDATE machines SET current_site_id = $1, status = 'aktif', updated_at = NOW() WHERE id = ANY($2::int[])`,
         [siteId, numericIds],
       )
     }
@@ -3921,12 +3922,12 @@ export async function getOperatorMachinesForSite(userId: number, siteId: number)
   }
 }
 
-/** Şantiyedeki tüm aktif makineleri döner (site dialog ve form için) */
-export async function getMachinesForSite(siteId: number): Promise<{ id: number; name: string; machine_type: string; marka: string | null; model: string | null; operators: { personel_id: number; ad: string; soyad: string }[] }[]> {
+/** Şantiyedeki makineleri döner (atanmış / current_site_id). Hurda hariç — bilgi girişi için. */
+export async function getMachinesForSite(siteId: number): Promise<{ id: number; name: string; machine_type: string; marka: string | null; model: string | null; status?: string; operators: { personel_id: number; ad: string; soyad: string }[] }[]> {
   const client = await pool.connect()
   try {
     const r = await client.query(`
-      SELECT m.id, m.name, m.machine_type, m.marka, m.model,
+      SELECT m.id, m.name, m.machine_type, m.marka, m.model, m.status,
         COALESCE((
           SELECT json_agg(json_build_object('personel_id', p.id, 'ad', p.ad, 'soyad', p.soyad))
           FROM machine_operator_atama moa
@@ -3934,7 +3935,7 @@ export async function getMachinesForSite(siteId: number): Promise<{ id: number; 
           WHERE moa.machine_id = m.id AND (moa.bitis_tarihi IS NULL OR moa.bitis_tarihi >= CURRENT_DATE)
         ), '[]') AS operators
       FROM machines m
-      WHERE m.status = 'aktif'
+      WHERE m.status <> 'hurda'
         AND (
           m.current_site_id = $1
           OR m.id IN (

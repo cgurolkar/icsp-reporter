@@ -113,6 +113,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
   }
   const [operatorEntriesForDate, setOperatorEntriesForDate] = useState<OperatorEntryRow[]>([])
   const [reportMachineOptions, setReportMachineOptions] = useState<Machine[]>(AVAILABLE_MACHINES)
+  const [machineReloadToken, setMachineReloadToken] = useState(0)
   const [draftSnack, setDraftSnack] = useState<{ open: boolean; savedAt?: number }>({ open: false })
   const [draftRestoreSnack, setDraftRestoreSnack] = useState(false)
   // Two-step save/email flow
@@ -219,22 +220,30 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
       status: m.status ?? undefined,
       notlar: m.notlar ?? undefined,
     })
-    // Önce şantiye makineleri endpoint'i; olmazsa idari liste
+    // Şantiye atama listesi (hurda hariç tüm durumlar) + idari liste birleşimi
     Promise.all([
       fetch(`/api/sites/${siteId}/machines`).then((res) => (res.ok ? res.json() : [])),
-      fetch(`/api/idari/makineler?siteId=${siteId}&status=aktif`).then((res) => (res.ok ? res.json() : [])),
+      fetch(`/api/idari/makineler?siteId=${siteId}`).then((res) => (res.ok ? res.json() : [])),
     ])
       .then(([siteList, idariList]) => {
         if (cancelled) return
         const byId = new Map<string, Machine>()
         for (const raw of [...(Array.isArray(siteList) ? siteList : []), ...(Array.isArray(idariList) ? idariList : [])]) {
+          if (!raw || raw.id == null) continue
+          // Hurda makineleri bilgi girişine alma
+          if (String(raw.status ?? "").toLowerCase() === "hurda") continue
           const m = mapRow(raw)
           byId.set(String(m.id), m)
         }
-        const merged = [...byId.values()]
+        const merged = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, "tr"))
         // Bilgi girişi: kazık makineleri öncelikli; yoksa tüm atanmışlar
-        const kazik = merged.filter((m) => (m.type || "").toLowerCase().includes("kazık") || (m.type || "").toLowerCase().includes("kazik"))
-        const fromDb = kazik.length > 0 ? kazik : merged
+        const isKazik = (m: Machine) => {
+          const t = (m.type || "").toLocaleLowerCase("tr-TR")
+          return t.includes("kazık") || t.includes("kazik")
+        }
+        const kazik = merged.filter(isKazik)
+        // Atanmış birden fazla makine varsa hepsini göster (tip filtresi yüzünden tekine düşmesin)
+        const fromDb = merged.length > 1 ? (kazik.length > 1 ? kazik : merged) : (kazik.length > 0 ? kazik : merged)
         const options = fromDb.length > 0 ? fromDb : AVAILABLE_MACHINES
         setReportMachineOptions(options)
         setFormData((prev) => {
@@ -271,16 +280,16 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
                   note: "",
                 }
           }
+          // Şantiye makineleri her zaman tam liste; eski taslak tek makineye düşürmesin
           const productionSummary = options.map(mapProduction)
           const machines = options.map(mapBasic)
           const validIds = new Set(options.map((m) => String(m.id)))
           const pileDetails = (prev.pileDetails || []).map((p) => {
             const nextIds = (p.machineIds ?? []).filter((id) => validIds.has(String(id)))
-            const single = options.length === 1 ? [options[0].id] : nextIds.length > 0 ? nextIds : (p.machineIds ?? []).filter((id) => validIds.has(String(id)))
             if (siteChanged) {
               return { ...p, machineIds: options.length === 1 ? [options[0].id] : nextIds }
             }
-            return { ...p, machineIds: single }
+            return { ...p, machineIds: nextIds.length > 0 ? nextIds : (options.length === 1 ? [options[0].id] : nextIds) }
           })
           return {
             ...prev,
@@ -302,7 +311,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     return () => {
       cancelled = true
     }
-  }, [formData.basicInfo?.siteId])
+  }, [formData.basicInfo?.siteId, machineReloadToken])
 
   // Kullanıcı/Personel: atanmış operatör isimleri ve dünkü planlanan işler pop-up
   useEffect(() => {
@@ -852,14 +861,19 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
           <Button variant="contained" onClick={() => {
             const draft = loadDraft<typeof formData>(siteIdForDraft)
             if (draft?.formData) {
-              const sid = isRestricted && lockedSiteId != null ? lockedSiteId : initialSiteId
+              const sid =
+                draft.formData.basicInfo.siteId ??
+                (isRestricted && lockedSiteId != null ? lockedSiteId : initialSiteId) ??
+                null
               setFormData({
                 ...draft.formData,
                 basicInfo: {
                   ...draft.formData.basicInfo,
-                  siteId: draft.formData.basicInfo.siteId ?? sid ?? null,
+                  siteId: sid,
                 },
               })
+              // Taslak tek makine içerebilir; şantiye makinelerini yeniden senkronize et
+              setMachineReloadToken((n) => n + 1)
               setDraftRestoreSnack(true)
             }
             setDraftSnack({ open: false })
