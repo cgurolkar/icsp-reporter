@@ -26,7 +26,10 @@ export function formDataFromDbReport(data: {
 
   // Kayıtlı makine bazlı üretim özeti (yeni raporlar)
   let productionSummary: Record<string, unknown>[] = []
-  const rawPs = r.production_summary_json
+  let rawPs = r.production_summary_json
+  if (typeof rawPs === "string") {
+    try { rawPs = JSON.parse(rawPs) } catch { rawPs = null }
+  }
   if (Array.isArray(rawPs) && rawPs.length > 0) {
     productionSummary = rawPs.map((row) => {
       const m = row as Record<string, unknown>
@@ -118,13 +121,36 @@ export function formDataFromDbReport(data: {
       total: r.vehicles_total ?? 0,
     },
     fuel: {
-      machines: (data.fuelRecords || []).map((f: Record<string, unknown>) => ({
-        name: f.machine_name ?? "",
-        shift: f.shift ?? "",
-        incoming: f.incoming ?? "",
-        remaining: f.remaining ?? "",
-        used: f.used ?? "",
-      })),
+      machines: (() => {
+        const records = (data.fuelRecords || []).map((f: Record<string, unknown>) => ({
+          name: String(f.machine_name ?? "").trim(),
+          shift: String(f.shift ?? ""),
+          incoming: String(f.incoming ?? ""),
+          remaining: String(f.remaining ?? ""),
+          used: String(f.used ?? ""),
+        }))
+        const byName = new Map<string, (typeof records)[0]>()
+        for (const r of records) {
+          if (!r.name) continue
+          const key = r.name.toLocaleLowerCase("tr-TR")
+          if (!byName.has(key)) byName.set(key, r)
+        }
+        const ordered: typeof records = []
+        const seen = new Set<string>()
+        const pushMachine = (rawName: unknown) => {
+          const name = String(rawName ?? "").trim()
+          if (!name) return
+          const key = name.toLocaleLowerCase("tr-TR")
+          if (seen.has(key)) return
+          seen.add(key)
+          ordered.push(byName.get(key) ?? { name, shift: "", incoming: "", remaining: "", used: "" })
+          byName.delete(key)
+        }
+        for (const m of dbMachines) pushMachine(m.machine_name)
+        for (const m of productionSummary) pushMachine((m as { machineName?: string }).machineName)
+        for (const r of byName.values()) ordered.push(r)
+        return ordered.length > 0 ? ordered : records
+      })(),
     },
     pileDetails: Array.isArray(r.pile_details) ? r.pile_details : [],
     notes: (r.notes as string) ?? "",

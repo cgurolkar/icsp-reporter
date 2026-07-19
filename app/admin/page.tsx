@@ -1878,7 +1878,7 @@ function AdminPanel() {
                         : ""}
                       <strong>Rapor sayısı: {Number(site.report_count) || 0}</strong>
                       {site.total_piles != null ? ` · Proje toplam kazık sayısı (Ad.): ${site.total_piles}` : ""}
-                      {isSuperAdmin && site.contract_unit_price != null ? ` · Birim fiyat: ${Number(site.contract_unit_price).toLocaleString("tr-TR")} /m` : ""}
+                      {isSuperAdmin && site.contract_unit_price != null ? ` · Birim fiyat: ${Number(site.contract_unit_price).toLocaleString("tr-TR")} USD/m` : ""}
                     </>
                   }
                 />
@@ -2521,10 +2521,10 @@ function AdminPanel() {
                 margin="dense"
                 fullWidth
                 type="number"
-                label="Sözleşme birim fiyatı (metre başı)"
+                label="Sözleşme birim fiyatı (USD / metre)"
                 value={siteDialogData.contractUnitPrice}
                 onChange={(e) => setSiteDialogData((prev) => ({ ...prev, contractUnitPrice: e.target.value }))}
-                placeholder="Örn: 250"
+                placeholder="Örn: 85"
                 inputProps={{ min: 0, step: "0.01" }}
               />
             )}

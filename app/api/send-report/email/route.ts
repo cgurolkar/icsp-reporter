@@ -9,6 +9,7 @@ import {
   getSiteById,
   getOperatorEntriesBySiteAndDate,
   getCumulativeTotalProduction,
+  getCumulativePileCounts,
   getSuperAdminEmails,
   getWorkReportById,
   initializeDatabase,
@@ -90,6 +91,8 @@ export async function POST(request: NextRequest) {
         : null
     const cumulativeTotalProduction =
       siteIdForDb && reportDateStr ? await getCumulativeTotalProduction(siteIdForDb, reportDateStr) : null
+    const pileCounts =
+      siteIdForDb && reportDateStr ? await getCumulativePileCounts(siteIdForDb, reportDateStr) : null
 
     const prodRows = productionSummary as unknown as { concretePoured?: string; dailyDrilledPiles?: string; dailyPileCount?: string }[]
     const concretePoured = parseInt(String(rawReport.concrete_poured ?? ""), 10) || 0
@@ -121,7 +124,7 @@ export async function POST(request: NextRequest) {
     }
 
     const mainReportContent = generatePDFMainReport(formData, {
-      computedRemainingPiles: String(curPs?.remainingPiles ?? ""),
+      computedRemainingPiles: String(curPs?.remainingPiles ?? rawReport.remaining_piles ?? ""),
       computedDailyPileCount: dailyPileForDb,
       concretePouredSum,
       projectStartDate,
@@ -129,6 +132,8 @@ export async function POST(request: NextRequest) {
       showHakedis: session.role === "super_admin",
       contractUnitPrice: site?.contract_unit_price != null ? Number(site.contract_unit_price) : null,
       cumulativeTotalProduction,
+      cumulativeDrilledPiles: pileCounts?.drilled ?? null,
+      cumulativeConcretePiles: pileCounts?.concrete ?? null,
       operatorEntries,
     })
     const expensesPageContent = generatePDFExpensesPage(formData)

@@ -2235,7 +2235,7 @@ export async function getSuperAdminEmails(): Promise<string[]> {
   }
 }
 
-/** Şantiye bazında verilen tarihe kadar kümülatif toplam imalat (metre). */
+/** Şantiye bazında verilen tarihe kadar kümülatif toplam imalat (metre) — tüm makineler. */
 export async function getCumulativeTotalProduction(siteId: number, date: string): Promise<number> {
   const client = await pool.connect()
   try {
@@ -2243,6 +2243,17 @@ export async function getCumulativeTotalProduction(siteId: number, date: string)
     const r = await client.query(
       `SELECT COALESCE(SUM(
           CASE
+            WHEN production_summary_json IS NOT NULL AND jsonb_typeof(production_summary_json) = 'array' THEN
+              (
+                SELECT COALESCE(SUM(
+                  CASE
+                    WHEN COALESCE(elem->>'totalProduction', '') ~ '^[0-9]+([\\.,][0-9]+)?$'
+                      THEN REPLACE(elem->>'totalProduction', ',', '.')::numeric
+                    ELSE 0
+                  END
+                ), 0)
+                FROM jsonb_array_elements(production_summary_json) AS elem
+              )
             WHEN COALESCE(total_production_summary, '') ~ '^[0-9]+([\\.,][0-9]+)?$'
               THEN REPLACE(total_production_summary, ',', '.')::numeric
             ELSE 0
@@ -2253,6 +2264,61 @@ export async function getCumulativeTotalProduction(siteId: number, date: string)
       [siteId, d]
     )
     return parseFloat(String(r.rows[0]?.toplam ?? "0")) || 0
+  } finally {
+    client.release()
+  }
+}
+
+/** Şantiye bazında kümülatif delgi (adet) + beton dökülen (adet). */
+export async function getCumulativePileCounts(
+  siteId: number,
+  date: string,
+): Promise<{ drilled: number; concrete: number }> {
+  const client = await pool.connect()
+  try {
+    const d = (date || "").slice(0, 10)
+    const site = await client.query(
+      `SELECT total_piles, is_ongoing, initial_piles_done FROM sites WHERE id = $1`,
+      [siteId],
+    )
+    const siteRow = site.rows[0]
+    const initialConcrete =
+      siteRow?.is_ongoing === true && siteRow?.initial_piles_done != null
+        ? Number(siteRow.initial_piles_done) || 0
+        : 0
+
+    const r = await client.query(
+      `SELECT
+          COALESCE(SUM(
+            CASE
+              WHEN production_summary_json IS NOT NULL AND jsonb_typeof(production_summary_json) = 'array' THEN
+                (
+                  SELECT COALESCE(SUM(
+                    CASE
+                      WHEN COALESCE(elem->>'dailyDrilledPiles', elem->>'dailyPileCount', '') ~ '^[0-9]+'
+                        THEN COALESCE(NULLIF(elem->>'dailyDrilledPiles', ''), NULLIF(elem->>'dailyPileCount', ''), '0')::int
+                      ELSE 0
+                    END
+                  ), 0)
+                  FROM jsonb_array_elements(production_summary_json) AS elem
+                )
+              WHEN COALESCE(daily_pile_count, '') ~ '^[0-9]+' THEN daily_pile_count::int
+              ELSE 0
+            END
+          ), 0) AS drilled,
+          COALESCE(SUM(
+            CASE
+              WHEN COALESCE(concrete_poured, '') ~ '^[0-9]+' THEN concrete_poured::int
+              ELSE 0
+            END
+          ), 0) AS concrete
+       FROM work_reports
+       WHERE site_id = $1 AND date <= $2`,
+      [siteId, d],
+    )
+    const drilled = (parseInt(String(r.rows[0]?.drilled ?? "0"), 10) || 0)
+    const concreteFromReports = (parseInt(String(r.rows[0]?.concrete ?? "0"), 10) || 0) + initialConcrete
+    return { drilled, concrete: concreteFromReports }
   } finally {
     client.release()
   }

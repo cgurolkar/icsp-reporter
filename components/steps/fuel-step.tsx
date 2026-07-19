@@ -49,17 +49,36 @@ export default function FuelStep({ data, onChange, selectedMachine, additionalMa
   const vehicleOptions = useMemo(() => [t("crane"), t("loader"), t("truck"), t("pickup"), t("car"), t("service")], [t])
   const nameOptions = useMemo(() => [...machineNames, ...vehicleOptions], [machineNames, vehicleOptions])
 
-  // Tabloda en az bir satır olsun; temel bilgilerdeki makineleri doldur (boş veya tek boş satır varken)
+  // Seçili tüm makineler için yakıt satırı olsun; eksik makine satırlarını ekle (mevcut değerleri koru)
   useEffect(() => {
     const current = Array.isArray(data.machines) ? data.machines : []
-    const names = (basicInfoMachines || []).map((m) => (m as { machineName?: string }).machineName).filter(Boolean) as string[]
-    const allEmpty = current.length === 0 || (current.length === 1 && !(current[0].name || "").trim())
-    if (names.length > 0 && allEmpty) {
-      onChange({ ...data, machines: names.map((name) => ({ name, shift: "", incoming: "", remaining: "", used: "" })) })
-    } else if (current.length === 0) {
-      onChange({ ...data, machines: [emptyFuelMachine] })
+    const fromBasic = (basicInfoMachines || []).map((m) => (m as { machineName?: string }).machineName).filter(Boolean) as string[]
+    const fromSelection = [selectedMachine?.name, ...(additionalMachines || []).map((m) => m.name)].filter(Boolean) as string[]
+    const names = [...new Set([...fromBasic, ...fromSelection])]
+    if (names.length === 0) {
+      if (current.length === 0) onChange({ ...data, machines: [emptyFuelMachine] })
+      return
     }
-  }, [basicInfoMachines])
+    const byName = new Map<string, (typeof current)[0]>()
+    for (const row of current) {
+      const n = String(row?.name ?? "").trim()
+      if (n) byName.set(n.toLocaleLowerCase("tr-TR"), row)
+    }
+    const nameSet = new Set(names.map((n) => n.toLocaleLowerCase("tr-TR")))
+    const extras = current.filter((row) => {
+      const n = String(row?.name ?? "").trim()
+      return n && !nameSet.has(n.toLocaleLowerCase("tr-TR"))
+    })
+    const synced = [
+      ...names.map((name) => byName.get(name.toLocaleLowerCase("tr-TR")) ?? { name, shift: "", incoming: "", remaining: "", used: "" }),
+      ...extras,
+    ]
+    const missing = names.some((n) => !byName.has(n.toLocaleLowerCase("tr-TR")))
+    const sameLength = synced.length === current.length
+    if (missing || current.length === 0 || (!sameLength && names.length > current.filter((r) => String(r?.name ?? "").trim()).length)) {
+      onChange({ ...data, machines: synced })
+    }
+  }, [basicInfoMachines, selectedMachine, additionalMachines])
 
   const addMachine = () => {
     onChange({

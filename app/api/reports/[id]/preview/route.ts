@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getWorkReportById, getOperatorEntriesBySiteAndDate, initializeDatabase, getSiteById, getCumulativeTotalProduction } from "@/lib/database"
+import { getWorkReportById, getOperatorEntriesBySiteAndDate, initializeDatabase, getSiteById, getCumulativeTotalProduction, getCumulativePileCounts } from "@/lib/database"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
 import { canAccessSite, canViewReports, getSessionFromRequest } from "@/lib/auth"
 import { formDataFromDbReport } from "@/lib/report-db-formdata"
@@ -44,6 +44,7 @@ export async function GET(
       ? Math.max(0, Math.floor((new Date(`${reportDate}T00:00:00Z`).getTime() - new Date(`${projectStartDate}T00:00:00Z`).getTime()) / 86400000) + 1)
       : null
     const cumulativeTotalProduction = siteId && reportDate ? await getCumulativeTotalProduction(siteId, reportDate) : null
+    const pileCounts = siteId && reportDate ? await getCumulativePileCounts(siteId, reportDate) : null
     const html = generatePDFMainReport(formData, {
       computedRemainingPiles: r.remaining_piles != null && String(r.remaining_piles).trim() !== "" ? String(r.remaining_piles) : undefined,
       computedDailyPileCount: r.daily_pile_count != null && String(r.daily_pile_count).trim() !== "" ? String(r.daily_pile_count) : (concretePoured > 0 ? String(concretePoured) : undefined),
@@ -53,6 +54,8 @@ export async function GET(
       showHakedis: session.role === "super_admin",
       contractUnitPrice: site?.contract_unit_price != null ? Number(site.contract_unit_price) : null,
       cumulativeTotalProduction,
+      cumulativeDrilledPiles: pileCounts?.drilled ?? null,
+      cumulativeConcretePiles: pileCounts?.concrete ?? null,
       operatorEntries,
     }) + generatePDFExpensesPage(formData)
     return new NextResponse(html, {

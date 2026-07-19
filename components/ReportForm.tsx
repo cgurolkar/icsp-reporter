@@ -291,6 +291,30 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
             }
             return { ...p, machineIds: nextIds.length > 0 ? nextIds : (options.length === 1 ? [options[0].id] : nextIds) }
           })
+          const machineNames = machines.map((m) => m.machineName).filter(Boolean) as string[]
+          const fuelByName = new Map(
+            (prev.fuel.machines || [])
+              .filter((f) => String(f.name || "").trim())
+              .map((f) => [String(f.name).trim().toLocaleLowerCase("tr-TR"), f] as const),
+          )
+          const nameSet = new Set(machineNames.map((n) => n.toLocaleLowerCase("tr-TR")))
+          const fuelExtras = (prev.fuel.machines || []).filter((f) => {
+            const n = String(f.name || "").trim()
+            return n && !nameSet.has(n.toLocaleLowerCase("tr-TR"))
+          })
+          const fuelMachines = [
+            ...machineNames.map(
+              (name) =>
+                fuelByName.get(name.toLocaleLowerCase("tr-TR")) ?? {
+                  name,
+                  shift: "",
+                  incoming: "",
+                  remaining: "",
+                  used: "",
+                },
+            ),
+            ...fuelExtras,
+          ]
           return {
             ...prev,
             siteConcretePouredPiles: siteChanged ? "" : (prev.siteConcretePouredPiles ?? ""),
@@ -302,6 +326,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
             },
             basicInfo: { ...prev.basicInfo, machines },
             productionSummary,
+            fuel: { ...prev.fuel, machines: fuelMachines.length > 0 ? fuelMachines : prev.fuel.machines },
           }
         })
       })

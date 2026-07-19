@@ -1,5 +1,127 @@
 /** Rapor HTML içeriği üretimi — hem send-report hem preview (eski raporlar) tarafından kullanılır. */
 
+function normName(s: unknown): string {
+  return String(s ?? "").trim().toLocaleLowerCase("tr-TR")
+}
+
+function parseMeters(val: unknown): number {
+  const t = String(val ?? "").trim().replace(",", ".")
+  if (!t) return 0
+  const n = parseFloat(t)
+  return Number.isFinite(n) ? n : 0
+}
+
+/** Boş imalat/delgi alanlarını operatör girişinden doldur; seçili makineleri özet satırına ekle. */
+function enrichProductionSummary(formData: any, operatorEntries: any[]): any[] {
+  const base = Array.isArray(formData.productionSummary) ? formData.productionSummary.map((m: any) => ({ ...m })) : []
+  const byKey = new Map<string, any>()
+  for (const m of base) {
+    const k = String(m.machineId || "").trim() || normName(m.machineName)
+    if (k) byKey.set(k, m)
+  }
+  const ensureRow = (machineId: string, machineName: string) => {
+    const k = String(machineId || "").trim() || normName(machineName)
+    if (!k || !machineName) return
+    if (!byKey.has(k) && !byKey.has(normName(machineName))) {
+      const row = {
+        machineId: machineId || "",
+        machineName,
+        totalProduction: "",
+        emptyBorehole: "",
+        preBorehole: "",
+        concretePoured: "",
+        dailyDrilledPiles: "",
+      }
+      byKey.set(k, row)
+      base.push(row)
+    }
+  }
+  const sel = formData.machineSelection?.selectedMachine
+  if (sel?.name) ensureRow(String(sel.id ?? ""), String(sel.name))
+  for (const m of formData.machineSelection?.additionalMachines || []) {
+    if (m?.name) ensureRow(String(m.id ?? ""), String(m.name))
+  }
+  for (const m of formData.basicInfo?.machines || []) {
+    if (m?.machineName) ensureRow(String(m.machineId ?? ""), String(m.machineName))
+  }
+
+  for (const oe of operatorEntries) {
+    const name = String(oe.machine_name ?? "").trim()
+    if (!name) continue
+    let row = base.find((m: any) => normName(m.machineName) === normName(name))
+    if (!row) {
+      row = {
+        machineId: "",
+        machineName: name,
+        totalProduction: "",
+        emptyBorehole: "",
+        preBorehole: "",
+        concretePoured: "",
+        dailyDrilledPiles: "",
+      }
+      base.push(row)
+    }
+    if (!String(row.totalProduction ?? "").trim() && String(oe.total_production ?? "").trim()) {
+      row.totalProduction = String(oe.total_production)
+    }
+    if (!String(row.dailyDrilledPiles ?? row.dailyPileCount ?? "").trim() && String(oe.daily_pile_count ?? "").trim()) {
+      row.dailyDrilledPiles = String(oe.daily_pile_count)
+    }
+    if (!String(row.emptyBorehole ?? "").trim() && String(oe.empty_borehole ?? "").trim()) {
+      row.emptyBorehole = String(oe.empty_borehole)
+    }
+    if (!String(row.preBorehole ?? "").trim() && String(oe.pre_borehole ?? "").trim()) {
+      row.preBorehole = String(oe.pre_borehole)
+    }
+    if (!String(row.concretePoured ?? "").trim() && String(oe.concrete_poured ?? "").trim()) {
+      row.concretePoured = String(oe.concrete_poured)
+    }
+  }
+  return base
+}
+
+/** Yakıt satırlarını seçili makinelerle birleştir (eksik makine satırlarını ekle). */
+function enrichFuelMachines(formData: any, operatorEntries: any[]): any[] {
+  const existing = Array.isArray(formData.fuel?.machines) ? formData.fuel.machines : []
+  const byName = new Map<string, any>()
+  for (const m of existing) {
+    const n = String(m?.name ?? "").trim()
+    if (n) byName.set(normName(n), { ...m, name: n })
+  }
+  const orderedNames: string[] = []
+  const pushName = (n: unknown) => {
+    const name = String(n ?? "").trim()
+    if (!name) return
+    if (!orderedNames.some((x) => normName(x) === normName(name))) orderedNames.push(name)
+  }
+  const sel = formData.machineSelection?.selectedMachine?.name
+  if (sel) pushName(sel)
+  for (const m of formData.machineSelection?.additionalMachines || []) pushName(m?.name)
+  for (const m of formData.basicInfo?.machines || []) pushName(m?.machineName)
+  for (const m of Array.isArray(formData.productionSummary) ? formData.productionSummary : []) pushName(m?.machineName)
+  for (const oe of operatorEntries) pushName(oe.machine_name)
+
+  const result: any[] = []
+  for (const name of orderedNames) {
+    const key = normName(name)
+    if (byName.has(key)) {
+      result.push(byName.get(key))
+      byName.delete(key)
+    } else {
+      const oe = operatorEntries.find((e: any) => normName(e.machine_name) === key)
+      result.push({
+        name,
+        shift: "",
+        incoming: "",
+        remaining: "",
+        used: oe?.used_fuel != null && String(oe.used_fuel).trim() !== "" ? String(oe.used_fuel) : "",
+      })
+    }
+  }
+  for (const m of byName.values()) result.push(m)
+  return result
+}
+
 export function generatePDFMainReport(
   formData: any,
   opts?: {
@@ -11,6 +133,10 @@ export function generatePDFMainReport(
     showHakedis?: boolean
     contractUnitPrice?: number | null
     cumulativeTotalProduction?: number | null
+    /** Kümülatif delgisi tamamlanan (adet) */
+    cumulativeDrilledPiles?: number | null
+    /** Kümülatif beton dökülen (adet) */
+    cumulativeConcretePiles?: number | null
     operatorEntries?: Array<{
       machine_name?: string; machine_hours?: string; used_fuel?: string; work_done?: string; note?: string; username?: string;
       daily_pile_count?: string; total_production?: string; empty_borehole?: string; pre_borehole?: string; concrete_poured?: string;
@@ -21,17 +147,19 @@ export function generatePDFMainReport(
   }
 ) {
   const operatorEntries = opts?.operatorEntries ?? []
+  const productionSummary = enrichProductionSummary(formData, operatorEntries)
+  formData = { ...formData, productionSummary }
   const machines = formData.basicInfo?.machines ?? []
   const additionalMachines = formData.machineSelection?.additionalMachines ?? []
-  const fuelMachines = formData.fuel?.machines ?? []
+  const fuelMachines = enrichFuelMachines(formData, operatorEntries)
   const pileDetailsList = formData.pileDetails ?? []
   const idx = typeof formData.machineSelection?.currentMachineIndex === "number" ? formData.machineSelection.currentMachineIndex : 0
   const currentMachine = machines[idx]
-  const currentProductionSummary = Array.isArray(formData.productionSummary) ? formData.productionSummary[idx] : null
+  const currentProductionSummary = productionSummary[idx] ?? null
 
-  const isArray = Array.isArray(formData.productionSummary)
+  const isArray = productionSummary.length > 0
   const totalProduction = isArray
-    ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseFloat(m.totalProduction) || 0), 0)
+    ? productionSummary.reduce((sum: number, m: any) => sum + parseMeters(m.totalProduction), 0)
     : formData.productionSummary?.totalProduction
   const siteConcreteTrim = String(formData.siteConcretePouredPiles ?? "").trim()
   const siteBetonExplicit = siteConcreteTrim !== "" ? parseInt(siteConcreteTrim, 10) || 0 : null
@@ -40,41 +168,52 @@ export function generatePDFMainReport(
     (siteBetonExplicit !== null
       ? siteBetonExplicit
       : isArray
-        ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.concretePoured) || 0), 0)
+        ? productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.concretePoured) || 0), 0)
         : parseInt(formData.productionSummary?.concretePoured ?? "", 10) || 0)
   const totalPileCountFromForm = isArray
-    ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.totalPileCount) || 0), 0)
+    ? productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.totalPileCount) || 0), 0)
     : parseInt(formData.productionSummary?.totalPileCount ?? "", 10) || 0
   const totalPileCount = totalPileCountFromForm > 0 ? totalPileCountFromForm : concreteSum
   const dailyDrilledSum = isArray
-    ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(String(m.dailyDrilledPiles ?? "").trim(), 10) || 0), 0)
+    ? productionSummary.reduce((sum: number, m: any) => sum + (parseInt(String(m.dailyDrilledPiles ?? "").trim(), 10) || 0), 0)
     : 0
   const dailyPileCountFromForm =
     dailyDrilledSum > 0
       ? dailyDrilledSum
       : (isArray
-          ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.dailyPileCount) || 0), 0)
+          ? productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.dailyPileCount) || 0), 0)
           : parseInt(formData.productionSummary?.dailyPileCount ?? "", 10) || 0)
   const dailyPileCount = opts?.computedDailyPileCount?.trim()
     ? opts.computedDailyPileCount
     : (dailyPileCountFromForm > 0 ? String(dailyPileCountFromForm) : (concreteSum > 0 ? String(concreteSum) : "—"))
-  const totalCompletedPiles = isArray
-    ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.totalCompletedPiles) || 0), 0)
-    : (formData.productionSummary?.totalCompletedPiles || 0)
   const remainingPiles = (opts?.computedRemainingPiles != null && opts.computedRemainingPiles !== "")
     ? opts.computedRemainingPiles
     : (isArray
-        ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.remainingPiles) || 0), 0)
+        ? productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.remainingPiles) || 0), 0)
         : formData.productionSummary?.remainingPiles)
   const steelLoweredPiles = isArray
-    ? formData.productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.steelLoweredPiles) || 0), 0)
+    ? productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.steelLoweredPiles) || 0), 0)
     : (formData.productionSummary?.steelLoweredPiles || 0)
   const concretePoured = concreteSum
 
-  // Kazık ilerleme yüzdesi
   const remainingNum = parseInt(String(remainingPiles), 10) || 0
-  const completedNum = parseInt(String(totalCompletedPiles), 10) || 0
-  const totalProjectPiles = completedNum + remainingNum
+  const drilledCompleted =
+    opts?.cumulativeDrilledPiles != null ? Number(opts.cumulativeDrilledPiles) : null
+  let concreteCompleted =
+    opts?.cumulativeConcretePiles != null ? Number(opts.cumulativeConcretePiles) : null
+  if (concreteCompleted == null || !Number.isFinite(concreteCompleted)) {
+    const fromForm = isArray
+      ? productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.totalCompletedPiles) || 0), 0)
+      : (parseInt(String(formData.productionSummary?.totalCompletedPiles ?? ""), 10) || 0)
+    if (fromForm > 0) concreteCompleted = fromForm
+    else if (remainingNum >= 0 && totalPileCountFromForm > 0) {
+      concreteCompleted = Math.max(0, totalPileCountFromForm - remainingNum)
+    } else {
+      concreteCompleted = null
+    }
+  }
+  const completedNum = concreteCompleted != null && Number.isFinite(concreteCompleted) ? concreteCompleted : 0
+  const totalProjectPiles = completedNum + remainingNum > 0 ? completedNum + remainingNum : (totalPileCountFromForm || 0)
   const progressPct = totalProjectPiles > 0 ? Math.min(100, Math.round((completedNum / totalProjectPiles) * 100)) : 0
 
   // Tarih formatlama
@@ -198,25 +337,30 @@ export function generatePDFMainReport(
   <div style="margin-bottom:8px;padding:6px 10px;border:1px solid #c7d2e8;border-radius:6px;background:#f8fafc;display:flex;gap:12px;flex-wrap:wrap;">
     <div style="font-size:10px;color:#475569;"><strong>İşe başlama tarihi:</strong> ${projectStartDate || "—"}</div>
     <div style="font-size:10px;color:#475569;"><strong>Geçen gün:</strong> ${elapsedDays != null && elapsedDays >= 0 ? elapsedDays : "—"}</div>
-    ${showHakedis ? `<div style="font-size:10px;color:#1a237e;"><strong>Birim fiyat:</strong> ${contractUnitPrice != null ? `${contractUnitPrice.toLocaleString("tr-TR")} /m` : "—"}</div>` : ""}
-    ${showHakedis ? `<div style="font-size:10px;color:#1a237e;"><strong>Kümülatif metraj:</strong> ${cumulativeTotalProduction != null ? cumulativeTotalProduction.toLocaleString("tr-TR") : "—"} m</div>` : ""}
-    ${showHakedis ? `<div style="font-size:10px;color:#166534;"><strong>Hak edilen:</strong> ${hakedisAmount != null ? `${hakedisAmount.toLocaleString("tr-TR")} IQD` : "—"}</div>` : ""}
+    ${showHakedis ? `<div style="font-size:10px;color:#1a237e;"><strong>Birim fiyat:</strong> ${contractUnitPrice != null ? `${contractUnitPrice.toLocaleString("tr-TR")} USD/m` : "—"}</div>` : ""}
+    ${showHakedis ? `<div style="font-size:10px;color:#1a237e;"><strong>Beton dökülen metraj (küm.):</strong> ${cumulativeTotalProduction != null ? cumulativeTotalProduction.toLocaleString("tr-TR") : "—"} m</div>` : ""}
+    ${showHakedis ? `<div style="font-size:10px;color:#166534;"><strong>Hak edilen:</strong> ${hakedisAmount != null ? `${hakedisAmount.toLocaleString("tr-TR", { maximumFractionDigits: 2 })} USD` : "—"}</div>` : ""}
   </div>
-  <div class="stat-grid stat-grid-4" style="margin-bottom:10px;">
+  <div class="stat-grid" style="margin-bottom:10px;grid-template-columns:repeat(5,1fr);">
     <div class="stat-card highlight">
-      <div class="stat-label">Günlük Kazık</div>
+      <div class="stat-label">Günlük Delgi</div>
       <div class="stat-value">${v(dailyPileCount)}</div>
       <div class="stat-unit">adet</div>
     </div>
     <div class="stat-card highlight">
       <div class="stat-label">Toplam İmalat</div>
-      <div class="stat-value">${v(totalProduction)}</div>
+      <div class="stat-value">${v(typeof totalProduction === "number" ? (totalProduction > 0 ? totalProduction.toFixed(2) : "") : totalProduction)}</div>
       <div class="stat-unit">metre</div>
     </div>
     <div class="stat-card green">
-      <div class="stat-label">Tamamlanan</div>
-      <div class="stat-value">${v(totalCompletedPiles)}</div>
-      <div class="stat-unit">kazık</div>
+      <div class="stat-label">Delgisi Tamamlanan</div>
+      <div class="stat-value">${v(drilledCompleted != null && drilledCompleted > 0 ? drilledCompleted : "")}</div>
+      <div class="stat-unit">kazık (küm.)</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Beton Dökülen</div>
+      <div class="stat-value">${v(concreteCompleted != null && concreteCompleted > 0 ? concreteCompleted : "")}</div>
+      <div class="stat-unit">kazık (küm.)</div>
     </div>
     <div class="stat-card orange">
       <div class="stat-label">Kalan Kazık</div>
@@ -237,7 +381,7 @@ export function generatePDFMainReport(
         <div class="progress-fill" style="width:${progressPct}%;"></div>
       </div>
       <div class="progress-label" style="margin-top:3px;">
-        <span>${completedNum} kazık tamamlandı</span>
+        <span>${completedNum} beton döküldü</span>
         <span>${remainingNum} kazık kaldı / ${totalProjectPiles} toplam</span>
       </div>
     </div>
@@ -259,7 +403,7 @@ export function generatePDFMainReport(
               for (const m of additionalMachines || []) {
                 if (m?.name && !names.includes(String(m.name))) names.push(String(m.name))
               }
-              for (const m of (Array.isArray(formData.productionSummary) ? formData.productionSummary : [])) {
+              for (const m of productionSummary) {
                 if (m?.machineName && !names.includes(String(m.machineName))) names.push(String(m.machineName))
               }
               if (names.length === 0) return `<span class="machine-tag">Seçilmedi</span>`
@@ -268,7 +412,7 @@ export function generatePDFMainReport(
           </div>
           ${(() => {
             // Üretim özeti (şantiye sorumlusu girişi) — tüm makineler
-            const ps = Array.isArray(formData.productionSummary) ? formData.productionSummary : []
+            const ps = productionSummary
             const hasPs = ps.some((m: any) =>
               String(m.totalProduction ?? "").trim() ||
               String(m.dailyDrilledPiles ?? m.dailyPileCount ?? "").trim() ||
@@ -292,7 +436,7 @@ export function generatePDFMainReport(
                   ${ps.length > 1 ? `<tr style="background:#e8eaf6;">
                     <td style="font-weight:700;">TOPLAM</td>
                     <td class="td-total">${ps.reduce((s: number, m: any) => s + (parseInt(String(m.dailyDrilledPiles ?? m.dailyPileCount ?? "0"), 10) || 0), 0)} Ad.</td>
-                    <td class="td-total">${ps.reduce((s: number, m: any) => s + (parseFloat(m.totalProduction) || 0), 0).toFixed(2)} m</td>
+                    <td class="td-total">${ps.reduce((s: number, m: any) => s + parseMeters(m.totalProduction), 0).toFixed(2)} m</td>
                     <td class="td-total">${ps.reduce((s: number, m: any) => s + (parseInt(m.emptyBorehole) || 0), 0)} Ad.</td>
                     <td class="td-total">${ps.reduce((s: number, m: any) => s + (parseInt(m.preBorehole) || 0), 0)} Ad.</td>
                   </tr>` : ""}
@@ -335,13 +479,14 @@ export function generatePDFMainReport(
         <div class="section-body">
           <table>
             <tbody>
-              <tr><td style="color:#475569;font-weight:600;">Toplam İmalat</td><td class="td-center" style="color:#1a237e;font-weight:700;">${v(totalProduction)} m</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Toplam İmalat</td><td class="td-center" style="color:#1a237e;font-weight:700;">${v(typeof totalProduction === "number" ? (totalProduction > 0 ? totalProduction.toFixed(2) : "") : totalProduction)} m</td></tr>
               <tr><td style="color:#475569;font-weight:600;">Toplam Kazık</td><td class="td-center" style="font-weight:700;">${v(totalPileCount)} adet</td></tr>
-              <tr><td style="color:#475569;font-weight:600;">Günlük Yapılan</td><td class="td-center" style="color:#16a34a;font-weight:700;">${v(dailyPileCount)} adet</td></tr>
-              <tr><td style="color:#475569;font-weight:600;">Tamamlanan (Kümülatif)</td><td class="td-center" style="font-weight:700;">${v(totalCompletedPiles)} adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Günlük Delgi</td><td class="td-center" style="color:#16a34a;font-weight:700;">${v(dailyPileCount)} adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Delgisi Tamamlanan (Küm.)</td><td class="td-center" style="font-weight:700;">${v(drilledCompleted != null && drilledCompleted > 0 ? drilledCompleted : "")} adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Beton Dökülen (Küm.)</td><td class="td-center" style="font-weight:700;">${v(concreteCompleted != null && concreteCompleted > 0 ? concreteCompleted : "")} adet</td></tr>
               <tr><td style="color:#475569;font-weight:600;">Kalan Kazık</td><td class="td-center" style="color:#d97706;font-weight:700;">${v(remainingPiles)} adet</td></tr>
               <tr><td style="color:#475569;font-weight:600;">Demir İndirilen</td><td class="td-center" style="font-weight:700;">${v(steelLoweredPiles)} adet</td></tr>
-              <tr><td style="color:#475569;font-weight:600;">Beton Dökülen</td><td class="td-center" style="font-weight:700;">${v(concretePoured)} adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Beton Dökülen (Bugün)</td><td class="td-center" style="font-weight:700;">${v(concretePoured)} adet</td></tr>
             </tbody>
           </table>
         </div>

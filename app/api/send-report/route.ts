@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { randomUUID } from "crypto"
 import fs from "fs"
 import path from "path"
-import { saveWorkReport, initializeDatabase, getMergedNotificationEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativeTotalProduction } from "@/lib/database"
+import { saveWorkReport, initializeDatabase, getMergedNotificationEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativeTotalProduction, getCumulativePileCounts } from "@/lib/database"
 import { fullReportHtmlAttachment, isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
 import { getSessionFromRequest, canDoDataEntry, canAccessSite, getAllowedSiteIds } from "@/lib/auth"
@@ -117,6 +117,7 @@ export async function POST(request: NextRequest) {
       : null
     // Kalan kazık: Yeni proje = 0 başlangıç; Devam eden = rapor başlangıcında girilen yapılan düşülür. Kümülatif = önceki yapılan + bugün
     let remainingPilesForDb = currentProductionSummary?.remainingPiles ?? ""
+    let cumulativeConcreteAfterToday = 0
     if (siteIdForDb && site) {
       const totalPiles = site.total_piles != null ? Number(site.total_piles) : null
       const last = await getLastReportRemainingBySite(siteIdForDb)
@@ -127,10 +128,16 @@ export async function POST(request: NextRequest) {
         cumulativeDoneBeforeToday = Number(site.initial_piles_done)
       }
       const todayPiles = concretePouredSum || 0
+      cumulativeConcreteAfterToday = cumulativeDoneBeforeToday + todayPiles
       if (totalPiles != null) {
-        remainingPilesForDb = String(Math.max(0, totalPiles - cumulativeDoneBeforeToday - todayPiles))
+        remainingPilesForDb = String(Math.max(0, totalPiles - cumulativeConcreteAfterToday))
       }
     }
+    const totalProductionAllMachines = productionSummary.reduce(
+      (s: number, m: { totalProduction?: string }) =>
+        s + (parseFloat(String(m?.totalProduction ?? "").replace(",", ".")) || 0),
+      0,
+    )
     const reportId = await saveWorkReport({
       date: formData.basicInfo.date,
       project: projectName || (formData.basicInfo?.project ?? ""),
@@ -142,10 +149,16 @@ export async function POST(request: NextRequest) {
       pileCount: currentMachine?.pileCount || "",
       drilledPile: currentMachine?.drilledPile || "",
       concretePile: currentMachine?.concretePile || "",
-      totalProductionSummary: currentProductionSummary?.totalProduction || "",
+      totalProductionSummary:
+        totalProductionAllMachines > 0
+          ? String(totalProductionAllMachines)
+          : (currentProductionSummary?.totalProduction || ""),
       totalPileCount: totalPileForDb || currentProductionSummary?.totalPileCount || "",
       dailyPileCount: dailyPileForDb || currentProductionSummary?.dailyPileCount || "",
-      totalCompletedPiles: currentProductionSummary?.totalCompletedPiles || "",
+      totalCompletedPiles:
+        cumulativeConcreteAfterToday > 0
+          ? String(cumulativeConcreteAfterToday)
+          : (currentProductionSummary?.totalCompletedPiles || ""),
       remainingPiles: remainingPilesForDb,
       steelLoweredPiles: currentProductionSummary?.steelLoweredPiles || "",
       concretePoured: String(concretePouredSum),
@@ -267,6 +280,12 @@ export async function POST(request: NextRequest) {
     // E-posta: SMTP_USER + global admin listesi (Postgres) + şantiye email_list
     const reportRecipients = await getMergedNotificationEmails({ siteId: siteIdForDb })
 
+    // Kayıt sonrası kümülatifler (bugünkü rapor dahil)
+    const cumulativeAfterSave =
+      siteIdForDb && reportDateStr ? await getCumulativeTotalProduction(siteIdForDb, reportDateStr) : cumulativeTotalProduction
+    const pileCountsAfterSave =
+      siteIdForDb && reportDateStr ? await getCumulativePileCounts(siteIdForDb, reportDateStr) : null
+
     // Rapor HTML içeriği (e-posta gövdesi / yazdırma için) — hesaplanan kalan/günlük kazık kullanılsın
     const mainReportContent = generatePDFMainReport(formData, {
       computedRemainingPiles: remainingPilesForDb,
@@ -276,7 +295,9 @@ export async function POST(request: NextRequest) {
       daysElapsed,
       showHakedis: session.role === "super_admin",
       contractUnitPrice: site?.contract_unit_price != null ? Number(site.contract_unit_price) : null,
-      cumulativeTotalProduction,
+      cumulativeTotalProduction: cumulativeAfterSave,
+      cumulativeDrilledPiles: pileCountsAfterSave?.drilled ?? null,
+      cumulativeConcretePiles: pileCountsAfterSave?.concrete ?? null,
       operatorEntries,
     })
     const expensesPageContent = generatePDFExpensesPage(formData)
