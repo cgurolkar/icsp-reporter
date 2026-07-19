@@ -213,6 +213,7 @@ export default function ReviewStep({ data, onSubmit, siteSummary }: ReviewStepPr
             <tr><td style="font-weight: bold; background-color: #f0f0f0;">KALAN KAZIK SAYISI</td><td style="text-align: center; font-weight: bold;">${remainingPiles}</td></tr>
             <tr><td style="font-weight: bold; background-color: #f0f0f0;">DEMİR İNDİRİLEN KAZIK</td><td style="text-align: center; font-weight: bold;">${steelLoweredPiles}</td></tr>
             <tr><td style="font-weight: bold; background-color: #f0f0f0;">BETON DÖKÜLEN KAZIK</td><td style="text-align: center; font-weight: bold;">${concretePoured}</td></tr>
+            <tr><td style="font-weight: bold; background-color: #f0f0f0;">TOPLAM BOY — BETON (M)</td><td style="text-align: center; font-weight: bold;">${String(data.siteConcreteTotalLength ?? "").trim() || "—"}</td></tr>
           </tbody>
         </table>
 

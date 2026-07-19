@@ -17,6 +17,7 @@ import ReviewStep from "@/components/steps/review-step"
 import { type FormData, type Machine, type MachineBasicInfo, type MachineProductionSummary, initialFormData, AVAILABLE_MACHINES } from "@/types/form-data"
 import { shrinkDailyInfoImagesForSubmit } from "@/lib/image-webp-client"
 import { estimateJsonPayloadBytes, readResponseJsonSafe, buildReportSubmitUserMessage } from "@/lib/report-submit-client"
+import { formatMeters, parseMeters, sumConcretePouredDrilledMeters } from "@/lib/concrete-meters"
 import Dialog from "@mui/material/Dialog"
 import DialogTitle from "@mui/material/DialogTitle"
 import DialogContent from "@mui/material/DialogContent"
@@ -73,10 +74,19 @@ function reportProductionErrors(fd: FormData): string[] {
     if (!numFieldOk(m.emptyBorehole)) e.push(`${label}: Boş foraj (Ad.) — çalışma yoksa 0 yazın.`)
   }
   if (!numFieldOk(fd.siteConcretePouredPiles)) e.push("Beton dökülen kazık (şantiye toplamı, Ad.) — yoksa 0 yazın.")
+  if (!numFieldOk(fd.siteConcreteTotalLength)) e.push("Toplam boy (m) — beton dökülen — yoksa 0 yazın.")
   const beton = parseInt(String(fd.siteConcretePouredPiles ?? "").trim(), 10) || 0
   const filledRows = (fd.pileDetails || []).filter((p) => String(p.drilled ?? "").trim() || String(p.notes ?? "").trim()).length
   if (beton > 0 && filledRows < beton) {
     e.push(`Kazık detayları: ${beton} betonlu kazık için en az ${beton} satırda delik veya not girilmeli (şu an ${filledRows} satır).`)
+  }
+  const pileConcreteM = sumConcretePouredDrilledMeters(fd.pileDetails)
+  const toplamBoy = parseMeters(fd.siteConcreteTotalLength)
+  const hasConcreteMarked = (fd.pileDetails || []).some((p) => p.concretePoured === true)
+  if (hasConcreteMarked && Math.abs(toplamBoy - pileConcreteM) > 0.01) {
+    e.push(
+      `Toplam boy (${formatMeters(toplamBoy)} m) ile kazık detayındaki beton dökülen delinen toplamı (${formatMeters(pileConcreteM)} m) aynı olmalıdır.`,
+    )
   }
   const machineIds = fd.productionSummary.filter((m) => m.machineId).map((m) => m.machineId)
   if (machineIds.length > 1) {
@@ -318,6 +328,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
           return {
             ...prev,
             siteConcretePouredPiles: siteChanged ? "" : (prev.siteConcretePouredPiles ?? ""),
+            siteConcreteTotalLength: siteChanged ? "" : (prev.siteConcreteTotalLength ?? ""),
             pileDetails,
             machineSelection: {
               ...prev.machineSelection,
@@ -337,6 +348,15 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
       cancelled = true
     }
   }, [formData.basicInfo?.siteId, machineReloadToken])
+
+  // Beton döküldü işaretli delinen metre toplamını «Toplam boy» alanına yansıt
+  useEffect(() => {
+    const hasMarked = (formData.pileDetails || []).some((p) => p.concretePoured === true)
+    if (!hasMarked) return
+    const next = formatMeters(sumConcretePouredDrilledMeters(formData.pileDetails))
+    if (String(formData.siteConcreteTotalLength ?? "").trim() === next) return
+    setFormData((prev) => ({ ...prev, siteConcreteTotalLength: next }))
+  }, [formData.pileDetails])
 
   // Kullanıcı/Personel: atanmış operatör isimleri ve dünkü planlanan işler pop-up
   useEffect(() => {
@@ -573,6 +593,9 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
           onChange={(d) => updateFormData("productionSummary", d)}
           siteConcretePouredPiles={formData.siteConcretePouredPiles ?? ""}
           onSiteConcreteChange={(v) => setFormData((p) => ({ ...p, siteConcretePouredPiles: v }))}
+          siteConcreteTotalLength={formData.siteConcreteTotalLength ?? ""}
+          onSiteConcreteTotalLengthChange={(v) => setFormData((p) => ({ ...p, siteConcreteTotalLength: v }))}
+          pileDetailsConcreteMeters={sumConcretePouredDrilledMeters(formData.pileDetails)}
           machinesAvailableToAdd={reportMachineOptions}
           onAddMachine={(machine) => {
             const newProductionSummary: MachineProductionSummary = {

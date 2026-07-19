@@ -150,6 +150,8 @@ export interface FormData {
   productionSummary: MachineProductionSummary[];
   /** Şantiyede o gün dökülen toplam betonlu kazık (tüm makineler) */
   siteConcretePouredPiles?: string;
+  /** Beton dökülen kazıkların toplam boyu (m) — kazık detayında beton işaretli delinen toplamı */
+  siteConcreteTotalLength?: string;
   pileDetails: PileDetail[];
   dailyInfo: DailyInfo;
   notes: string;
@@ -213,6 +215,7 @@ export const initialFormData: FormData = {
     dailyDrilledPiles: "",
   }],
   siteConcretePouredPiles: "",
+  siteConcreteTotalLength: "",
   pileDetails: Array.from({ length: 3 }, (_, i) => ({
     pileNumber: i + 1,
     drilled: "",

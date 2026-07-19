@@ -3,6 +3,7 @@ import { randomUUID } from "crypto"
 import fs from "fs"
 import path from "path"
 import { saveWorkReport, initializeDatabase, getMergedNotificationEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativeTotalProduction, getCumulativePileCounts } from "@/lib/database"
+import { formatMeters, sumConcretePouredDrilledMeters } from "@/lib/concrete-meters"
 import { fullReportHtmlAttachment, isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
 import { getSessionFromRequest, canDoDataEntry, canAccessSite, getAllowedSiteIds } from "@/lib/auth"
@@ -162,6 +163,12 @@ export async function POST(request: NextRequest) {
       remainingPiles: remainingPilesForDb,
       steelLoweredPiles: currentProductionSummary?.steelLoweredPiles || "",
       concretePoured: String(concretePouredSum),
+      concreteTotalLength: (() => {
+        const fromForm = String(raw.siteConcreteTotalLength ?? "").trim()
+        if (fromForm !== "") return fromForm
+        const fromPiles = sumConcretePouredDrilledMeters(pileDetails)
+        return fromPiles > 0 ? formatMeters(fromPiles) : ""
+      })(),
       engineerCount: formData.personnel.engineer,
       foremanCount: formData.personnel.foreman,
       operatorCount: formData.personnel.operator,

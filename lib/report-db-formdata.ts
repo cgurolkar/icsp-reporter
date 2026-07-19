@@ -2,6 +2,9 @@
  * Veritabanındaki rapor + makineler + yakıt kayıtlarından formData benzeri obje (HTML / e-posta üretimi).
  */
 
+import { formatMeters, sumConcretePouredDrilledMeters } from "@/lib/concrete-meters"
+import type { PileDetail } from "@/types/form-data"
+
 export function formDataFromDbReport(data: {
   report: Record<string, unknown>
   machines: Record<string, unknown>[]
@@ -168,6 +171,13 @@ export function formDataFromDbReport(data: {
       image2: (r.daily_image2 as string) ?? "",
     },
     siteConcretePouredPiles: String(r.concrete_poured ?? "").trim(),
+    siteConcreteTotalLength: (() => {
+      const stored = String(r.concrete_total_length ?? "").trim()
+      if (stored) return stored
+      const piles = Array.isArray(r.pile_details) ? (r.pile_details as PileDetail[]) : []
+      const sum = sumConcretePouredDrilledMeters(piles)
+      return sum > 0 ? formatMeters(sum) : ""
+    })(),
   }
   return formData
 }

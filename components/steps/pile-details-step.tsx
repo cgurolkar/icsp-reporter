@@ -116,6 +116,9 @@ export default function PileDetailsStep({
             Beton döküldü işaretli satırlarda hangi makineye ait olduğunu en az bir makine sütunundan işaretleyin.
           </Alert>
         )}
+        <Alert severity="info" sx={{ mb: 2 }}>
+          «Beton döküldü» işaretli satırların Delinen (m) toplamı, Üretim Özeti’ndeki <strong>Toplam boy</strong> alanına yazılır ve hakediş hesabında kullanılır.
+        </Alert>
 
         {/* Kazık Detayları Formu */}
         <Typography variant="subtitle1" gutterBottom sx={{ color: "#e65100", fontWeight: 600, mb: 2 }}>

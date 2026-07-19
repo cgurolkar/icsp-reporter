@@ -338,7 +338,7 @@ export function generatePDFMainReport(
     <div style="font-size:10px;color:#475569;"><strong>İşe başlama tarihi:</strong> ${projectStartDate || "—"}</div>
     <div style="font-size:10px;color:#475569;"><strong>Geçen gün:</strong> ${elapsedDays != null && elapsedDays >= 0 ? elapsedDays : "—"}</div>
     ${showHakedis ? `<div style="font-size:10px;color:#1a237e;"><strong>Birim fiyat:</strong> ${contractUnitPrice != null ? `${contractUnitPrice.toLocaleString("tr-TR")} USD/m` : "—"}</div>` : ""}
-    ${showHakedis ? `<div style="font-size:10px;color:#1a237e;"><strong>Beton dökülen metraj (küm.):</strong> ${cumulativeTotalProduction != null ? cumulativeTotalProduction.toLocaleString("tr-TR") : "—"} m</div>` : ""}
+    ${showHakedis ? `<div style="font-size:10px;color:#1a237e;"><strong>Beton dökülen toplam boy (küm.):</strong> ${cumulativeTotalProduction != null ? cumulativeTotalProduction.toLocaleString("tr-TR") : "—"} m</div>` : ""}
     ${showHakedis ? `<div style="font-size:10px;color:#166534;"><strong>Hak edilen:</strong> ${hakedisAmount != null ? `${hakedisAmount.toLocaleString("tr-TR", { maximumFractionDigits: 2 })} USD` : "—"}</div>` : ""}
   </div>
   <div class="stat-grid" style="margin-bottom:10px;grid-template-columns:repeat(5,1fr);">
@@ -487,6 +487,14 @@ export function generatePDFMainReport(
               <tr><td style="color:#475569;font-weight:600;">Kalan Kazık</td><td class="td-center" style="color:#d97706;font-weight:700;">${v(remainingPiles)} adet</td></tr>
               <tr><td style="color:#475569;font-weight:600;">Demir İndirilen</td><td class="td-center" style="font-weight:700;">${v(steelLoweredPiles)} adet</td></tr>
               <tr><td style="color:#475569;font-weight:600;">Beton Dökülen (Bugün)</td><td class="td-center" style="font-weight:700;">${v(concretePoured)} adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Toplam Boy — Beton (Bugün)</td><td class="td-center" style="font-weight:700;color:#1a237e;">${(() => {
+                const stored = String(formData.siteConcreteTotalLength ?? "").trim()
+                if (stored) return `${stored} m`
+                const fromPiles = (pileDetailsList || [])
+                  .filter((p: any) => p.concretePoured)
+                  .reduce((s: number, p: any) => s + parseMeters(p.drilled), 0)
+                return fromPiles > 0 ? `${fromPiles.toFixed(2)} m` : "—"
+              })()}</td></tr>
             </tbody>
           </table>
         </div>

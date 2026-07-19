@@ -93,6 +93,9 @@ async function _doInitializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'work_reports' AND column_name = 'production_summary_json') THEN
           ALTER TABLE work_reports ADD COLUMN production_summary_json JSONB DEFAULT NULL;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'work_reports' AND column_name = 'concrete_total_length') THEN
+          ALTER TABLE work_reports ADD COLUMN concrete_total_length VARCHAR(100) DEFAULT NULL;
+        END IF;
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'daily_* columns: %', SQLERRM;
       END $$
     `)
@@ -734,8 +737,8 @@ export async function saveWorkReport(reportData: any) {
         engineer_count, foreman_count, operator_count, oiler_count, welder_count, other_count, personnel_total,
         crane_count, loader_count, truck_count, pickup_count, car_count, service_count, vehicles_total,
         daily_fuel_usage, expenses, pile_details, notes, daily_notes, daily_image1, daily_image2, next_day_planned, daily_images,
-        submitted_by_user_id, production_summary_json
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42)
+        submitted_by_user_id, production_summary_json, concrete_total_length
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43)
       RETURNING id
     `, [
       reportData.date,
@@ -783,6 +786,9 @@ export async function saveWorkReport(reportData: any) {
         : null,
       reportData.productionSummary != null
         ? JSON.stringify(reportData.productionSummary)
+        : null,
+      reportData.concreteTotalLength != null && String(reportData.concreteTotalLength).trim() !== ""
+        ? String(reportData.concreteTotalLength).trim()
         : null,
     ])
 
@@ -2235,7 +2241,10 @@ export async function getSuperAdminEmails(): Promise<string[]> {
   }
 }
 
-/** Şantiye bazında verilen tarihe kadar kümülatif toplam imalat (metre) — tüm makineler. */
+/**
+ * Şantiye bazında kümülatif beton dökülen metraj (hakediş).
+ * Öncelik: concrete_total_length → pile_details (beton işaretli delinen) → eski imalat alanları.
+ */
 export async function getCumulativeTotalProduction(siteId: number, date: string): Promise<number> {
   const client = await pool.connect()
   try {
@@ -2243,6 +2252,24 @@ export async function getCumulativeTotalProduction(siteId: number, date: string)
     const r = await client.query(
       `SELECT COALESCE(SUM(
           CASE
+            WHEN COALESCE(concrete_total_length, '') ~ '^[0-9]+([\\.,][0-9]+)?$'
+              THEN REPLACE(concrete_total_length, ',', '.')::numeric
+            WHEN pile_details IS NOT NULL AND jsonb_typeof(pile_details) = 'array'
+              AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements(pile_details) AS pe
+                WHERE LOWER(COALESCE(pe->>'concretePoured', '')) IN ('true', 't', '1')
+              )
+              THEN (
+                SELECT COALESCE(SUM(
+                  CASE
+                    WHEN LOWER(COALESCE(elem->>'concretePoured', '')) IN ('true', 't', '1')
+                      AND COALESCE(elem->>'drilled', '') ~ '^[0-9]+([\\.,][0-9]+)?$'
+                      THEN REPLACE(elem->>'drilled', ',', '.')::numeric
+                    ELSE 0
+                  END
+                ), 0)
+                FROM jsonb_array_elements(pile_details) AS elem
+              )
             WHEN production_summary_json IS NOT NULL AND jsonb_typeof(production_summary_json) = 'array' THEN
               (
                 SELECT COALESCE(SUM(

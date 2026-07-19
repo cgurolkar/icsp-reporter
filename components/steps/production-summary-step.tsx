@@ -32,6 +32,11 @@ interface ProductionSummaryStepProps {
   onChange: (data: MachineProductionSummary[]) => void
   siteConcretePouredPiles: string
   onSiteConcreteChange: (value: string) => void
+  /** Beton dökülen kazık toplam boyu (m) */
+  siteConcreteTotalLength?: string
+  onSiteConcreteTotalLengthChange?: (value: string) => void
+  /** Kazık detaylarından hesaplanan beton dökülen delinen toplamı (doğrulama) */
+  pileDetailsConcreteMeters?: number | null
   /** Makine ekleme listesi (şantiye + yedek); boşsa ekleme gösterilmez */
   machinesAvailableToAdd?: Machine[]
   onAddMachine?: (machine: Machine) => void
@@ -54,6 +59,9 @@ export default function ProductionSummaryStep({
   onChange,
   siteConcretePouredPiles,
   onSiteConcreteChange,
+  siteConcreteTotalLength = "",
+  onSiteConcreteTotalLengthChange,
+  pileDetailsConcreteMeters = null,
   machinesAvailableToAdd = [],
   onAddMachine,
   projectTotalPiles,
@@ -81,6 +89,12 @@ export default function ProductionSummaryStep({
   )
 
   const betonBugun = parseIntSafe(siteConcretePouredPiles) || 0
+  const toplamBoyNum = parseNum(siteConcreteTotalLength) || 0
+  const pileMeters = pileDetailsConcreteMeters != null ? pileDetailsConcreteMeters : null
+  const boyMismatch =
+    pileMeters != null &&
+    (betonBugun > 0 || pileMeters > 0) &&
+    Math.abs(toplamBoyNum - pileMeters) > 0.01
   const kalanKazik =
     projectTotalPiles != null && Number.isFinite(projectTotalPiles)
       ? Math.max(0, projectTotalPiles - totalCompletedBeforeToday - betonBugun)
@@ -186,7 +200,14 @@ export default function ProductionSummaryStep({
       </Box>
 
       <Paper sx={{ p: 2, mt: 2, background: "linear-gradient(135deg, #e1f5fe 0%, #b3e5fc 100%)", border: "1px solid #03a9f4" }}>
-        <Box sx={{ maxWidth: 400 }}>
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+            gap: 2,
+            maxWidth: 720,
+          }}
+        >
           <TextField
             fullWidth
             label="Beton dökülen kazık (Ad.) — şantiye toplamı"
@@ -196,7 +217,24 @@ export default function ProductionSummaryStep({
             helperText="Tüm makinelerin o gün döktüğü betonlu kazık adedinin toplamıdır."
             sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "white" } }}
           />
+          <TextField
+            fullWidth
+            label="Toplam boy (m) — beton dökülen"
+            type="text"
+            inputProps={{ inputMode: "decimal" }}
+            value={siteConcreteTotalLength}
+            onChange={(e) => onSiteConcreteTotalLengthChange?.(e.target.value)}
+            helperText="Kazık detayında «Beton döküldü» işaretli satırların Delinen (m) toplamı ile aynı olmalıdır."
+            error={boyMismatch}
+            sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "white" } }}
+          />
         </Box>
+        {boyMismatch && (
+          <Alert severity="warning" sx={{ mt: 1.5 }}>
+            Toplam boy ({toplamBoyNum.toFixed(2)} m) ile kazık detayındaki beton dökülen delinen toplamı (
+            {pileMeters!.toFixed(2)} m) uyuşmuyor. Değerler eşit olmalıdır.
+          </Alert>
+        )}
 
         <Box sx={{ mt: 3 }}>
           <Typography variant="subtitle1" sx={{ color: "info.main", fontWeight: 600, mb: 1 }}>
@@ -274,6 +312,17 @@ export default function ProductionSummaryStep({
                   {siteConcretePouredPiles || "—"}
                 </TableCell>
               </TableRow>
+              <TableRow>
+                <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+                  Toplam boy — beton dökülen (m)
+                </TableCell>
+                <TableCell
+                  colSpan={Math.max(1, data.length + 1)}
+                  sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}
+                >
+                  {siteConcreteTotalLength || "—"}
+                </TableCell>
+              </TableRow>
             </TableBody>
           </Table>
         </Box>
@@ -299,6 +348,12 @@ export default function ProductionSummaryStep({
             InputProps={{ readOnly: true }}
           />
           <TextField size="small" label="O gün beton dökülen kazık (Ad.)" value={betonBugun} InputProps={{ readOnly: true }} />
+          <TextField
+            size="small"
+            label="Toplam boy — beton dökülen (m)"
+            value={toplamBoyNum > 0 ? toplamBoyNum.toFixed(2) : siteConcreteTotalLength || "—"}
+            InputProps={{ readOnly: true }}
+          />
           <TextField size="small" label="O gün delgisi biten kazık (Ad., toplam)" value={totalDrilled} InputProps={{ readOnly: true }} />
           <TextField
             size="small"
