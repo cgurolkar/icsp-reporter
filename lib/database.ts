@@ -2305,13 +2305,19 @@ export async function getCumulativePileCounts(
   try {
     const d = (date || "").slice(0, 10)
     const site = await client.query(
-      `SELECT total_piles, is_ongoing, initial_piles_done FROM sites WHERE id = $1`,
+      `SELECT total_piles, is_ongoing, initial_piles_done, initial_empty_borehole FROM sites WHERE id = $1`,
       [siteId],
     )
     const siteRow = site.rows[0]
+    const isOngoing = siteRow?.is_ongoing === true
     const initialConcrete =
-      siteRow?.is_ongoing === true && siteRow?.initial_piles_done != null
+      isOngoing && siteRow?.initial_piles_done != null
         ? Number(siteRow.initial_piles_done) || 0
+        : 0
+    // Devam eden şantiyede rapor öncesi boş foraj da delgisi tamamlanan sayılır
+    const initialEmptyBorehole =
+      isOngoing && siteRow?.initial_empty_borehole != null
+        ? Number(siteRow.initial_empty_borehole) || 0
         : 0
 
     const r = await client.query(
@@ -2335,6 +2341,22 @@ export async function getCumulativePileCounts(
           ), 0) AS drilled,
           COALESCE(SUM(
             CASE
+              WHEN production_summary_json IS NOT NULL AND jsonb_typeof(production_summary_json) = 'array' THEN
+                (
+                  SELECT COALESCE(SUM(
+                    CASE
+                      WHEN COALESCE(elem->>'emptyBorehole', '') ~ '^[0-9]+'
+                        THEN (elem->>'emptyBorehole')::int
+                      ELSE 0
+                    END
+                  ), 0)
+                  FROM jsonb_array_elements(production_summary_json) AS elem
+                )
+              ELSE 0
+            END
+          ), 0) AS empty_borehole,
+          COALESCE(SUM(
+            CASE
               WHEN COALESCE(concrete_poured, '') ~ '^[0-9]+' THEN concrete_poured::int
               ELSE 0
             END
@@ -2343,7 +2365,9 @@ export async function getCumulativePileCounts(
        WHERE site_id = $1 AND date <= $2`,
       [siteId, d],
     )
-    const drilled = (parseInt(String(r.rows[0]?.drilled ?? "0"), 10) || 0)
+    const drilledFromReports = parseInt(String(r.rows[0]?.drilled ?? "0"), 10) || 0
+    const emptyFromReports = parseInt(String(r.rows[0]?.empty_borehole ?? "0"), 10) || 0
+    const drilled = drilledFromReports + emptyFromReports + initialEmptyBorehole
     const concreteFromReports = (parseInt(String(r.rows[0]?.concrete ?? "0"), 10) || 0) + initialConcrete
     return { drilled, concrete: concreteFromReports }
   } finally {
