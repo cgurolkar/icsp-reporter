@@ -2695,17 +2695,27 @@ export async function updateWorkReportAllEditableFields(id: number, payload: Rec
       }
 
       if (udt === "json" || udt === "jsonb") {
-        if (typeof raw === "object") return raw
+        // node-pg JS objesini jsonb'ye yazarken "[object Object]" üretebilir → her zaman JSON metni gönder
+        let asJson: string
         if (typeof raw === "string") {
           const t = raw.trim()
           if (!t) return nullable ? null : OMIT_FIELD
           try {
-            return JSON.parse(t)
+            JSON.parse(t) // geçerli JSON mı kontrol et
+            asJson = t
           } catch {
             return OMIT_FIELD
           }
+        } else if (typeof raw === "object") {
+          try {
+            asJson = JSON.stringify(raw)
+          } catch {
+            return OMIT_FIELD
+          }
+        } else {
+          return OMIT_FIELD
         }
-        return OMIT_FIELD
+        return { __jsonText: asJson, __jsonUdt: udt }
       }
 
       if (dtype === "character varying" || dtype === "text" || dtype === "character") {
@@ -2724,6 +2734,19 @@ export async function updateWorkReportAllEditableFields(id: number, payload: Rec
       if (!key || !safeCol(key) || protectedCols.has(key) || !colMeta.has(key)) continue
       const coerced = coerceValue(key, val)
       if (coerced === OMIT_FIELD) continue
+      if (
+        coerced != null &&
+        typeof coerced === "object" &&
+        !Array.isArray(coerced) &&
+        !(coerced instanceof Date) &&
+        "__jsonText" in (coerced as object)
+      ) {
+        const j = coerced as { __jsonText: string; __jsonUdt: string }
+        const cast = j.__jsonUdt === "json" ? "json" : "jsonb"
+        updates.push(`${key} = $${i++}::${cast}`)
+        values.push(j.__jsonText)
+        continue
+      }
       updates.push(`${key} = $${i++}`)
       values.push(coerced)
     }
