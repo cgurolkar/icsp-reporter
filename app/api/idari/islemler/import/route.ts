@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import * as XLSX from "xlsx"
-import { getSessionFromRequest, canAccessIdari } from "@/lib/auth"
+import { getSessionFromRequest, canAccessIdari, canManageIdariCentral, canAccessSite } from "@/lib/auth"
 import { initializeDatabase, getHarcamaKategorileri } from "@/lib/database"
 import pool from "@/lib/database" // default export
 
@@ -55,6 +55,9 @@ export async function POST(request: NextRequest) {
   const session = await getSessionFromRequest(request)
   if (!session) return NextResponse.json({ error: "Giriş yapmalısınız." }, { status: 401 })
   if (!canAccessIdari(session.role, session)) return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
+  if (!canManageIdariCentral(session.role)) {
+    return NextResponse.json({ error: "Harcama Excel aktarımı yetkiniz yok." }, { status: 403 })
+  }
 
   let formData: FormData
   try {
@@ -75,9 +78,7 @@ export async function POST(request: NextRequest) {
   if (isNaN(siteId) || siteId <= 0) {
     return NextResponse.json({ error: "Geçersiz şantiye." }, { status: 400 })
   }
-
-  // Yetki kontrolü
-  if (session.role !== "admin" && session.role !== "manager") {
+  if (!canAccessSite(session, siteId)) {
     return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   }
 

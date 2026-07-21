@@ -28,7 +28,7 @@ import {
   StepLabel,
   Divider,
 } from "@mui/material"
-import { Add, FileUpload, CheckCircle } from "@mui/icons-material"
+import { Add, FileUpload, CheckCircle, Download } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
 
 interface SiteItem {
@@ -267,7 +267,16 @@ export default function IdariHarcamalarPage() {
           <TextField label="Başlangıç" type="date" value={baslangic} onChange={(e) => setBaslangic(e.target.value.slice(0, 10))} size="small" InputLabelProps={{ shrink: true }} />
           <TextField label="Bitiş" type="date" value={bitis} onChange={(e) => setBitis(e.target.value.slice(0, 10))} size="small" InputLabelProps={{ shrink: true }} />
           {canManage && (
-            <Box sx={{ display: "flex", gap: 1, ml: "auto" }}>
+            <Box sx={{ display: "flex", gap: 1, ml: "auto", flexWrap: "wrap" }}>
+              <Button
+                variant="outlined"
+                startIcon={<Download />}
+                href="/api/idari/islemler/template"
+                download="harcama_sablonu.xlsx"
+                sx={{ borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}
+              >
+                Şablon indir
+              </Button>
               <Button
                 variant="outlined"
                 startIcon={<FileUpload />}
@@ -399,8 +408,19 @@ export default function IdariHarcamalarPage() {
           {importStep === 0 && (
             <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <Alert severity="info" sx={{ fontSize: 13 }}>
-                <strong>Desteklenen format:</strong> "GENEL KASA RAPORU" şemasındaki Excel dosyası (.xlsx).
+                <strong>Desteklenen format:</strong> &quot;GENEL KASA RAPORU&quot; şemasındaki Excel dosyası (.xlsx).
                 Yalnızca <strong>Tediyeler</strong> (gider) satırları aktarılır, Tahsilatlar (gelir) aktarılmaz.
+                Şablon için{" "}
+                <Button
+                  component="a"
+                  href="/api/idari/islemler/template"
+                  download="harcama_sablonu.xlsx"
+                  size="small"
+                  sx={{ p: 0, minWidth: 0, verticalAlign: "baseline", textTransform: "none" }}
+                >
+                  buradan indirin
+                </Button>
+                .
               </Alert>
 
               <FormControl fullWidth required>
@@ -435,7 +455,7 @@ export default function IdariHarcamalarPage() {
                   </Button>
                   {importFile && (
                     <Typography variant="body2" sx={{ color: "success.main" }}>
-                      âœ“ {importFile.name} ({(importFile.size / 1024).toFixed(0)} KB)
+                      ✓ {importFile.name} ({(importFile.size / 1024).toFixed(0)} KB)
                     </Typography>
                   )}
                 </Box>
