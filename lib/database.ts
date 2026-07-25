@@ -3677,14 +3677,23 @@ export async function resolveKategoriIdForAltKalem(altKalemId: number | null | u
   }
 }
 
-export async function getIslemler(options: { siteId?: number | null; baslangic?: string; bitis?: string } = {}) {
+export async function getIslemler(options: {
+  siteId?: number | null
+  baslangic?: string
+  bitis?: string
+  kalemId?: number | null
+  altKalemId?: number | null
+  /** alt_kalem_id IS NULL olan eski/eksik kayıtlar */
+  eksikKalem?: boolean
+} = {}) {
   const client = await pool.connect()
   try {
     let query = `
       SELECT i.*,
         k.ad AS kategori_adi, k.kod AS kategori_kod,
-        ak.ad AS alt_kalem_adi, ak.id AS alt_kalem_id,
-        hk.kod AS kalem_kod, hk.ad AS kalem_adi,
+        ak.ad AS alt_kalem_adi,
+        COALESCE(ak.id, i.alt_kalem_id) AS alt_kalem_id,
+        hk.id AS kalem_id, hk.kod AS kalem_kod, hk.ad AS kalem_adi,
         my.ad AS masraf_yeri_adi, my.tip AS masraf_yeri_tip
       FROM islemler i
       LEFT JOIN harcama_kategorileri k ON k.id = i.kategori_id
@@ -3707,9 +3716,132 @@ export async function getIslemler(options: { siteId?: number | null; baslangic?:
       query += ` AND i.islem_tarihi <= $${i++}`
       params.push(String(options.bitis).slice(0, 10))
     }
+    if (options.kalemId != null && options.kalemId > 0) {
+      query += ` AND hk.id = $${i++}`
+      params.push(options.kalemId)
+    }
+    if (options.altKalemId != null && options.altKalemId > 0) {
+      query += ` AND i.alt_kalem_id = $${i++}`
+      params.push(options.altKalemId)
+    }
+    if (options.eksikKalem) {
+      query += ` AND i.alt_kalem_id IS NULL`
+    }
     query += ` ORDER BY i.islem_tarihi DESC, i.id DESC`
     const r = params.length ? await client.query(query, params) : await client.query(query)
     return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function getIslemById(id: number) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `SELECT i.*,
+        ak.ad AS alt_kalem_adi, hk.id AS kalem_id, hk.kod AS kalem_kod, hk.ad AS kalem_adi,
+        my.ad AS masraf_yeri_adi
+       FROM islemler i
+       LEFT JOIN harcama_alt_kalemler ak ON ak.id = i.alt_kalem_id
+       LEFT JOIN harcama_kalemleri hk ON hk.id = ak.kalem_id
+       LEFT JOIN masraf_yerleri my ON my.id = i.masraf_yeri_id
+       WHERE i.id = $1`,
+      [id],
+    )
+    return r.rows[0] ?? null
+  } finally {
+    client.release()
+  }
+}
+
+export async function updateIslem(
+  id: number,
+  data: {
+    site_id?: number
+    kategori_id?: number
+    tutar?: number
+    islem_tarihi?: string
+    odeme_kaynagi?: string
+    aciklama?: string | null
+    para_birimi?: ExpenseCurrency
+    alt_kalem_id?: number | null
+    masraf_yeri_id?: number | null
+  },
+) {
+  const client = await pool.connect()
+  try {
+    const curRow = await client.query(`SELECT * FROM islemler WHERE id = $1`, [id])
+    const existing = curRow.rows[0]
+    if (!existing) return null
+
+    const siteId = data.site_id ?? existing.site_id
+    const siteR = await client.query(`SELECT COALESCE(iqd_per_usd, 1320) AS r FROM sites WHERE id = $1`, [siteId])
+    const iqdPer = Number(siteR.rows[0]?.r) || 1320
+    const tutar = data.tutar != null ? Number(data.tutar) : Number(existing.tutar)
+    const cur: ExpenseCurrency =
+      data.para_birimi === "USD" || data.para_birimi === "IQD"
+        ? data.para_birimi
+        : existing.para_birimi === "USD"
+          ? "USD"
+          : "IQD"
+    const { tutar_usd, tutar_iqd, kur_iqd_per_usd } = expenseAmountsToUsdIqd(tutar, cur, iqdPer)
+
+    const r = await client.query(
+      `UPDATE islemler SET
+        site_id = $2,
+        kategori_id = COALESCE($3, kategori_id),
+        tutar = $4,
+        islem_tarihi = $5,
+        odeme_kaynagi = COALESCE($6, odeme_kaynagi),
+        aciklama = $7,
+        para_birimi = $8,
+        kur_iqd_per_usd = $9,
+        tutar_usd = $10,
+        tutar_iqd = $11,
+        alt_kalem_id = $12,
+        masraf_yeri_id = $13,
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING id`,
+      [
+        id,
+        siteId,
+        data.kategori_id ?? null,
+        tutar,
+        (data.islem_tarihi || String(existing.islem_tarihi)).slice(0, 10),
+        data.odeme_kaynagi ?? null,
+        data.aciklama !== undefined ? data.aciklama : existing.aciklama,
+        cur,
+        kur_iqd_per_usd,
+        tutar_usd,
+        tutar_iqd,
+        data.alt_kalem_id !== undefined ? data.alt_kalem_id : existing.alt_kalem_id,
+        data.masraf_yeri_id !== undefined ? data.masraf_yeri_id : existing.masraf_yeri_id,
+      ],
+    )
+    return r.rows[0]?.id ?? null
+  } finally {
+    client.release()
+  }
+}
+
+export async function deleteIslem(id: number) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(`DELETE FROM islemler WHERE id = $1 RETURNING id, site_id`, [id])
+    return r.rows[0] ?? null
+  } finally {
+    client.release()
+  }
+}
+
+export async function deleteIslemlerBulk(ids: number[]) {
+  if (!ids.length) return 0
+  const client = await pool.connect()
+  try {
+    const r = await client.query(`DELETE FROM islemler WHERE id = ANY($1::int[]) RETURNING id`, [ids])
+    return r.rowCount ?? 0
   } finally {
     client.release()
   }

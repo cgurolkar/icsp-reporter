@@ -45,7 +45,12 @@ export async function GET(request: NextRequest) {
   const siteIdParam = searchParams.get("siteId")
   const baslangic = searchParams.get("baslangic")?.trim().slice(0, 10)
   const bitis = searchParams.get("bitis")?.trim().slice(0, 10)
+  const kalemIdParam = searchParams.get("kalemId")
+  const altKalemIdParam = searchParams.get("altKalemId")
+  const eksikKalem = searchParams.get("eksikKalem") === "1"
   const siteId = siteIdParam ? parseInt(siteIdParam, 10) : undefined
+  const kalemId = kalemIdParam ? parseInt(kalemIdParam, 10) : undefined
+  const altKalemId = altKalemIdParam ? parseInt(altKalemIdParam, 10) : undefined
   if (siteId != null && !Number.isNaN(siteId) && !canAccessSite(session, siteId)) {
     return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
   }
@@ -55,6 +60,9 @@ export async function GET(request: NextRequest) {
       siteId: siteId && !Number.isNaN(siteId) ? siteId : undefined,
       baslangic,
       bitis,
+      kalemId: kalemId && !Number.isNaN(kalemId) ? kalemId : undefined,
+      altKalemId: altKalemId && !Number.isNaN(altKalemId) ? altKalemId : undefined,
+      eksikKalem,
     })
     return NextResponse.json(list)
   } catch (error) {
