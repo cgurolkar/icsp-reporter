@@ -1,54 +1,42 @@
 import { type NextRequest, NextResponse } from "next/server"
-import * as XLSX from "xlsx"
 import { getSessionFromRequest, canAccessIdari, canManageIdariCentral, canAccessSite } from "@/lib/auth"
-import { initializeDatabase, getHarcamaKategorileri } from "@/lib/database"
-import pool from "@/lib/database" // default export
+import {
+  initializeDatabase,
+  getHarcamaAltKalemler,
+  getMasrafYerleri,
+  createIslem,
+  resolveKategoriIdForAltKalem,
+  getHarcamaKategorileri,
+  legacyKategoriKodFromKalemKod,
+} from "@/lib/database"
+import { parseHarcamaExcel, matchAltKalemId, matchMasrafYeriId } from "@/lib/harcama-excel"
 
-// Excel sütun indeksleri (0-tabanlı)
-const COL_TARIH = 0
-const COL_CH = 1
-const COL_FATNO = 2
-const COL_ACIKLAMA = 3
-const COL_DETAY = 4
-const COL_TAH_USD = 5
-const COL_TAH_IQD = 6
-const COL_TED_USD = 7
-const COL_TED_IQD = 8
-
-// Kategori kodu eşlemesi (AÇIKLAMA → kategori kod)
-function mapCategory(aciklama: string): string {
+/** Eski GENEL KASA açıklama → eski kategori kodu (alt kalem bulunamazsa) */
+function mapLegacyCategory(aciklama: string): string {
   const val = (aciklama || "").toLowerCase().trim()
   if (/yemek|öğle|akşam|sabah/.test(val)) return "yemek"
-  if (/mazot|benzin|yakıt|fuel|figo|corolla|mg pikap|mg$|benzi/.test(val)) return "akaryakit"
-  if (/maaş|maas|avans|personel|ödeme|yevmiye/.test(val)) return "maas"
-  if (/taşeron|taseron|sany|xcmg|sr60|loader|vinç|vınc|nakliye/.test(val)) return "tason"
+  if (/mazot|benzin|yakıt|fuel/.test(val)) return "akaryakit"
+  if (/maaş|maas|avans|personel|yevmiye/.test(val)) return "maas"
+  if (/taşeron|taseron|nakliye/.test(val)) return "tason"
   if (/sarf|malzeme|parça|parca/.test(val)) return "sarf"
   return "diger"
 }
 
-function parseAmount(val: unknown): number | null {
-  if (val == null || val === "") return null
-  const n = typeof val === "number" ? val : parseFloat(String(val).replace(/,/g, "."))
-  if (isNaN(n) || n <= 0) return null
-  return Math.round(n * 100) / 100
-}
-
-function parseDate(val: unknown): string | null {
-  if (val == null || val === "") return null
-  // Excel serial number
-  if (typeof val === "number") {
-    const d = XLSX.SSF.parse_date_code(val)
-    if (!d) return null
-    return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`
-  }
-  // JS Date from xlsx
-  if (val instanceof Date) {
-    return val.toISOString().slice(0, 10)
-  }
-  const s = String(val).trim()
-  const m = s.match(/^(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/)
-  if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`
-  return null
+type PreviewItem = {
+  tarih: string
+  kalemKod: string
+  altKalem: string
+  masrafYeri: string
+  aciklama: string
+  tutar: number
+  parabirimi: string
+  altKalemId: number | null
+  masrafYeriId: number | null
+  kategoriKod: string
+  kategoriAdi: string
+  odemeKaynagi: string
+  format: string
+  matched: boolean
 }
 
 export async function POST(request: NextRequest) {
@@ -83,99 +71,80 @@ export async function POST(request: NextRequest) {
   }
 
   await initializeDatabase()
-  const kategoriler = await getHarcamaKategorileri()
+  const [altKalemler, masrafYerleri, kategoriler] = await Promise.all([
+    getHarcamaAltKalemler({ aktifOnly: true }),
+    getMasrafYerleri(true),
+    getHarcamaKategorileri(),
+  ])
   const katMap: Record<string, number> = {}
   for (const k of kategoriler) katMap[k.kod] = k.id
+  const katAdMap: Record<string, string> = {}
+  for (const k of kategoriler) katAdMap[k.kod] = k.ad
 
-  // Excel parse
   const bytes = await file.arrayBuffer()
-  const wb = XLSX.read(Buffer.from(bytes), { type: "buffer", cellDates: true })
-  const sheetName = wb.SheetNames[0]
-  const ws = wb.Sheets[sheetName]
-  const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
+  const parsed = parseHarcamaExcel(bytes, parabirimi)
+  if (parsed.length === 0) {
+    return NextResponse.json({
+      error: "Geçerli satır bulunamadı. Yeni şablonu kullanın (Tarih, Kalem Kodu, Alt Kalem, Tutar…).",
+    }, { status: 400 })
+  }
 
-  // Veri satırlarını bul (başlık satırını atla)
-  // Satır 7 (index 7) başlık, satır 8 (index 8) para birimi, satır 9+ veri
-  const dataStartIndex = rows.findIndex((row) => {
-    const r = row as unknown[]
-    return r[COL_TARIH] instanceof Date || (typeof r[COL_TARIH] === "number" && r[COL_TARIH] > 40000)
-  })
-  const dataRows = dataStartIndex >= 0 ? rows.slice(dataStartIndex) : []
-
-  const preview: Array<{
-    tarih: string
-    ch: string
-    fatNo: string
-    aciklama: string
-    detay: string
-    tutar: number
-    parabirimi: string
-    kategoriKod: string
-    kategoriAdi: string
-  }> = []
-
+  const preview: PreviewItem[] = []
   const errors: string[] = []
 
-  for (let i = 0; i < dataRows.length; i++) {
-    const row = dataRows[i] as unknown[]
+  for (const row of parsed) {
+    const altId = matchAltKalemId(
+      altKalemler as { id: number; ad: string; kalem_kod?: string; kalem_id: number }[],
+      row.altKalem,
+      row.kalemKod || undefined,
+    )
+    const masrafId = row.masrafYeri
+      ? matchMasrafYeriId(masrafYerleri as { id: number; ad: string }[], row.masrafYeri)
+      : null
 
-    // Boş satır veya özet satırı kontrolü
-    if (!row[COL_TARIH] && !row[COL_TED_USD] && !row[COL_TED_IQD]) continue
-    const tarih = parseDate(row[COL_TARIH])
-    if (!tarih) continue
-
-    // Yalnızca Tediyeler (gider) satırlarını al
-    const tedUSD = parseAmount(row[COL_TED_USD])
-    const tedIQD = parseAmount(row[COL_TED_IQD])
-    if (tedUSD == null && tedIQD == null) continue
-
-    // Para birimi seçimine göre tutar
-    let tutar: number | null = null
-    let usedParabirimi = parabirimi
-    if (parabirimi === "USD") {
-      tutar = tedUSD ?? (tedIQD != null ? null : null)
-      // USD yoksa IQD varsa IQD kullan
-      if (tutar == null && tedIQD != null) {
-        tutar = tedIQD
-        usedParabirimi = "IQD"
-      }
+    let kategoriKod = "diger"
+    let kalemKod = row.kalemKod
+    if (altId) {
+      const ak = altKalemler.find((a: { id: number }) => a.id === altId) as {
+        kalem_kod?: string
+      } | undefined
+      kalemKod = ak?.kalem_kod || kalemKod
+      kategoriKod = legacyKategoriKodFromKalemKod(kalemKod)
+    } else if (row.format === "eski") {
+      kategoriKod = mapLegacyCategory(row.altKalem || row.aciklama)
+      errors.push(`${row.tarih}: Alt kalem eşleşmedi (“${row.altKalem}”) — eski kategori: ${kategoriKod}`)
     } else {
-      tutar = tedIQD ?? (tedUSD != null ? tedUSD : null)
-      if (tutar == null && tedUSD != null) {
-        tutar = tedUSD
-        usedParabirimi = "USD"
-      }
+      errors.push(`${row.tarih}: Alt kalem bulunamadı: “${row.altKalem}”`)
+      // Önizlemede göster; aktarımda atlanır
     }
-    if (tutar == null || tutar <= 0) continue
 
-    const aciklama = String(row[COL_ACIKLAMA] || "").trim()
-    const detay = String(row[COL_DETAY] || "").trim()
-    const ch = String(row[COL_CH] || "").trim()
-    const fatNo = row[COL_FATNO] != null ? String(row[COL_FATNO]).trim() : ""
-
-    const kategoriKod = mapCategory(aciklama)
-    const katId = katMap[kategoriKod] ?? katMap["diger"]
-    const kategoriAdi = kategoriler.find((k) => k.id === katId)?.ad ?? "Diğer"
-
-    const fullAciklama = [
-      ch && ch !== "ICS" ? `[${ch}]` : null,
-      fatNo ? `#${fatNo}` : null,
-      detay || aciklama || null,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .slice(0, 500)
+    let aciklama = row.aciklama
+    if (row.format === "eski") {
+      aciklama = [
+        row.ch && row.ch !== "ICS" ? `[${row.ch}]` : null,
+        row.fatNo ? `#${row.fatNo}` : null,
+        row.detay || row.aciklama || null,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .slice(0, 500)
+    }
 
     preview.push({
-      tarih,
-      ch,
-      fatNo,
+      tarih: row.tarih,
+      kalemKod: kalemKod || "",
+      altKalem: row.altKalem,
+      masrafYeri: row.masrafYeri,
       aciklama,
-      detay,
-      tutar,
-      parabirimi: usedParabirimi,
+      tutar: row.tutar,
+      parabirimi: row.paraBirimi,
+      altKalemId: altId,
+      masrafYeriId: masrafId,
       kategoriKod,
-      kategoriAdi,
+      kategoriAdi: katAdMap[kategoriKod] || kategoriKod,
+      odemeKaynagi: row.odemeKaynagi,
+      format: row.format,
+      matched: !!altId,
     })
   }
 
@@ -183,51 +152,45 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       preview: preview.slice(0, 100),
       totalRows: preview.length,
-      errors,
+      errors: errors.slice(0, 50),
     })
   }
 
-  // Gerçek import
-  const client = await pool.connect()
   let created = 0
   let failed = 0
+  const skipNoMatch = preview.filter((p) => !p.matched && p.format === "yeni")
+  const toInsert = preview.filter((p) => p.matched || p.format === "eski")
 
-  try {
-    await client.query("BEGIN")
-    for (const item of preview) {
-      const katId = katMap[item.kategoriKod] ?? katMap["diger"]
-      const detayFull = [
-        item.ch && item.ch !== "ICS" ? `[${item.ch}]` : null,
-        item.fatNo ? `#${item.fatNo}` : null,
-        item.detay || item.aciklama || null,
-        item.parabirimi !== "USD" ? `(${item.parabirimi})` : null,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .slice(0, 500)
-
-      try {
-        await client.query(
-          `INSERT INTO islemler (site_id, kategori_id, tutar, islem_tarihi, odeme_kaynagi, aciklama, olusturan_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [siteId, katId, item.tutar, item.tarih, "Santiye_Kasa", detayFull || null, session.id]
-        )
-        created++
-      } catch {
+  for (const item of toInsert) {
+    try {
+      const katId = item.matched
+        ? await resolveKategoriIdForAltKalem(item.altKalemId)
+        : katMap[item.kategoriKod] ?? katMap["diger"]
+      if (!katId) {
         failed++
+        continue
       }
+      await createIslem({
+        site_id: siteId,
+        kategori_id: katId,
+        tutar: item.tutar,
+        islem_tarihi: item.tarih,
+        odeme_kaynagi: item.odemeKaynagi,
+        aciklama: item.aciklama || null,
+        olusturan_id: session.id,
+        para_birimi: item.parabirimi === "USD" ? "USD" : "IQD",
+        alt_kalem_id: item.altKalemId,
+        masraf_yeri_id: item.masrafYeriId,
+      })
+      created++
+    } catch {
+      failed++
     }
-    await client.query("COMMIT")
-  } catch (err) {
-    await client.query("ROLLBACK")
-    return NextResponse.json({ error: "Import sırasında hata oluştu." }, { status: 500 })
-  } finally {
-    client.release()
   }
 
   return NextResponse.json({
     created,
-    failed,
+    failed: failed + skipNoMatch.length,
     totalParsed: preview.length,
     errors,
   })

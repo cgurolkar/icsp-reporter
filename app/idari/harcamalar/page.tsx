@@ -85,14 +85,16 @@ interface IslemRow {
 
 interface PreviewRow {
   tarih: string
-  ch: string
-  fatNo: string
+  kalemKod?: string
+  altKalem?: string
+  masrafYeri?: string
   aciklama: string
-  detay: string
   tutar: number
   parabirimi: string
   kategoriKod: string
   kategoriAdi: string
+  matched?: boolean
+  format?: string
 }
 
 type FormState = {
@@ -715,8 +717,18 @@ export default function IdariHarcamalarPage() {
           {importStep === 0 && (
             <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <Alert severity="info" sx={{ fontSize: 13 }}>
-                <strong>Desteklenen format:</strong> &quot;GENEL KASA RAPORU&quot; şemasındaki Excel (.xlsx).
-                Yalnızca <strong>Tediyeler</strong> aktarılır. Aktarım sonrası alt kalemleri düzenleyebilirsiniz.
+                <strong>Yeni şablon:</strong> Tarih, Kalem Kodu, Alt Kalem, Masraf Yeri, Açıklama, Tutar, Para Birimi, Ödeme Kaynağı.
+                Şablonda <em>Ana Kalemler / Alt Kalemler / Masraf Yerleri</em> sayfaları referans içindir —{" "}
+                <Button
+                  component="a"
+                  href="/api/idari/islemler/template"
+                  download="harcama_sablonu.xlsx"
+                  size="small"
+                  sx={{ p: 0, minWidth: 0, verticalAlign: "baseline", textTransform: "none" }}
+                >
+                  buradan indirin
+                </Button>
+                . Eski GENEL KASA dosyaları da okunur; alt kalem eşleşmezse manuel düzenleme gerekir.
               </Alert>
               <FormControl fullWidth required>
                 <InputLabel>Şantiye</InputLabel>
@@ -727,8 +739,8 @@ export default function IdariHarcamalarPage() {
                 </Select>
               </FormControl>
               <FormControl fullWidth>
-                <InputLabel>Para birimi önceliği</InputLabel>
-                <Select value={importParabirimi} label="Para birimi önceliği" onChange={(e) => setImportParabirimi(e.target.value)}>
+                <InputLabel>Eski format para birimi önceliği</InputLabel>
+                <Select value={importParabirimi} label="Eski format para birimi önceliği" onChange={(e) => setImportParabirimi(e.target.value)}>
                   <MenuItem value="USD">USD (önce USD, yoksa IQD)</MenuItem>
                   <MenuItem value="IQD">IQD (önce IQD, yoksa USD)</MenuItem>
                 </Select>
@@ -762,23 +774,37 @@ export default function IdariHarcamalarPage() {
                   <TableHead>
                     <TableRow>
                       <TableCell>Tarih</TableCell>
+                      <TableCell>Kalem</TableCell>
+                      <TableCell>Alt kalem</TableCell>
+                      <TableCell>Masraf yeri</TableCell>
                       <TableCell>Açıklama</TableCell>
-                      <TableCell>Detay</TableCell>
                       <TableCell align="right">Tutar</TableCell>
-                      <TableCell>Birim</TableCell>
-                      <TableCell>Kategori</TableCell>
+                      <TableCell>PB</TableCell>
+                      <TableCell>Eşleşme</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {importPreview.map((row, i) => (
-                      <TableRow key={i} sx={{ backgroundColor: KATEGORI_RENK[row.kategoriKod] ?? "#fff" }}>
+                      <TableRow
+                        key={i}
+                        sx={{ backgroundColor: row.matched === false ? "#fff8e1" : KATEGORI_RENK[row.kategoriKod] ?? "#fff" }}
+                      >
                         <TableCell sx={{ whiteSpace: "nowrap" }}>{row.tarih}</TableCell>
-                        <TableCell>{row.aciklama}</TableCell>
-                        <TableCell sx={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.detay}</TableCell>
+                        <TableCell>{row.kalemKod || "—"}</TableCell>
+                        <TableCell>{row.altKalem || "—"}</TableCell>
+                        <TableCell>{row.masrafYeri || "—"}</TableCell>
+                        <TableCell sx={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {row.aciklama}
+                        </TableCell>
                         <TableCell align="right">{row.tutar.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</TableCell>
                         <TableCell>{row.parabirimi}</TableCell>
                         <TableCell>
-                          <Chip label={row.kategoriAdi} size="small" sx={{ backgroundColor: KATEGORI_RENK[row.kategoriKod], fontSize: 11 }} />
+                          <Chip
+                            label={row.matched ? "OK" : "Eksik"}
+                            size="small"
+                            color={row.matched ? "success" : "warning"}
+                            sx={{ fontSize: 11 }}
+                          />
                         </TableCell>
                       </TableRow>
                     ))}
