@@ -837,24 +837,29 @@ export function generatePDFExpensesPage(formData: any) {
 
   <table>
     <thead>
-      <tr><th style="width:6%;">#</th><th style="width:16%;">Kategori</th><th>Açıklama</th><th style="width:22%;text-align:right;">Tutar (IQD)</th></tr>
+      <tr><th style="width:5%;">#</th><th style="width:18%;">Alt kalem</th><th style="width:16%;">Masraf yeri</th><th>Açıklama</th><th style="width:16%;text-align:right;">Tutar</th></tr>
     </thead>
     <tbody>
       ${expenses.length > 0 ? expenses.map((e: any, i: number) => {
         const cat = e?.category ?? "diger"
-        const label = expenseCategoryLabel[cat] ?? "Diğer"
+        const altLabel = e?.altKalemAd
+          || (e?.kalemKod && e?.kalemAd ? `${e.kalemKod} / ${e.kalemAd}` : null)
+          || (expenseCategoryLabel[cat] ?? "Diğer")
+        const masraf = e?.masrafYeriAd || "—"
         const badgeClass = `cat-${cat}`
+        const cur = e?.currency === "USD" ? "USD" : "IQD"
         return `<tr>
           <td style="text-align:center;color:#94a3b8;font-weight:600;">${i + 1}</td>
-          <td><span class="cat-badge ${badgeClass}">${label}</span></td>
+          <td><span class="cat-badge ${badgeClass}">${altLabel}</span></td>
+          <td>${masraf}</td>
           <td>${e?.description ?? ""}</td>
-          <td class="amount">${e?.amount ? Number(e.amount).toLocaleString("tr-TR") : "—"}</td>
+          <td class="amount">${e?.amount ? Number(e.amount).toLocaleString("tr-TR") : "—"} ${cur}</td>
         </tr>`
-      }).join("") : `<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:20px;">Harcama kaydedilmemiş</td></tr>`}
+      }).join("") : `<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:20px;">Harcama kaydedilmemiş</td></tr>`}
       ${expenses.length > 0 ? `
       <tr class="total-row">
-        <td colspan="3" style="text-align:right;">TOPLAM</td>
-        <td class="amount">${total.toLocaleString("tr-TR")} IQD</td>
+        <td colspan="4" style="text-align:right;">TOPLAM</td>
+        <td class="amount">${total.toLocaleString("tr-TR")}</td>
       </tr>` : ""}
     </tbody>
   </table>

@@ -1,82 +1,142 @@
 "use client"
 
 import type React from "react"
-
-import { Grid, TextField, Typography, Box, Button, IconButton, Paper, FormControl, InputLabel, Select, MenuItem } from "@mui/material"
+import { useEffect, useMemo, useState } from "react"
+import { TextField, Typography, Box, Button, IconButton, Paper, FormControl, InputLabel, Select, MenuItem } from "@mui/material"
 import { Add, Delete } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
-import type { Expense, ExpenseCategory, ExpenseCurrency } from "@/types/form-data"
+import type { Expense, ExpenseCurrency } from "@/types/form-data"
 import { normalizeIqdPerUsd, sumExpensesFx } from "@/lib/expense-fx"
+
+interface KalemOpt {
+  id: number
+  kod: string
+  ad: string
+}
+interface AltKalemOpt {
+  id: number
+  kalem_id: number
+  ad: string
+  kalem_kod?: string
+  kalem_ad?: string
+}
+interface MasrafOpt {
+  id: number
+  ad: string
+  tip: string
+}
 
 interface ExpensesStepProps {
   data: Expense[]
   onChange: (data: Expense[]) => void
-  /** Şantiye / 1 USD = kaç IQD; yoksa varsayılan kur */
   iqdPerUsd?: number | null
+}
+
+function kalemIdForExpense(expense: Expense, altKalemler: AltKalemOpt[]): string {
+  if (expense.altKalemId) {
+    const ak = altKalemler.find((a) => a.id === expense.altKalemId)
+    if (ak) return String(ak.kalem_id)
+  }
+  return ""
 }
 
 export default function ExpensesStep({ data, onChange, iqdPerUsd }: ExpensesStepProps) {
   const { t } = useLanguage()
+  const [kalemler, setKalemler] = useState<KalemOpt[]>([])
+  const [altKalemler, setAltKalemler] = useState<AltKalemOpt[]>([])
+  const [masrafYerleri, setMasrafYerleri] = useState<MasrafOpt[]>([])
 
-  const expenseCategories: { value: ExpenseCategory; label: string }[] = [
-    { value: "santiye", label: t("expense_cat_santiye") },
-    { value: "makine", label: t("expense_cat_makine") },
-    { value: "personel", label: t("expense_cat_personel") },
-    { value: "yakit", label: t("expense_cat_yakit") },
-    { value: "diger", label: t("expense_cat_diger") },
-  ]
+  useEffect(() => {
+    fetch("/api/idari/harcama-tanimlar")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return
+        setKalemler(d.kalemler || [])
+        setAltKalemler(d.altKalemler || [])
+        setMasrafYerleri(d.masrafYerleri || [])
+      })
+      .catch(() => {})
+  }, [])
 
   const rate = normalizeIqdPerUsd(iqdPerUsd)
   const { totalUsd, totalIqd } = sumExpensesFx(data, rate)
 
   const addExpense = () => {
-    onChange([...data, { description: "", amount: 0, category: "diger", currency: "IQD" }])
+    onChange([...data, { description: "", amount: 0, currency: "IQD", altKalemId: null, masrafYeriId: null }])
   }
 
   const removeExpense = (index: number) => {
-    if (data.length > 1) {
-      onChange(data.filter((_, i) => i !== index))
-    }
+    if (data.length > 1) onChange(data.filter((_, i) => i !== index))
   }
 
-  const updateExpense = (index: number, field: keyof Expense, value: string | number) => {
+  const updateExpense = (index: number, patch: Partial<Expense>) => {
     const newData = [...data]
-    newData[index] = { ...newData[index], [field]: value }
+    newData[index] = { ...newData[index], ...patch }
     onChange(newData)
   }
 
-  const handleKeyPress = (event: React.KeyboardEvent, index: number, field: keyof Expense) => {
-    if (event.key === "Enter") {
-      event.preventDefault()
+  const handleKalemChange = (index: number, kalemIdStr: string) => {
+    const kalemId = parseInt(kalemIdStr, 10)
+    const kalem = kalemler.find((k) => k.id === kalemId)
+    const firstAlt = altKalemler.find((a) => a.kalem_id === kalemId)
+    updateExpense(index, {
+      altKalemId: firstAlt?.id ?? null,
+      altKalemAd: firstAlt?.ad,
+      kalemKod: kalem?.kod,
+      kalemAd: kalem?.ad,
+    })
+  }
 
-      // If this is the last row and we're in the amount field, add a new row
-      if (index === data.length - 1 && field === "amount") {
-        addExpense()
-        // Focus on the description field of the new row
-        setTimeout(() => {
-          const nextInput = document.querySelector(
-            `input[data-expense-index="${index + 1}-description"]`,
-          ) as HTMLInputElement
-          if (nextInput) {
-            nextInput.focus()
-          }
-        }, 100)
-      } else if (field === "description") {
-        // Move to amount field in the same row
-        const amountInput = document.querySelector(`input[data-expense-index="${index}-amount"]`) as HTMLInputElement
-        if (amountInput) {
-          amountInput.focus()
-        }
-      } else if (field === "amount" && index < data.length - 1) {
-        // Move to description field of next row
-        const nextInput = document.querySelector(
-          `input[data-expense-index="${index + 1}-description"]`,
-        ) as HTMLInputElement
-        if (nextInput) {
-          nextInput.focus()
-        }
-      }
+  const handleAltKalemChange = (index: number, altIdStr: string) => {
+    const altId = parseInt(altIdStr, 10)
+    const ak = altKalemler.find((a) => a.id === altId)
+    updateExpense(index, {
+      altKalemId: altId || null,
+      altKalemAd: ak?.ad,
+      kalemKod: ak?.kalem_kod,
+      kalemAd: ak?.kalem_ad,
+    })
+  }
+
+  const handleMasrafChange = (index: number, masrafIdStr: string) => {
+    const mid = parseInt(masrafIdStr, 10)
+    const my = masrafYerleri.find((m) => m.id === mid)
+    updateExpense(index, {
+      masrafYeriId: mid || null,
+      masrafYeriAd: my?.ad,
+    })
+  }
+
+  const handleKeyPress = (event: React.KeyboardEvent, index: number, field: "description" | "amount") => {
+    if (event.key !== "Enter") return
+    event.preventDefault()
+    if (index === data.length - 1 && field === "amount") {
+      addExpense()
+      setTimeout(() => {
+        ;(document.querySelector(`input[data-expense-index="${index + 1}-description"]`) as HTMLInputElement)?.focus()
+      }, 100)
+    } else if (field === "description") {
+      ;(document.querySelector(`input[data-expense-index="${index}-amount"]`) as HTMLInputElement)?.focus()
+    } else if (field === "amount" && index < data.length - 1) {
+      ;(document.querySelector(`input[data-expense-index="${index + 1}-description"]`) as HTMLInputElement)?.focus()
     }
+  }
+
+  const altsByKalem = useMemo(() => {
+    const map = new Map<number, AltKalemOpt[]>()
+    for (const a of altKalemler) {
+      const list = map.get(a.kalem_id) || []
+      list.push(a)
+      map.set(a.kalem_id, list)
+    }
+    return map
+  }, [altKalemler])
+
+  const fieldSx = {
+    "& .MuiOutlinedInput-root": {
+      backgroundColor: "white",
+      "&:hover fieldset": { borderColor: "#9c27b0" },
+    },
   }
 
   return (
@@ -87,103 +147,113 @@ export default function ExpensesStep({ data, onChange, iqdPerUsd }: ExpensesStep
       <Paper
         sx={{ p: 3, background: "linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%)", border: "1px solid #9c27b0" }}
       >
-        {data.map((expense, index) => (
-          <Grid container spacing={2} key={index} sx={{ mb: 2 }} alignItems="center">
-            <Grid item xs={1}>
-              <Typography variant="body1" sx={{ fontWeight: 600, color: "#9c27b0" }}>
+        {data.map((expense, index) => {
+          const selectedKalemId = kalemIdForExpense(expense, altKalemler)
+          const filteredAlts = selectedKalemId
+            ? altsByKalem.get(parseInt(selectedKalemId, 10)) || []
+            : altKalemler
+
+          return (
+            <Box
+              key={index}
+              sx={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 1.5,
+                mb: 2,
+                alignItems: "center",
+              }}
+            >
+              <Typography variant="body1" sx={{ fontWeight: 600, color: "#9c27b0", minWidth: 28 }}>
                 {index + 1}.
               </Typography>
-            </Grid>
-            <Grid item xs={12} sm={2}>
-              <FormControl fullWidth size="small" sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "white" } }}>
-                <InputLabel>{t("expense_type")}</InputLabel>
+              <FormControl size="small" sx={{ minWidth: 160, flex: "1 1 140px", ...fieldSx }}>
+                <InputLabel>Ana kalem</InputLabel>
                 <Select
-                  label={t("expense_type")}
-                  value={expense.category ?? "diger"}
-                  onChange={(e) => updateExpense(index, "category", e.target.value as ExpenseCategory)}
+                  label="Ana kalem"
+                  value={selectedKalemId}
+                  onChange={(e) => handleKalemChange(index, e.target.value)}
                 >
-                  {expenseCategories.map((c) => (
-                    <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>
+                  <MenuItem value="">Seçin</MenuItem>
+                  {kalemler.map((k) => (
+                    <MenuItem key={k.id} value={String(k.id)}>{k.kod} — {k.ad}</MenuItem>
                   ))}
                 </Select>
               </FormControl>
-            </Grid>
-            <Grid item xs={6} sm={2}>
-              <FormControl fullWidth size="small" sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "white" } }}>
+              <FormControl size="small" sx={{ minWidth: 150, flex: "1 1 140px", ...fieldSx }}>
+                <InputLabel>Alt kalem</InputLabel>
+                <Select
+                  label="Alt kalem"
+                  value={expense.altKalemId ? String(expense.altKalemId) : ""}
+                  onChange={(e) => handleAltKalemChange(index, e.target.value)}
+                >
+                  <MenuItem value="">Seçin</MenuItem>
+                  {filteredAlts.map((a) => (
+                    <MenuItem key={a.id} value={String(a.id)}>{a.ad}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl size="small" sx={{ minWidth: 160, flex: "1 1 140px", ...fieldSx }}>
+                <InputLabel>Masraf yeri</InputLabel>
+                <Select
+                  label="Masraf yeri"
+                  value={expense.masrafYeriId ? String(expense.masrafYeriId) : ""}
+                  onChange={(e) => handleMasrafChange(index, e.target.value)}
+                >
+                  <MenuItem value="">Seçin</MenuItem>
+                  {masrafYerleri.map((m) => (
+                    <MenuItem key={m.id} value={String(m.id)}>{m.ad} ({m.tip})</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl size="small" sx={{ minWidth: 90, ...fieldSx }}>
                 <InputLabel>Kur</InputLabel>
                 <Select
                   label="Kur"
                   value={expense.currency ?? "IQD"}
-                  onChange={(e) => updateExpense(index, "currency", e.target.value as ExpenseCurrency)}
+                  onChange={(e) => updateExpense(index, { currency: e.target.value as ExpenseCurrency })}
                 >
                   <MenuItem value="IQD">IQD</MenuItem>
                   <MenuItem value="USD">USD</MenuItem>
                 </Select>
               </FormControl>
-            </Grid>
-            <Grid item xs={12} sm={4}>
               <TextField
-                fullWidth
                 size="small"
                 label={t("description")}
                 value={expense.description}
-                onChange={(e) => updateExpense(index, "description", e.target.value)}
+                onChange={(e) => updateExpense(index, { description: e.target.value })}
                 onKeyPress={(e) => handleKeyPress(e, index, "description")}
                 placeholder={t("expense_description_placeholder")}
-                InputProps={{
-                  inputProps: { "data-expense-index": `${index}-description` },
-                }}
-                sx={{
-                  "& .MuiOutlinedInput-root": {
-                    backgroundColor: "white",
-                    "&:hover fieldset": { borderColor: "#9c27b0" },
-                  },
-                }}
+                InputProps={{ inputProps: { "data-expense-index": `${index}-description` } }}
+                sx={{ flex: "2 1 180px", minWidth: 160, ...fieldSx }}
               />
-            </Grid>
-            <Grid item xs={12} sm={2}>
               <TextField
-                fullWidth
                 size="small"
                 label={expense.currency === "USD" ? "Tutar (USD)" : "Tutar (IQD)"}
                 type="number"
                 value={expense.amount || ""}
-                onChange={(e) => updateExpense(index, "amount", Number.parseFloat(e.target.value) || 0)}
+                onChange={(e) => updateExpense(index, { amount: Number.parseFloat(e.target.value) || 0 })}
                 onKeyPress={(e) => handleKeyPress(e, index, "amount")}
                 placeholder="0"
-                InputProps={{
-                  inputProps: { "data-expense-index": `${index}-amount` },
-                }}
-                sx={{
-                  "& .MuiOutlinedInput-root": {
-                    backgroundColor: "white",
-                    "&:hover fieldset": { borderColor: "#9c27b0" },
-                  },
-                }}
+                InputProps={{ inputProps: { "data-expense-index": `${index}-amount` } }}
+                sx={{ width: 120, ...fieldSx }}
               />
-            </Grid>
-            <Grid item xs={1}>
               <IconButton onClick={() => removeExpense(index)} color="error" disabled={data.length <= 1} size="small">
                 <Delete />
               </IconButton>
-            </Grid>
-          </Grid>
-        ))}
+            </Box>
+          )
+        })}
 
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: 3 }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: 3, flexWrap: "wrap", gap: 2 }}>
           <Button
             variant="contained"
             startIcon={<Add />}
             onClick={addExpense}
-            sx={{
-              backgroundColor: "#9c27b0",
-              color: "white",
-              "&:hover": { backgroundColor: "#7b1fa2" },
-            }}
+            sx={{ backgroundColor: "#9c27b0", color: "white", "&:hover": { backgroundColor: "#7b1fa2" } }}
           >
             {t("add")} {t("expenses")}
           </Button>
-
           <Box sx={{ textAlign: "right" }}>
             <Typography variant="body2" sx={{ color: "#9c27b0", fontWeight: 600 }}>
               Toplam (USD): {totalUsd.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}

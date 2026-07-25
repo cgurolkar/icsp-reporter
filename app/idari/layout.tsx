@@ -18,6 +18,7 @@ const navItems = [
   { href: "/idari/puantaj", label: "Puantaj", icon: Assignment },
   { href: "/idari/puantaj-onay", label: "Puantaj onay", icon: Assignment },
   { href: "/idari/harcamalar", label: "Harcamalar", icon: AttachMoney },
+  { href: "/idari/harcama-tanimlar", label: "Harcama tanımları", icon: AttachMoney },
   { href: "/idari/belgeler", label: "Belgeler", icon: Description },
   { href: "/idari/raporlar", label: "Raporlar", icon: BarChart },
 ]
@@ -68,7 +69,7 @@ export default function IdariLayout({ children }: { children: React.ReactNode })
           <Box sx={{ display: "flex", gap: 0.5, flexWrap: { xs: "nowrap", sm: "wrap" }, overflowX: { xs: "auto", sm: "visible" }, WebkitOverflowScrolling: "touch", pb: { xs: 0.5, sm: 0 } }}>
             {navItems.filter((item) => {
               const isUserRole = role === "user" || role === "personel" || role === "engineer"
-              const USER_ALLOWED = ["/idari", "/idari/personel", "/idari/envanter", "/idari/makineler", "/idari/harcamalar"]
+              const USER_ALLOWED = ["/idari", "/idari/personel", "/idari/envanter", "/idari/makineler", "/idari/harcamalar", "/idari/harcama-tanimlar"]
               if (isUserRole) return USER_ALLOWED.includes(item.href)
               if (item.href === "/idari/puantaj-onay") return role === "super_admin" || role === "admin" || role === "manager"
               return true

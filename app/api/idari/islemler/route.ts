@@ -3,11 +3,14 @@ import path from "path"
 import fs from "fs"
 import { z } from "zod"
 import { getSessionFromRequest, canAccessIdari, canManageIdariCentral, canAccessSite } from "@/lib/auth"
-import { initializeDatabase, getIslemler, createIslem } from "@/lib/database"
+import { initializeDatabase, getIslemler, createIslem, resolveKategoriIdForAltKalem } from "@/lib/database"
 
 const IslemSchema = z.object({
   siteId: z.number({ coerce: true }).int().positive(),
-  kategoriId: z.number({ coerce: true }).int().positive(),
+  /** Eski alan; altKalemId varsa sunucu kategori_id’yi türetir */
+  kategoriId: z.number({ coerce: true }).int().positive().optional(),
+  altKalemId: z.number({ coerce: true }).int().positive().optional().nullable(),
+  masrafYeriId: z.number({ coerce: true }).int().positive().optional().nullable(),
   tutar: z.number({ coerce: true }).positive(),
   islem_tarihi: z.string().regex(/^\d{4}-\d{2}-\d{2}/),
   odeme_kaynagi: z.enum(["Merkez_Banka", "Santiye_Kasa"]).default("Santiye_Kasa"),
@@ -70,15 +73,22 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Geçersiz veri.", details: parsed.error.flatten() }, { status: 400 })
     }
-    const { siteId, kategoriId, tutar, islem_tarihi, odeme_kaynagi, aciklama, evrak_base64, para_birimi } = parsed.data
+    const { siteId, kategoriId, altKalemId, masrafYeriId, tutar, islem_tarihi, odeme_kaynagi, aciklama, evrak_base64, para_birimi } = parsed.data
+    if (!altKalemId && !kategoriId) {
+      return NextResponse.json({ error: "Alt kalem veya kategori gerekli." }, { status: 400 })
+    }
     let evrak_yolu: string | null = null
     if (evrak_base64) {
       evrak_yolu = saveEvrak(evrak_base64, `islem_${siteId}_${Date.now()}`)
     }
     await initializeDatabase()
+    const resolvedKatId = await resolveKategoriIdForAltKalem(altKalemId ?? null, kategoriId ?? null)
+    if (!resolvedKatId) {
+      return NextResponse.json({ error: "Kategori çözümlenemedi." }, { status: 400 })
+    }
     const id = await createIslem({
       site_id: siteId,
-      kategori_id: kategoriId,
+      kategori_id: resolvedKatId,
       tutar,
       islem_tarihi: islem_tarihi.slice(0, 10),
       odeme_kaynagi,
@@ -86,6 +96,8 @@ export async function POST(request: NextRequest) {
       evrak_yolu,
       olusturan_id: session.id,
       para_birimi: para_birimi === "USD" ? "USD" : "IQD",
+      alt_kalem_id: altKalemId ?? null,
+      masraf_yeri_id: masrafYeriId ?? null,
     })
     return NextResponse.json({ id })
   } catch (error) {

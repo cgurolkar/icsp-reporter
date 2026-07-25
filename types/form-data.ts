@@ -81,7 +81,7 @@ export interface Fuel {
   remainingOnSite: string; // new: devir (sahada kalan mazot)
 }
 
-/** Harcama türü: Şantiye, Makine (Kullanılan kazık makinesi), Personel, Yakıt, Diğer */
+/** @deprecated Eski rapor uyumluluğu; yeni girişlerde altKalemId tercih edilir */
 export type ExpenseCategory = "santiye" | "makine" | "personel" | "yakit" | "diger"
 
 /** Harcama tutarı bu para biriminde girilir; şantiye kuru ile diğer para birimine çevrilir. */
@@ -90,9 +90,18 @@ export type ExpenseCurrency = "IQD" | "USD"
 export interface Expense {
   description: string
   amount: number
-  /** Harcama türü (Şantiye, Makine, Personel, Yakıt, Diğer) */
+  /** @deprecated Eski rapor uyumluluğu */
   category?: ExpenseCategory
   currency?: ExpenseCurrency
+  /** Alt kalem (100–700 hiyerarşisi) */
+  altKalemId?: number | null
+  /** Masraf yeri */
+  masrafYeriId?: number | null
+  /** Gösterim için (opsiyonel, JSON’da saklanabilir) */
+  altKalemAd?: string
+  masrafYeriAd?: string
+  kalemKod?: string
+  kalemAd?: string
 }
 
 export interface DailyInfo {
@@ -216,7 +225,7 @@ export const initialFormData: FormData = {
     dailyUsage: "",
     remainingOnSite: "",
   },
-  expenses: [{ description: "", amount: 0, category: "diger", currency: "IQD" }],
+  expenses: [{ description: "", amount: 0, currency: "IQD", altKalemId: null, masrafYeriId: null }],
   dailyInfo: { notes: "", nextDayPlannedWork: "", images: [] },
   productionSummary: [{
     machineId: "",

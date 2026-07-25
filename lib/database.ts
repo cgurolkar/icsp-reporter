@@ -448,6 +448,35 @@ async function _doInitializeDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `)
+    // Ana kalem (100 Personel, 200 Makine…) + alt kalem + masraf yeri hiyerarşisi
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS harcama_kalemleri (
+        id SERIAL PRIMARY KEY,
+        kod VARCHAR(20) UNIQUE NOT NULL,
+        ad VARCHAR(255) NOT NULL,
+        aktif BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS harcama_alt_kalemler (
+        id SERIAL PRIMARY KEY,
+        kalem_id INTEGER NOT NULL REFERENCES harcama_kalemleri(id) ON DELETE CASCADE,
+        ad VARCHAR(255) NOT NULL,
+        aktif BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(kalem_id, ad)
+      )
+    `)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS masraf_yerleri (
+        id SERIAL PRIMARY KEY,
+        ad VARCHAR(255) UNIQUE NOT NULL,
+        tip VARCHAR(50) NOT NULL,
+        aktif BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
     await client.query(`
       CREATE TABLE IF NOT EXISTS islemler (
         id SERIAL PRIMARY KEY,
@@ -556,6 +585,10 @@ async function _doInitializeDatabase() {
         THEN ALTER TABLE islemler ADD COLUMN tutar_usd DECIMAL(14,2); END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='islemler' AND column_name='tutar_iqd')
         THEN ALTER TABLE islemler ADD COLUMN tutar_iqd DECIMAL(14,2); END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='islemler' AND column_name='alt_kalem_id')
+        THEN ALTER TABLE islemler ADD COLUMN alt_kalem_id INTEGER REFERENCES harcama_alt_kalemler(id) ON DELETE SET NULL; END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='islemler' AND column_name='masraf_yeri_id')
+        THEN ALTER TABLE islemler ADD COLUMN masraf_yeri_id INTEGER REFERENCES masraf_yerleri(id) ON DELETE SET NULL; END IF;
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'islemler work_report_id: %', SQLERRM;
       END $$
     `)
@@ -703,6 +736,19 @@ async function _doInitializeDatabase() {
   }
 }
 
+/** Ana kalem kodu → eski harcama_kategorileri.kod (geriye uyumluluk) */
+export function legacyKategoriKodFromKalemKod(kalemKod: string | null | undefined): string {
+  const k = String(kalemKod || "").trim()
+  if (k === "100") return "maas"
+  if (k === "200") return "sarf"
+  if (k === "300") return "akaryakit"
+  if (k === "400") return "sarf"
+  if (k === "500") return "sarf"
+  if (k === "600") return "tason"
+  if (k === "700") return "diger"
+  return "diger"
+}
+
 async function seedIdariInitialData(client: { query: (arg0: string, arg1?: any[]) => Promise<any> }) {
   const cat = await client.query(`SELECT COUNT(*) FROM harcama_kategorileri`)
   if (parseInt(cat.rows[0]?.count || '0', 10) === 0) {
@@ -736,6 +782,120 @@ async function seedIdariInitialData(client: { query: (arg0: string, arg1?: any[]
       await client.query(`
         INSERT INTO personel_belge_tipleri (kod, ad) VALUES ('pasaport_kimlik', 'Pasaport / Kimlik'), ('personel_foto', 'Personel Fotoğrafı')
       `)
+    }
+  }
+
+  await seedHarcamaHierarchy(client)
+}
+
+const HARCAMA_KALEM_SEED: { kod: string; ad: string; alt: string[] }[] = [
+  {
+    kod: "100",
+    ad: "Personel",
+    alt: ["Yevmiye", "Maaş & Avans", "Yemek", "Konaklama", "Kamp Sarf & İhtiyaç", "İletişim"],
+  },
+  {
+    kod: "200",
+    ad: "Makine Bakım & Yedek Parça",
+    alt: ["Yedek Parça", "Tamir & Torna", "Gres & Yağ", "Kesici Takım", "Makine Sarf Aparat"],
+  },
+  {
+    kod: "300",
+    ad: "Araç & Akaryakıt",
+    alt: ["Akaryakıt", "Araç Bakım", "Yıkama & Park"],
+  },
+  {
+    kod: "400",
+    ad: "Üretim Sarf Malzemesi",
+    alt: [
+      "Bentonit & Çamur Sistemi",
+      "Tremi & Kazık Ekipmanı",
+      "Kaynak & Kesme Sarf",
+      "Elektrik Malzemesi",
+      "KKD (İş Güvenliği)",
+      "Su Temini",
+      "Genel Sarf",
+    ],
+  },
+  {
+    kod: "500",
+    ad: "Demirbaş & Yatırım",
+    alt: ["Makine & Ekipman Demirbaşı", "Saha Tesis Yatırımı", "Ofis Demirbaşı", "Kamp Demirbaşı"],
+  },
+  {
+    kod: "600",
+    ad: "Taşeron & Hizmet",
+    alt: ["Taşeron Avansı", "Taşeron Destek Gideri", "Nakliye & Taşıma", "Yevmiye/İşçilik"],
+  },
+  {
+    kod: "700",
+    ad: "Genel & İdari",
+    alt: ["Kırtasiye & Ofis", "Ulaşım & Vize", "Diğer"],
+  },
+]
+
+const MASRAF_YERI_SEED: { ad: string; tip: string }[] = [
+  { ad: "SR285", tip: "Makine" },
+  { ad: "SCC600", tip: "Makine" },
+  { ad: "Sany Pickup", tip: "Araç" },
+  { ad: "Mitsubishi Pickup", tip: "Araç" },
+  { ad: "BYD", tip: "Araç" },
+  { ad: "Saha Genel", tip: "Saha" },
+  { ad: "Saha Tesis (Bentonit/Su Kuyusu)", tip: "Saha" },
+  { ad: "Kamp", tip: "Yaşam Alanı" },
+  { ad: "Ofis", tip: "İdari" },
+  { ad: "Taşeron - Demirci", tip: "Taşeron" },
+]
+
+async function seedHarcamaHierarchy(client: { query: (arg0: string, arg1?: any[]) => Promise<any> }) {
+  const kalemCount = await client.query(`SELECT COUNT(*) FROM harcama_kalemleri`)
+  if (parseInt(kalemCount.rows[0]?.count || "0", 10) === 0) {
+    for (const k of HARCAMA_KALEM_SEED) {
+      const ins = await client.query(
+        `INSERT INTO harcama_kalemleri (kod, ad) VALUES ($1, $2) RETURNING id`,
+        [k.kod, k.ad],
+      )
+      const kalemId = ins.rows[0]?.id
+      if (!kalemId) continue
+      for (const alt of k.alt) {
+        await client.query(
+          `INSERT INTO harcama_alt_kalemler (kalem_id, ad) VALUES ($1, $2) ON CONFLICT (kalem_id, ad) DO NOTHING`,
+          [kalemId, alt],
+        )
+      }
+    }
+  } else {
+    // Eksik ana kalem / alt kalem ekle (idempotent)
+    for (const k of HARCAMA_KALEM_SEED) {
+      let kalemId: number | null = null
+      const existing = await client.query(`SELECT id FROM harcama_kalemleri WHERE kod = $1`, [k.kod])
+      if (existing.rows[0]?.id) {
+        kalemId = existing.rows[0].id
+      } else {
+        const ins = await client.query(
+          `INSERT INTO harcama_kalemleri (kod, ad) VALUES ($1, $2) RETURNING id`,
+          [k.kod, k.ad],
+        )
+        kalemId = ins.rows[0]?.id ?? null
+      }
+      if (!kalemId) continue
+      for (const alt of k.alt) {
+        await client.query(
+          `INSERT INTO harcama_alt_kalemler (kalem_id, ad) VALUES ($1, $2) ON CONFLICT (kalem_id, ad) DO NOTHING`,
+          [kalemId, alt],
+        )
+      }
+    }
+  }
+
+  const myCount = await client.query(`SELECT COUNT(*) FROM masraf_yerleri`)
+  if (parseInt(myCount.rows[0]?.count || "0", 10) === 0) {
+    for (const m of MASRAF_YERI_SEED) {
+      await client.query(`INSERT INTO masraf_yerleri (ad, tip) VALUES ($1, $2) ON CONFLICT (ad) DO NOTHING`, [m.ad, m.tip])
+    }
+  } else {
+    for (const m of MASRAF_YERI_SEED) {
+      await client.query(`INSERT INTO masraf_yerleri (ad, tip) VALUES ($1, $2) ON CONFLICT (ad) DO NOTHING`, [m.ad, m.tip])
     }
   }
 }
@@ -3348,13 +3508,189 @@ export async function getHarcamaKategorileri() {
   }
 }
 
+export async function getHarcamaKalemleri(aktifOnly = true) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `SELECT id, kod, ad, aktif FROM harcama_kalemleri ${aktifOnly ? "WHERE aktif = TRUE" : ""} ORDER BY kod`,
+    )
+    return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function getHarcamaAltKalemler(options: { kalemId?: number | null; aktifOnly?: boolean } = {}) {
+  const client = await pool.connect()
+  try {
+    const aktifOnly = options.aktifOnly !== false
+    let q = `
+      SELECT a.id, a.kalem_id, a.ad, a.aktif, k.kod AS kalem_kod, k.ad AS kalem_ad
+      FROM harcama_alt_kalemler a
+      JOIN harcama_kalemleri k ON k.id = a.kalem_id
+      WHERE 1=1
+    `
+    const params: number[] = []
+    if (aktifOnly) q += ` AND a.aktif = TRUE AND k.aktif = TRUE`
+    if (options.kalemId != null && options.kalemId > 0) {
+      params.push(options.kalemId)
+      q += ` AND a.kalem_id = $${params.length}`
+    }
+    q += ` ORDER BY k.kod, a.ad`
+    const r = params.length ? await client.query(q, params) : await client.query(q)
+    return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+export async function getMasrafYerleri(aktifOnly = true) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `SELECT id, ad, tip, aktif FROM masraf_yerleri ${aktifOnly ? "WHERE aktif = TRUE" : ""} ORDER BY tip, ad`,
+    )
+    return r.rows
+  } finally {
+    client.release()
+  }
+}
+
+/** Rapor/form dropdown’ları için tek yanıt */
+export async function getHarcamaTanimlar() {
+  const [kalemler, altKalemler, masrafYerleri] = await Promise.all([
+    getHarcamaKalemleri(true),
+    getHarcamaAltKalemler({ aktifOnly: true }),
+    getMasrafYerleri(true),
+  ])
+  return { kalemler, altKalemler, masrafYerleri }
+}
+
+export async function createHarcamaKalem(data: { kod: string; ad: string }) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `INSERT INTO harcama_kalemleri (kod, ad) VALUES ($1, $2) RETURNING id, kod, ad, aktif`,
+      [data.kod.trim(), data.ad.trim()],
+    )
+    return r.rows[0]
+  } finally {
+    client.release()
+  }
+}
+
+export async function updateHarcamaKalem(id: number, data: { kod?: string; ad?: string; aktif?: boolean }) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `UPDATE harcama_kalemleri SET
+        kod = COALESCE($2, kod),
+        ad = COALESCE($3, ad),
+        aktif = COALESCE($4, aktif)
+       WHERE id = $1 RETURNING id, kod, ad, aktif`,
+      [id, data.kod?.trim() ?? null, data.ad?.trim() ?? null, data.aktif ?? null],
+    )
+    return r.rows[0] ?? null
+  } finally {
+    client.release()
+  }
+}
+
+export async function createHarcamaAltKalem(data: { kalem_id: number; ad: string }) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `INSERT INTO harcama_alt_kalemler (kalem_id, ad) VALUES ($1, $2) RETURNING id, kalem_id, ad, aktif`,
+      [data.kalem_id, data.ad.trim()],
+    )
+    return r.rows[0]
+  } finally {
+    client.release()
+  }
+}
+
+export async function updateHarcamaAltKalem(id: number, data: { kalem_id?: number; ad?: string; aktif?: boolean }) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `UPDATE harcama_alt_kalemler SET
+        kalem_id = COALESCE($2, kalem_id),
+        ad = COALESCE($3, ad),
+        aktif = COALESCE($4, aktif)
+       WHERE id = $1 RETURNING id, kalem_id, ad, aktif`,
+      [id, data.kalem_id ?? null, data.ad?.trim() ?? null, data.aktif ?? null],
+    )
+    return r.rows[0] ?? null
+  } finally {
+    client.release()
+  }
+}
+
+export async function createMasrafYeri(data: { ad: string; tip: string }) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `INSERT INTO masraf_yerleri (ad, tip) VALUES ($1, $2) RETURNING id, ad, tip, aktif`,
+      [data.ad.trim(), data.tip.trim()],
+    )
+    return r.rows[0]
+  } finally {
+    client.release()
+  }
+}
+
+export async function updateMasrafYeri(id: number, data: { ad?: string; tip?: string; aktif?: boolean }) {
+  const client = await pool.connect()
+  try {
+    const r = await client.query(
+      `UPDATE masraf_yerleri SET
+        ad = COALESCE($2, ad),
+        tip = COALESCE($3, tip),
+        aktif = COALESCE($4, aktif)
+       WHERE id = $1 RETURNING id, ad, tip, aktif`,
+      [id, data.ad?.trim() ?? null, data.tip?.trim() ?? null, data.aktif ?? null],
+    )
+    return r.rows[0] ?? null
+  } finally {
+    client.release()
+  }
+}
+
+/** Alt kalem id → eski kategori_id (islemler.kategori_id zorunlu) */
+export async function resolveKategoriIdForAltKalem(altKalemId: number | null | undefined, fallbackKategoriId?: number | null): Promise<number | null> {
+  const client = await pool.connect()
+  try {
+    if (altKalemId != null && altKalemId > 0) {
+      const ak = await client.query(
+        `SELECT k.kod FROM harcama_alt_kalemler a JOIN harcama_kalemleri k ON k.id = a.kalem_id WHERE a.id = $1`,
+        [altKalemId],
+      )
+      const legacyKod = legacyKategoriKodFromKalemKod(ak.rows[0]?.kod)
+      const cat = await client.query(`SELECT id FROM harcama_kategorileri WHERE kod = $1`, [legacyKod])
+      if (cat.rows[0]?.id) return cat.rows[0].id
+    }
+    if (fallbackKategoriId != null && fallbackKategoriId > 0) return fallbackKategoriId
+    const diger = await client.query(`SELECT id FROM harcama_kategorileri WHERE kod = 'diger' LIMIT 1`)
+    return diger.rows[0]?.id ?? null
+  } finally {
+    client.release()
+  }
+}
+
 export async function getIslemler(options: { siteId?: number | null; baslangic?: string; bitis?: string } = {}) {
   const client = await pool.connect()
   try {
     let query = `
-      SELECT i.*, k.ad AS kategori_adi, k.kod AS kategori_kod
+      SELECT i.*,
+        k.ad AS kategori_adi, k.kod AS kategori_kod,
+        ak.ad AS alt_kalem_adi, ak.id AS alt_kalem_id,
+        hk.kod AS kalem_kod, hk.ad AS kalem_adi,
+        my.ad AS masraf_yeri_adi, my.tip AS masraf_yeri_tip
       FROM islemler i
       LEFT JOIN harcama_kategorileri k ON k.id = i.kategori_id
+      LEFT JOIN harcama_alt_kalemler ak ON ak.id = i.alt_kalem_id
+      LEFT JOIN harcama_kalemleri hk ON hk.id = ak.kalem_id
+      LEFT JOIN masraf_yerleri my ON my.id = i.masraf_yeri_id
       WHERE 1=1
     `
     const params: (number | string)[] = []
@@ -3390,6 +3726,8 @@ export async function createIslem(data: {
   olusturan_id?: number | null
   work_report_id?: number | null
   para_birimi?: ExpenseCurrency
+  alt_kalem_id?: number | null
+  masraf_yeri_id?: number | null
 }) {
   const client = await pool.connect()
   try {
@@ -3398,8 +3736,8 @@ export async function createIslem(data: {
     const cur: ExpenseCurrency = data.para_birimi === 'USD' ? 'USD' : 'IQD'
     const { tutar_usd, tutar_iqd, kur_iqd_per_usd } = expenseAmountsToUsdIqd(data.tutar, cur, iqdPer)
     const r = await client.query(`
-      INSERT INTO islemler (site_id, kategori_id, tutar, islem_tarihi, odeme_kaynagi, aciklama, evrak_yolu, olusturan_id, work_report_id, para_birimi, kur_iqd_per_usd, tutar_usd, tutar_iqd)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      INSERT INTO islemler (site_id, kategori_id, tutar, islem_tarihi, odeme_kaynagi, aciklama, evrak_yolu, olusturan_id, work_report_id, para_birimi, kur_iqd_per_usd, tutar_usd, tutar_iqd, alt_kalem_id, masraf_yeri_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING id
     `, [
       data.site_id,
@@ -3415,6 +3753,8 @@ export async function createIslem(data: {
       kur_iqd_per_usd,
       tutar_usd,
       tutar_iqd,
+      data.alt_kalem_id ?? null,
+      data.masraf_yeri_id ?? null,
     ])
     return r.rows[0]?.id
   } finally {
@@ -4008,7 +4348,14 @@ export async function syncExpensesToIslemler(
   siteId: number,
   reportDate: string, // YYYY-MM-DD
   userId: number,
-  expenses: Array<{ description?: string; amount?: number; category?: string; currency?: string }>
+  expenses: Array<{
+    description?: string
+    amount?: number
+    category?: string
+    currency?: string
+    altKalemId?: number | null
+    masrafYeriId?: number | null
+  }>
 ): Promise<void> {
   if (!siteId || !reportId || !Array.isArray(expenses)) return
   const validExpenses = expenses.filter(e => e && Number(e.amount) > 0)
@@ -4019,12 +4366,10 @@ export async function syncExpensesToIslemler(
     const siteR = await client.query(`SELECT COALESCE(iqd_per_usd, 1320) AS r FROM sites WHERE id = $1`, [siteId])
     const iqdPer = Number(siteR.rows[0]?.r) || 1320
 
-    // Kategori kodu → id haritası
     const catRows = await client.query(`SELECT id, kod FROM harcama_kategorileri`)
     const catMap: Record<string, number> = {}
     for (const row of catRows.rows) catMap[row.kod] = row.id
 
-    // Form'daki kategori → DB kodu eşleştirmesi
     const categoryMapping: Record<string, string> = {
       santiye: 'sarf',
       makine:  'sarf',
@@ -4034,22 +4379,35 @@ export async function syncExpensesToIslemler(
     }
 
     const digerKatId = catMap['diger']
-    if (!digerKatId) return // kategori tablosu henüz seed edilmemişse atla
+    if (!digerKatId) return
 
-    // Aynı rapor için önceki kayıtları sil (idempotent sync)
     await client.query(`DELETE FROM islemler WHERE work_report_id = $1`, [reportId])
 
     const date = (reportDate || '').slice(0, 10)
     for (const exp of validExpenses) {
-      const catKod = categoryMapping[exp.category ?? ''] ?? 'diger'
-      const katId = catMap[catKod] ?? digerKatId
+      let katId = digerKatId
+      const altId = exp.altKalemId != null && Number(exp.altKalemId) > 0 ? Number(exp.altKalemId) : null
+      const masrafId = exp.masrafYeriId != null && Number(exp.masrafYeriId) > 0 ? Number(exp.masrafYeriId) : null
+
+      if (altId) {
+        const ak = await client.query(
+          `SELECT k.kod FROM harcama_alt_kalemler a JOIN harcama_kalemleri k ON k.id = a.kalem_id WHERE a.id = $1`,
+          [altId],
+        )
+        const legacyKod = legacyKategoriKodFromKalemKod(ak.rows[0]?.kod)
+        katId = catMap[legacyKod] ?? digerKatId
+      } else {
+        const catKod = categoryMapping[exp.category ?? ''] ?? 'diger'
+        katId = catMap[catKod] ?? digerKatId
+      }
+
       const cur: ExpenseCurrency = exp.currency === 'USD' ? 'USD' : 'IQD'
       const amt = Number(exp.amount)
       const { tutar_usd, tutar_iqd, kur_iqd_per_usd } = expenseAmountsToUsdIqd(amt, cur, iqdPer)
       await client.query(
-        `INSERT INTO islemler (site_id, kategori_id, tutar, islem_tarihi, odeme_kaynagi, aciklama, olusturan_id, work_report_id, para_birimi, kur_iqd_per_usd, tutar_usd, tutar_iqd)
-         VALUES ($1, $2, $3, $4, 'rapor', $5, $6, $7, $8, $9, $10, $11)`,
-        [siteId, katId, amt, date, exp.description ?? '', userId, reportId, cur, kur_iqd_per_usd, tutar_usd, tutar_iqd]
+        `INSERT INTO islemler (site_id, kategori_id, tutar, islem_tarihi, odeme_kaynagi, aciklama, olusturan_id, work_report_id, para_birimi, kur_iqd_per_usd, tutar_usd, tutar_iqd, alt_kalem_id, masraf_yeri_id)
+         VALUES ($1, $2, $3, $4, 'rapor', $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        [siteId, katId, amt, date, exp.description ?? '', userId, reportId, cur, kur_iqd_per_usd, tutar_usd, tutar_iqd, altId, masrafId]
       )
     }
   } finally {

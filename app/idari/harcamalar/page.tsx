@@ -28,7 +28,8 @@ import {
   StepLabel,
   Divider,
 } from "@mui/material"
-import { Add, FileUpload, CheckCircle, Download } from "@mui/icons-material"
+import { Add, FileUpload, CheckCircle, Download, Settings } from "@mui/icons-material"
+import Link from "next/link"
 import { useAuth } from "@/contexts/auth-context"
 
 interface SiteItem {
@@ -36,10 +37,24 @@ interface SiteItem {
   name: string
 }
 
-interface KategoriItem {
+interface KalemItem {
   id: number
   kod: string
   ad: string
+}
+
+interface AltKalemItem {
+  id: number
+  kalem_id: number
+  ad: string
+  kalem_kod?: string
+  kalem_ad?: string
+}
+
+interface MasrafItem {
+  id: number
+  ad: string
+  tip: string
 }
 
 interface IslemRow {
@@ -47,6 +62,11 @@ interface IslemRow {
   site_id: number
   kategori_id: number
   kategori_adi: string
+  kalem_kod?: string | null
+  kalem_adi?: string | null
+  alt_kalem_adi?: string | null
+  masraf_yeri_adi?: string | null
+  masraf_yeri_tip?: string | null
   tutar: number
   islem_tarihi: string
   odeme_kaynagi: string
@@ -81,7 +101,9 @@ const KATEGORI_RENK: Record<string, string> = {
 export default function IdariHarcamalarPage() {
   const { user } = useAuth()
   const [sites, setSites] = useState<SiteItem[]>([])
-  const [kategoriler, setKategoriler] = useState<KategoriItem[]>([])
+  const [kalemler, setKalemler] = useState<KalemItem[]>([])
+  const [altKalemler, setAltKalemler] = useState<AltKalemItem[]>([])
+  const [masrafYerleri, setMasrafYerleri] = useState<MasrafItem[]>([])
   const [list, setList] = useState<IslemRow[]>([])
   const [siteId, setSiteId] = useState<string>("")
   const [baslangic, setBaslangic] = useState(() => {
@@ -93,7 +115,9 @@ export default function IdariHarcamalarPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState({
     siteId: "",
-    kategoriId: "",
+    kalemId: "",
+    altKalemId: "",
+    masrafYeriId: "",
     tutar: "",
     para_birimi: "IQD" as "IQD" | "USD",
     islem_tarihi: new Date().toISOString().slice(0, 10),
@@ -120,7 +144,15 @@ export default function IdariHarcamalarPage() {
 
   useEffect(() => {
     fetch("/api/sites").then((r) => (r.ok ? r.json() : [])).then(setSites).catch(() => setSites([]))
-    fetch("/api/idari/harcama-kategorileri").then((r) => (r.ok ? r.json() : [])).then(setKategoriler).catch(() => setKategoriler([]))
+    fetch("/api/idari/harcama-tanimlar")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return
+        setKalemler(d.kalemler || [])
+        setAltKalemler(d.altKalemler || [])
+        setMasrafYerleri(d.masrafYerleri || [])
+      })
+      .catch(() => {})
   }, [])
 
   const loadList = () => {
@@ -140,10 +172,11 @@ export default function IdariHarcamalarPage() {
 
   const handleSave = async () => {
     const sid = parseInt(form.siteId, 10)
-    const kid = parseInt(form.kategoriId, 10)
+    const altId = parseInt(form.altKalemId, 10)
+    const masrafId = form.masrafYeriId ? parseInt(form.masrafYeriId, 10) : null
     const tutar = parseFloat(form.tutar)
-    if (!sid || !kid || Number.isNaN(tutar) || !form.islem_tarihi) {
-      alert("Şantiye, kategori, tutar ve tarih gerekli.")
+    if (!sid || !altId || Number.isNaN(tutar) || !form.islem_tarihi) {
+      alert("Şantiye, alt kalem, tutar ve tarih gerekli.")
       return
     }
     setSaving(true)
@@ -152,7 +185,8 @@ export default function IdariHarcamalarPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         siteId: sid,
-        kategoriId: kid,
+        altKalemId: altId,
+        masrafYeriId: masrafId && !Number.isNaN(masrafId) ? masrafId : null,
         tutar,
         para_birimi: form.para_birimi,
         islem_tarihi: form.islem_tarihi.slice(0, 10),
@@ -163,13 +197,27 @@ export default function IdariHarcamalarPage() {
     setSaving(false)
     if (res.ok) {
       setDialogOpen(false)
-      setForm({ siteId: "", kategoriId: "", tutar: "", para_birimi: "IQD", islem_tarihi: new Date().toISOString().slice(0, 10), odeme_kaynagi: "Santiye_Kasa", aciklama: "" })
+      setForm({
+        siteId: "",
+        kalemId: "",
+        altKalemId: "",
+        masrafYeriId: "",
+        tutar: "",
+        para_birimi: "IQD",
+        islem_tarihi: new Date().toISOString().slice(0, 10),
+        odeme_kaynagi: "Santiye_Kasa",
+        aciklama: "",
+      })
       loadList()
     } else {
       const err = await res.json().catch(() => ({}))
       alert(err.error || "Kaydedilemedi.")
     }
   }
+
+  const filteredAltKalemler = form.kalemId
+    ? altKalemler.filter((a) => String(a.kalem_id) === form.kalemId)
+    : altKalemler
 
   // --- Import handlers ---
   const openImport = () => {
@@ -249,9 +297,20 @@ export default function IdariHarcamalarPage() {
 
   return (
     <Box>
-      <Typography variant="h6" sx={{ color: "var(--icsp-lacivert)", fontWeight: 600, mb: 2 }}>
-        Harcamalar
-      </Typography>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, mb: 2, flexWrap: "wrap" }}>
+        <Typography variant="h6" sx={{ color: "var(--icsp-lacivert)", fontWeight: 600 }}>
+          Harcamalar
+        </Typography>
+        <Button
+          component={Link}
+          href="/idari/harcama-tanimlar"
+          size="small"
+          startIcon={<Settings />}
+          sx={{ color: "var(--icsp-lacivert)" }}
+        >
+          Kalem / masraf yeri tanımları
+        </Button>
+      </Box>
 
       <Paper sx={{ p: 2, mb: 2 }}>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, alignItems: "center", mb: 2 }}>
@@ -302,9 +361,11 @@ export default function IdariHarcamalarPage() {
               <TableHead>
                 <TableRow>
                   <TableCell><strong>Tarih</strong></TableCell>
-                  <TableCell><strong>Kategori</strong></TableCell>
+                  <TableCell><strong>Kalem</strong></TableCell>
+                  <TableCell><strong>Alt kalem</strong></TableCell>
+                  <TableCell><strong>Masraf yeri</strong></TableCell>
                   <TableCell align="center"><strong>PB</strong></TableCell>
-                  <TableCell align="right"><strong>Tutar (girilen)</strong></TableCell>
+                  <TableCell align="right"><strong>Tutar</strong></TableCell>
                   <TableCell align="right"><strong>USD</strong></TableCell>
                   <TableCell align="right"><strong>IQD</strong></TableCell>
                   <TableCell><strong>Ödeme</strong></TableCell>
@@ -315,7 +376,17 @@ export default function IdariHarcamalarPage() {
                 {list.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell>{String(row.islem_tarihi).slice(0, 10)}</TableCell>
-                    <TableCell>{row.kategori_adi}</TableCell>
+                    <TableCell>
+                      {row.kalem_kod
+                        ? `${row.kalem_kod} ${row.kalem_adi || ""}`
+                        : row.kategori_adi || "—"}
+                    </TableCell>
+                    <TableCell>{row.alt_kalem_adi || "—"}</TableCell>
+                    <TableCell>
+                      {row.masraf_yeri_adi
+                        ? `${row.masraf_yeri_adi}${row.masraf_yeri_tip ? ` (${row.masraf_yeri_tip})` : ""}`
+                        : "—"}
+                    </TableCell>
                     <TableCell align="center">{row.para_birimi === "USD" ? "USD" : "IQD"}</TableCell>
                     <TableCell align="right">{Number(row.tutar).toLocaleString("tr-TR")}</TableCell>
                     <TableCell align="right">{row.tutar_usd != null ? Number(row.tutar_usd).toLocaleString("tr-TR", { maximumFractionDigits: 2 }) : "—"}</TableCell>
@@ -327,7 +398,7 @@ export default function IdariHarcamalarPage() {
                   </TableRow>
                 ))}
                 <TableRow sx={{ backgroundColor: "#f5f5f5" }}>
-                  <TableCell colSpan={4}><strong>Toplam (USD / IQD)</strong></TableCell>
+                  <TableCell colSpan={6}><strong>Toplam (USD / IQD)</strong></TableCell>
                   <TableCell align="right"><strong>{listSumUsd.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}</strong></TableCell>
                   <TableCell align="right"><strong>{listSumIqd.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}</strong></TableCell>
                   <TableCell colSpan={2} />
@@ -352,10 +423,31 @@ export default function IdariHarcamalarPage() {
               </Select>
             </FormControl>
             <FormControl fullWidth required>
-              <InputLabel>Kategori</InputLabel>
-              <Select value={form.kategoriId} label="Kategori" onChange={(e) => setForm((f) => ({ ...f, kategoriId: e.target.value }))}>
-                {kategoriler.map((k) => (
-                  <MenuItem key={k.id} value={String(k.id)}>{k.ad}</MenuItem>
+              <InputLabel>Ana kalem</InputLabel>
+              <Select
+                value={form.kalemId}
+                label="Ana kalem"
+                onChange={(e) => setForm((f) => ({ ...f, kalemId: e.target.value, altKalemId: "" }))}
+              >
+                {kalemler.map((k) => (
+                  <MenuItem key={k.id} value={String(k.id)}>{k.kod} — {k.ad}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth required>
+              <InputLabel>Alt kalem</InputLabel>
+              <Select value={form.altKalemId} label="Alt kalem" onChange={(e) => setForm((f) => ({ ...f, altKalemId: e.target.value }))}>
+                {filteredAltKalemler.map((a) => (
+                  <MenuItem key={a.id} value={String(a.id)}>{a.ad}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth>
+              <InputLabel>Masraf yeri</InputLabel>
+              <Select value={form.masrafYeriId} label="Masraf yeri" onChange={(e) => setForm((f) => ({ ...f, masrafYeriId: e.target.value }))}>
+                <MenuItem value="">—</MenuItem>
+                {masrafYerleri.map((m) => (
+                  <MenuItem key={m.id} value={String(m.id)}>{m.ad} ({m.tip})</MenuItem>
                 ))}
               </Select>
             </FormControl>
@@ -380,7 +472,7 @@ export default function IdariHarcamalarPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>İptal</Button>
-          <Button variant="contained" onClick={handleSave} disabled={saving || !form.siteId || !form.kategoriId || !form.tutar} sx={{ background: "var(--icsp-lacivert)" }}>
+          <Button variant="contained" onClick={handleSave} disabled={saving || !form.siteId || !form.altKalemId || !form.tutar} sx={{ background: "var(--icsp-lacivert)" }}>
             {saving ? "Kaydediliyor..." : "Kaydet"}
           </Button>
         </DialogActions>
