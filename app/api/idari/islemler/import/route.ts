@@ -11,7 +11,7 @@ import {
 } from "@/lib/database"
 import { parseHarcamaExcel, matchAltKalemId, matchMasrafYeriId } from "@/lib/harcama-excel"
 
-/** Eski GENEL KASA açıklama → eski kategori kodu (alt kalem bulunamazsa) */
+/** Eski GENEL KASA / eşleşmeyen satır → eski kategori kodu */
 function mapLegacyCategory(aciklama: string): string {
   const val = (aciklama || "").toLowerCase().trim()
   if (/yemek|öğle|akşam|sabah/.test(val)) return "yemek"
@@ -38,6 +38,7 @@ type PreviewItem = {
   odemeKaynagi: string
   format: string
   matched: boolean
+  warning?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -86,12 +87,14 @@ export async function POST(request: NextRequest) {
   const parsed = parseHarcamaExcel(bytes, parabirimi)
   if (parsed.length === 0) {
     return NextResponse.json({
-      error: "Geçerli satır bulunamadı. Yeni şablonu kullanın (Tarih, Kalem Kodu, Alt Kalem, Tutar…).",
+      error:
+        "Geçerli satır bulunamadı. Tarih, Alt Kalem ve Tutar dolu olmalı. Şablonu kullanın veya sayı/tarih formatını kontrol edin.",
     }, { status: 400 })
   }
 
   const preview: PreviewItem[] = []
   const errors: string[] = []
+  let unmatchedCount = 0
 
   for (const row of parsed) {
     const altId = matchAltKalemId(
@@ -105,18 +108,19 @@ export async function POST(request: NextRequest) {
 
     let kategoriKod = "diger"
     let kalemKod = row.kalemKod
+    let warning: string | undefined
+
     if (altId) {
       const ak = altKalemler.find((a: { id: number }) => a.id === altId) as {
         kalem_kod?: string
       } | undefined
       kalemKod = ak?.kalem_kod || kalemKod
       kategoriKod = legacyKategoriKodFromKalemKod(kalemKod)
-    } else if (row.format === "eski") {
-      kategoriKod = mapLegacyCategory(row.altKalem || row.aciklama)
-      errors.push(`${row.tarih}: Alt kalem eşleşmedi (“${row.altKalem}”) — eski kategori: ${kategoriKod}`)
     } else {
-      errors.push(`${row.tarih}: Alt kalem bulunamadı: “${row.altKalem}”`)
-      // Önizlemede göster; aktarımda atlanır
+      unmatchedCount++
+      kategoriKod = mapLegacyCategory(row.altKalem || row.aciklama)
+      warning = `Alt kalem eşleşmedi (“${row.altKalem}”) — kayıt eski kategori (${kategoriKod}) ile alınacak; sonra düzenleyin.`
+      errors.push(`${row.tarih}: ${warning}`)
     }
 
     let aciklama = row.aciklama
@@ -146,29 +150,35 @@ export async function POST(request: NextRequest) {
       odemeKaynagi: row.odemeKaynagi,
       format: row.format,
       matched: !!altId,
+      warning,
     })
   }
 
   if (previewOnly) {
     return NextResponse.json({
-      preview: preview.slice(0, 100),
+      preview: preview.slice(0, 150),
       totalRows: preview.length,
-      errors: errors.slice(0, 50),
+      matchedRows: preview.filter((p) => p.matched).length,
+      unmatchedRows: unmatchedCount,
+      errors: errors.slice(0, 80),
     })
   }
 
   let created = 0
   let failed = 0
-  const skipNoMatch = preview.filter((p) => !p.matched && p.format === "yeni")
-  const toInsert = preview.filter((p) => p.matched || p.format === "eski")
+  const failReasons: string[] = []
 
-  for (const item of toInsert) {
+  for (const item of preview) {
     try {
-      const katId = item.matched
-        ? await resolveKategoriIdForAltKalem(item.altKalemId)
-        : katMap[item.kategoriKod] ?? katMap["diger"]
+      let katId: number | null = null
+      if (item.matched && item.altKalemId) {
+        katId = await resolveKategoriIdForAltKalem(item.altKalemId)
+      } else {
+        katId = katMap[item.kategoriKod] ?? katMap["diger"] ?? null
+      }
       if (!katId) {
         failed++
+        failReasons.push(`${item.tarih}: kategori bulunamadı`)
         continue
       }
       await createIslem({
@@ -185,15 +195,19 @@ export async function POST(request: NextRequest) {
         fis_fatura_no: item.fisFaturaNo || null,
       })
       created++
-    } catch {
+    } catch (e: unknown) {
       failed++
+      const msg = e instanceof Error ? e.message : "DB hatası"
+      failReasons.push(`${item.tarih} / ${item.altKalem}: ${msg}`)
     }
   }
 
   return NextResponse.json({
     created,
-    failed: failed + skipNoMatch.length,
+    failed,
     totalParsed: preview.length,
-    errors,
+    matchedRows: preview.filter((p) => p.matched).length,
+    unmatchedRows: unmatchedCount,
+    errors: [...errors, ...failReasons].slice(0, 80),
   })
 }

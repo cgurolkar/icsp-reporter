@@ -39,7 +39,35 @@ export type HarcamaTemplateRef = {
 
 function parseAmount(val: unknown): number | null {
   if (val == null || val === "") return null
-  const n = typeof val === "number" ? val : parseFloat(String(val).replace(/,/g, "."))
+  if (typeof val === "number") {
+    if (!Number.isFinite(val) || val <= 0) return null
+    return Math.round(val * 100) / 100
+  }
+  let s = String(val).trim().replace(/\s/g, "").replace(/₺|\$|IQD|USD|TL/gi, "")
+  if (!s) return null
+  // TR: 1.234.567,89  |  US: 1,234,567.89  |  sade: 1234.5 / 1234,5
+  const hasComma = s.includes(",")
+  const hasDot = s.includes(".")
+  if (hasComma && hasDot) {
+    if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
+      s = s.replace(/\./g, "").replace(",", ".") // TR
+    } else {
+      s = s.replace(/,/g, "") // US
+    }
+  } else if (hasComma && !hasDot) {
+    // 1234,50 veya 1.234 binlik değil sadece virgül
+    s = s.replace(",", ".")
+  } else if (hasDot && !hasComma) {
+    // 1.234.567 (TR binlik) vs 1234.56
+    const parts = s.split(".")
+    if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3 && parts[0].length <= 3)) {
+      // muhtemel binlik ayırıcı(lar)
+      if (parts.every((p, i) => i === 0 || p.length === 3)) {
+        s = parts.join("")
+      }
+    }
+  }
+  const n = parseFloat(s)
   if (isNaN(n) || n <= 0) return null
   return Math.round(n * 100) / 100
 }
@@ -52,7 +80,12 @@ function parseDate(val: unknown): string | null {
     return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`
   }
   if (val instanceof Date) {
-    return val.toISOString().slice(0, 10)
+    if (isNaN(val.getTime())) return null
+    // Yerel tarihi kullan (UTC kayması olmasın)
+    const y = val.getFullYear()
+    const m = val.getMonth() + 1
+    const d = val.getDate()
+    return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`
   }
   const s = String(val).trim()
   const m = s.match(/^(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/)
@@ -60,6 +93,15 @@ function parseDate(val: unknown): string | null {
   const m2 = s.match(/^(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})/)
   if (m2) return `${m2[3]}-${m2[2].padStart(2, "0")}-${m2[1].padStart(2, "0")}`
   return null
+}
+
+/** Excel'den gelen "100", 100, "100.0", "100 — Personel" → "100" */
+export function normalizeKalemKod(raw: unknown): string {
+  if (raw == null || raw === "") return ""
+  if (typeof raw === "number" && Number.isFinite(raw)) return String(Math.round(raw))
+  const s = String(raw).trim()
+  const m = s.match(/^(\d{2,4})\b/)
+  return m ? m[1] : s
 }
 
 function norm(s: string): string {
@@ -131,7 +173,7 @@ function parseYeniRows(rows: unknown[][], headerIdx: number): HarcamaExcelParsed
 
     out.push({
       tarih,
-      kalemKod: iKalem >= 0 ? String(row[iKalem] ?? "").trim() : "",
+      kalemKod: iKalem >= 0 ? normalizeKalemKod(row[iKalem]) : "",
       altKalem,
       masrafYeri: iMasraf >= 0 ? String(row[iMasraf] ?? "").trim() : "",
       fisFaturaNo: fisRaw,
@@ -297,7 +339,26 @@ export function buildHarcamaTemplateBuffer(refs?: HarcamaTemplateRef): Buffer {
   return Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }))
 }
 
-/** Alt kalem adını (ve isteğe bağlı kalem kodunu) eşle */
+function findAltInPool(
+  pool: { id: number; ad: string }[],
+  target: string,
+): number | null {
+  const exact = pool.find((a) => norm(a.ad) === target)
+  if (exact) return exact.id
+  // "Yemek / Öğle" gibi ek açıklamalı hücreler
+  const starts = pool.find((a) => target.startsWith(norm(a.ad)) || norm(a.ad).startsWith(target))
+  if (starts) return starts.id
+  const partial = pool.find((a) => {
+    const n = norm(a.ad)
+    return (n.length >= 4 && target.includes(n)) || (target.length >= 4 && n.includes(target))
+  })
+  return partial?.id ?? null
+}
+
+/**
+ * Alt kalem adını eşle.
+ * Önce kalem kodu ile daraltır; bulamazsa tüm listede arar (yanlış kod yüzünden satır düşmesin).
+ */
 export function matchAltKalemId(
   altKalemler: { id: number; ad: string; kalem_kod?: string; kalem_id: number }[],
   altAd: string,
@@ -305,16 +366,17 @@ export function matchAltKalemId(
 ): number | null {
   const target = norm(altAd)
   if (!target) return null
-  let pool = altKalemler
-  if (kalemKod) {
-    const kod = String(kalemKod).trim()
+
+  const kod = kalemKod ? normalizeKalemKod(kalemKod) : ""
+  if (kod) {
     const filtered = altKalemler.filter((a) => String(a.kalem_kod) === kod)
-    if (filtered.length) pool = filtered
+    if (filtered.length) {
+      const hit = findAltInPool(filtered, target)
+      if (hit != null) return hit
+    }
   }
-  const exact = pool.find((a) => norm(a.ad) === target)
-  if (exact) return exact.id
-  const partial = pool.find((a) => norm(a.ad).includes(target) || target.includes(norm(a.ad)))
-  return partial?.id ?? null
+  // Kod yok / yanlış / eşleşmedi → tüm alt kalemler
+  return findAltInPool(altKalemler, target)
 }
 
 export function matchMasrafYeriId(

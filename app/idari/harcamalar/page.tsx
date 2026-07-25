@@ -167,8 +167,16 @@ export default function IdariHarcamalarPage() {
   const [importLoading, setImportLoading] = useState(false)
   const [importPreview, setImportPreview] = useState<PreviewRow[]>([])
   const [importTotal, setImportTotal] = useState(0)
-  const [importResult, setImportResult] = useState<{ created: number; failed: number } | null>(null)
+  const [importResult, setImportResult] = useState<{
+    created: number
+    failed: number
+    totalParsed?: number
+    matchedRows?: number
+    unmatchedRows?: number
+    errors?: string[]
+  } | null>(null)
   const [importError, setImportError] = useState<string>("")
+  const [importWarnings, setImportWarnings] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
@@ -337,6 +345,7 @@ export default function IdariHarcamalarPage() {
     setImportTotal(0)
     setImportResult(null)
     setImportError("")
+    setImportWarnings([])
     setImportSiteId(siteId || "")
   }
 
@@ -368,6 +377,7 @@ export default function IdariHarcamalarPage() {
       if (!res.ok) throw new Error(data.error || "Dosya okunamadı.")
       setImportPreview(data.preview || [])
       setImportTotal(data.totalRows || 0)
+      setImportWarnings(Array.isArray(data.errors) ? data.errors : [])
       setImportStep(1)
     } catch (err: unknown) {
       setImportError(err instanceof Error ? err.message : "Hata oluştu.")
@@ -389,7 +399,14 @@ export default function IdariHarcamalarPage() {
       const res = await fetch("/api/idari/islemler/import", { method: "POST", body: fd })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Import başarısız.")
-      setImportResult({ created: data.created, failed: data.failed })
+      setImportResult({
+        created: data.created,
+        failed: data.failed,
+        totalParsed: data.totalParsed,
+        matchedRows: data.matchedRows,
+        unmatchedRows: data.unmatchedRows,
+        errors: data.errors,
+      })
       setImportStep(2)
     } catch (err: unknown) {
       setImportError(err instanceof Error ? err.message : "Hata oluştu.")
@@ -778,11 +795,35 @@ export default function IdariHarcamalarPage() {
           {importStep === 1 && (
             <Box>
               <Box sx={{ display: "flex", gap: 2, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
-                <Chip label={`${importTotal} satır bulundu`} color="primary" variant="outlined" />
+                <Chip label={`${importTotal} satır okundu`} color="primary" variant="outlined" />
+                <Chip
+                  label={`${importPreview.filter((r) => r.matched).length} alt kalem eşleşti`}
+                  color="success"
+                  variant="outlined"
+                />
+                {importPreview.some((r) => !r.matched) && (
+                  <Chip
+                    label={`${importPreview.filter((r) => !r.matched).length} eşleşmedi (yine de aktarılır)`}
+                    color="warning"
+                    variant="outlined"
+                  />
+                )}
                 <Typography variant="body2" color="text.secondary">
                   Şantiye: <strong>{siteName(importSiteId)}</strong> · {importParabirimi}
                 </Typography>
               </Box>
+              {importWarnings.length > 0 && (
+                <Alert severity="warning" sx={{ mb: 2, fontSize: 12, maxHeight: 120, overflow: "auto" }}>
+                  {importWarnings.slice(0, 15).map((w, i) => (
+                    <div key={i}>{w}</div>
+                  ))}
+                  {importWarnings.length > 15 && <div>… +{importWarnings.length - 15} uyarı</div>}
+                </Alert>
+              )}
+              <Alert severity="info" sx={{ mb: 2, fontSize: 12 }}>
+                Dosyada daha fazla satır görünüyorsa ama burada azsa: boş Alt Kalem, geçersiz Tarih veya Tutar=0 olan satırlar okunmaz.
+                Aktarımda eşleşmeyen satırlar da eklenir; sonra listeden düzenleyebilirsiniz.
+              </Alert>
               <Box sx={{ overflowX: "auto", maxHeight: 400 }}>
                 <Table size="small" stickyHeader>
                   <TableHead>
@@ -837,8 +878,23 @@ export default function IdariHarcamalarPage() {
             <Box sx={{ textAlign: "center", py: 3 }}>
               <CheckCircle sx={{ fontSize: 56, color: "success.main", mb: 2 }} />
               <Typography variant="h6" sx={{ mb: 1 }}>Aktarım tamamlandı</Typography>
-              <Chip label={`${importResult.created} kayıt eklendi`} color="success" />
-              {importResult.failed > 0 && <Chip label={`${importResult.failed} hata`} color="error" sx={{ ml: 1 }} />}
+              <Box sx={{ display: "flex", justifyContent: "center", gap: 1, flexWrap: "wrap", mb: 2 }}>
+                <Chip label={`${importResult.created} kayıt eklendi`} color="success" />
+                {importResult.totalParsed != null && (
+                  <Chip label={`${importResult.totalParsed} satır işlendi`} variant="outlined" />
+                )}
+                {importResult.unmatchedRows != null && importResult.unmatchedRows > 0 && (
+                  <Chip label={`${importResult.unmatchedRows} alt kalem eşleşmedi`} color="warning" />
+                )}
+                {importResult.failed > 0 && <Chip label={`${importResult.failed} hata`} color="error" />}
+              </Box>
+              {importResult.errors && importResult.errors.length > 0 && (
+                <Alert severity="warning" sx={{ textAlign: "left", fontSize: 12, maxHeight: 160, overflow: "auto" }}>
+                  {importResult.errors.slice(0, 20).map((w, i) => (
+                    <div key={i}>{w}</div>
+                  ))}
+                </Alert>
+              )}
             </Box>
           )}
         </DialogContent>
