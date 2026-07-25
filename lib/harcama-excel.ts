@@ -6,6 +6,7 @@ export const HARCAMA_TEMPLATE_HEADERS = [
   "Kalem Kodu",
   "Alt Kalem",
   "Masraf Yeri",
+  "Fiş/Fatura No",
   "Açıklama",
   "Tutar",
   "Para Birimi",
@@ -17,6 +18,7 @@ export type HarcamaExcelParsedRow = {
   kalemKod: string
   altKalem: string
   masrafYeri: string
+  fisFaturaNo: string
   aciklama: string
   tutar: number
   paraBirimi: "USD" | "IQD"
@@ -99,6 +101,7 @@ function parseYeniRows(rows: unknown[][], headerIdx: number): HarcamaExcelParsed
   const iKalem = colIndex(header, "Kalem Kodu", "Kalem Kod")
   const iAlt = colIndex(header, "Alt Kalem")
   const iMasraf = colIndex(header, "Masraf Yeri")
+  const iFis = colIndex(header, "Fiş/Fatura No", "Fis/Fatura No", "Fatura No", "Fiş No", "Fis No", "Fat. No")
   const iAciklama = colIndex(header, "Açıklama", "Aciklama")
   const iTutar = colIndex(header, "Tutar")
   const iPb = colIndex(header, "Para Birimi", "PB", "Kur")
@@ -124,11 +127,14 @@ function parseYeniRows(rows: unknown[][], headerIdx: number): HarcamaExcelParsed
     const odemeKaynagi: "Santiye_Kasa" | "Merkez_Banka" =
       odemeRaw.includes("merkez") || odemeRaw.includes("banka") ? "Merkez_Banka" : "Santiye_Kasa"
 
+    const fisRaw = iFis >= 0 && row[iFis] != null ? String(row[iFis]).trim() : ""
+
     out.push({
       tarih,
       kalemKod: iKalem >= 0 ? String(row[iKalem] ?? "").trim() : "",
       altKalem,
       masrafYeri: iMasraf >= 0 ? String(row[iMasraf] ?? "").trim() : "",
+      fisFaturaNo: fisRaw,
       aciklama: iAciklama >= 0 ? String(row[iAciklama] ?? "").trim() : "",
       tutar,
       paraBirimi,
@@ -183,18 +189,20 @@ function parseEskiRows(rows: unknown[][], preferredPb: string): HarcamaExcelPars
 
     const aciklama = String(row[COL_ACIKLAMA] || "").trim()
     const detay = String(row[COL_DETAY] || "").trim()
+    const fatNo = row[COL_FATNO] != null ? String(row[COL_FATNO]).trim() : ""
     out.push({
       tarih,
       kalemKod: "",
       altKalem: aciklama || detay,
       masrafYeri: "",
+      fisFaturaNo: fatNo,
       aciklama: detay || aciklama,
       tutar,
       paraBirimi,
       odemeKaynagi: "Santiye_Kasa",
       format: "eski",
       ch: String(row[COL_CH] || "").trim(),
-      fatNo: row[COL_FATNO] != null ? String(row[COL_FATNO]).trim() : "",
+      fatNo,
       detay,
     })
   }
@@ -220,9 +228,9 @@ export function buildHarcamaTemplateBuffer(refs?: HarcamaTemplateRef): Buffer {
 
   const sampleRows: (string | number | Date | null)[][] = [
     [...HARCAMA_TEMPLATE_HEADERS],
-    [new Date(2026, 0, 15), "100", "Yemek", "Kamp", "Öğle yemeği", 45.5, "USD", "Santiye_Kasa"],
-    [new Date(2026, 0, 16), "300", "Akaryakıt", "Saha Genel", "Jeneratör mazot", 120, "USD", "Santiye_Kasa"],
-    [new Date(2026, 0, 17), "400", "Genel Sarf", "Ofis", "Malzeme", 150000, "IQD", "Santiye_Kasa"],
+    [new Date(2026, 0, 15), "100", "Yemek", "Kamp", "F-001", "Öğle yemeği", 45.5, "USD", "Santiye_Kasa"],
+    [new Date(2026, 0, 16), "300", "Akaryakıt", "Saha Genel", "", "Jeneratör mazot", 120, "USD", "Santiye_Kasa"],
+    [new Date(2026, 0, 17), "400", "Genel Sarf", "Ofis", "F-002", "Malzeme", 150000, "IQD", "Santiye_Kasa"],
   ]
 
   const ws = XLSX.utils.aoa_to_sheet(sampleRows)
@@ -231,6 +239,7 @@ export function buildHarcamaTemplateBuffer(refs?: HarcamaTemplateRef): Buffer {
     { wch: 12 },
     { wch: 28 },
     { wch: 28 },
+    { wch: 14 },
     { wch: 30 },
     { wch: 12 },
     { wch: 12 },
@@ -247,6 +256,7 @@ export function buildHarcamaTemplateBuffer(refs?: HarcamaTemplateRef): Buffer {
     ["Kalem Kodu", "100–700 (Ana Kalemler sayfasına bakın)"],
     ["Alt Kalem", "Tam ad — Alt Kalemler sayfasından kopyalayın"],
     ["Masraf Yeri", "Tam ad — Masraf Yerleri sayfasından (opsiyonel)"],
+    ["Fiş/Fatura No", "Fiş veya fatura numarası (opsiyonel)"],
     ["Açıklama", "Serbest metin"],
     ["Tutar", "Pozitif sayı"],
     ["Para Birimi", "USD veya IQD"],

@@ -17,6 +17,7 @@ const PatchSchema = z.object({
   islem_tarihi: z.string().regex(/^\d{4}-\d{2}-\d{2}/).optional(),
   odeme_kaynagi: z.enum(["Merkez_Banka", "Santiye_Kasa", "rapor"]).optional(),
   aciklama: z.string().max(500).optional().nullable(),
+  fisFaturaNo: z.string().max(100).optional().nullable(),
   para_birimi: z.enum(["IQD", "USD"]).optional(),
 })
 
@@ -63,6 +64,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       para_birimi: body.para_birimi,
       alt_kalem_id: body.altKalemId,
       masraf_yeri_id: body.masrafYeriId,
+      fis_fatura_no: body.fisFaturaNo !== undefined ? (body.fisFaturaNo?.trim() || null) : undefined,
     })
     if (!updated) return NextResponse.json({ error: "Güncellenemedi." }, { status: 500 })
     return NextResponse.json({ id: updated })

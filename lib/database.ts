@@ -589,6 +589,8 @@ async function _doInitializeDatabase() {
         THEN ALTER TABLE islemler ADD COLUMN alt_kalem_id INTEGER REFERENCES harcama_alt_kalemler(id) ON DELETE SET NULL; END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='islemler' AND column_name='masraf_yeri_id')
         THEN ALTER TABLE islemler ADD COLUMN masraf_yeri_id INTEGER REFERENCES masraf_yerleri(id) ON DELETE SET NULL; END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='islemler' AND column_name='fis_fatura_no')
+        THEN ALTER TABLE islemler ADD COLUMN fis_fatura_no VARCHAR(100); END IF;
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'islemler work_report_id: %', SQLERRM;
       END $$
     `)
@@ -3767,6 +3769,7 @@ export async function updateIslem(
     para_birimi?: ExpenseCurrency
     alt_kalem_id?: number | null
     masraf_yeri_id?: number | null
+    fis_fatura_no?: string | null
   },
 ) {
   const client = await pool.connect()
@@ -3801,6 +3804,7 @@ export async function updateIslem(
         tutar_iqd = $11,
         alt_kalem_id = $12,
         masraf_yeri_id = $13,
+        fis_fatura_no = $14,
         updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
        RETURNING id`,
@@ -3818,6 +3822,7 @@ export async function updateIslem(
         tutar_iqd,
         data.alt_kalem_id !== undefined ? data.alt_kalem_id : existing.alt_kalem_id,
         data.masraf_yeri_id !== undefined ? data.masraf_yeri_id : existing.masraf_yeri_id,
+        data.fis_fatura_no !== undefined ? data.fis_fatura_no : existing.fis_fatura_no,
       ],
     )
     return r.rows[0]?.id ?? null
@@ -3860,6 +3865,7 @@ export async function createIslem(data: {
   para_birimi?: ExpenseCurrency
   alt_kalem_id?: number | null
   masraf_yeri_id?: number | null
+  fis_fatura_no?: string | null
 }) {
   const client = await pool.connect()
   try {
@@ -3868,8 +3874,8 @@ export async function createIslem(data: {
     const cur: ExpenseCurrency = data.para_birimi === 'USD' ? 'USD' : 'IQD'
     const { tutar_usd, tutar_iqd, kur_iqd_per_usd } = expenseAmountsToUsdIqd(data.tutar, cur, iqdPer)
     const r = await client.query(`
-      INSERT INTO islemler (site_id, kategori_id, tutar, islem_tarihi, odeme_kaynagi, aciklama, evrak_yolu, olusturan_id, work_report_id, para_birimi, kur_iqd_per_usd, tutar_usd, tutar_iqd, alt_kalem_id, masraf_yeri_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      INSERT INTO islemler (site_id, kategori_id, tutar, islem_tarihi, odeme_kaynagi, aciklama, evrak_yolu, olusturan_id, work_report_id, para_birimi, kur_iqd_per_usd, tutar_usd, tutar_iqd, alt_kalem_id, masraf_yeri_id, fis_fatura_no)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING id
     `, [
       data.site_id,
@@ -3887,6 +3893,7 @@ export async function createIslem(data: {
       tutar_iqd,
       data.alt_kalem_id ?? null,
       data.masraf_yeri_id ?? null,
+      data.fis_fatura_no ? String(data.fis_fatura_no).trim().slice(0, 100) : null,
     ])
     return r.rows[0]?.id
   } finally {

@@ -74,6 +74,7 @@ interface IslemRow {
   masraf_yeri_id?: number | null
   masraf_yeri_adi?: string | null
   masraf_yeri_tip?: string | null
+  fis_fatura_no?: string | null
   tutar: number
   islem_tarihi: string
   odeme_kaynagi: string
@@ -88,6 +89,7 @@ interface PreviewRow {
   kalemKod?: string
   altKalem?: string
   masrafYeri?: string
+  fisFaturaNo?: string
   aciklama: string
   tutar: number
   parabirimi: string
@@ -103,6 +105,7 @@ type FormState = {
   kalemId: string
   altKalemId: string
   masrafYeriId: string
+  fisFaturaNo: string
   tutar: string
   para_birimi: "IQD" | "USD"
   islem_tarihi: string
@@ -115,6 +118,7 @@ const emptyForm = (): FormState => ({
   kalemId: "",
   altKalemId: "",
   masrafYeriId: "",
+  fisFaturaNo: "",
   tutar: "",
   para_birimi: "IQD",
   islem_tarihi: new Date().toISOString().slice(0, 10),
@@ -228,6 +232,7 @@ export default function IdariHarcamalarPage() {
       kalemId: row.kalem_id != null ? String(row.kalem_id) : "",
       altKalemId: row.alt_kalem_id != null ? String(row.alt_kalem_id) : "",
       masrafYeriId: row.masraf_yeri_id != null ? String(row.masraf_yeri_id) : "",
+      fisFaturaNo: row.fis_fatura_no || "",
       tutar: String(row.tutar ?? ""),
       para_birimi: row.para_birimi === "USD" ? "USD" : "IQD",
       islem_tarihi: String(row.islem_tarihi).slice(0, 10),
@@ -251,6 +256,7 @@ export default function IdariHarcamalarPage() {
       siteId: sid,
       altKalemId: altId,
       masrafYeriId: masrafId && !Number.isNaN(masrafId) ? masrafId : null,
+      fisFaturaNo: form.fisFaturaNo.trim() || null,
       tutar,
       para_birimi: form.para_birimi,
       islem_tarihi: form.islem_tarihi.slice(0, 10),
@@ -528,6 +534,7 @@ export default function IdariHarcamalarPage() {
                   <TableCell><strong>Kalem</strong></TableCell>
                   <TableCell><strong>Alt kalem</strong></TableCell>
                   <TableCell><strong>Masraf yeri</strong></TableCell>
+                  <TableCell><strong>Fiş/Fatura</strong></TableCell>
                   <TableCell align="center"><strong>PB</strong></TableCell>
                   <TableCell align="right"><strong>Tutar</strong></TableCell>
                   <TableCell align="right"><strong>USD</strong></TableCell>
@@ -561,6 +568,7 @@ export default function IdariHarcamalarPage() {
                           ? `${row.masraf_yeri_adi}${row.masraf_yeri_tip ? ` (${row.masraf_yeri_tip})` : ""}`
                           : "—"}
                       </TableCell>
+                      <TableCell>{row.fis_fatura_no || "—"}</TableCell>
                       <TableCell align="center">{row.para_birimi === "USD" ? "USD" : "IQD"}</TableCell>
                       <TableCell align="right">{Number(row.tutar).toLocaleString("tr-TR")}</TableCell>
                       <TableCell align="right">{row.tutar_usd != null ? Number(row.tutar_usd).toLocaleString("tr-TR", { maximumFractionDigits: 2 }) : "—"}</TableCell>
@@ -589,7 +597,7 @@ export default function IdariHarcamalarPage() {
                   )
                 })}
                 <TableRow sx={{ backgroundColor: "#f5f5f5" }}>
-                  <TableCell colSpan={canManage ? 7 : 6}><strong>Toplam (USD / IQD)</strong></TableCell>
+                  <TableCell colSpan={canManage ? 8 : 7}><strong>Toplam (USD / IQD)</strong></TableCell>
                   <TableCell align="right"><strong>{listSumUsd.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}</strong></TableCell>
                   <TableCell align="right"><strong>{listSumIqd.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}</strong></TableCell>
                   <TableCell colSpan={canManage ? 3 : 2} />
@@ -646,6 +654,12 @@ export default function IdariHarcamalarPage() {
                 ))}
               </Select>
             </FormControl>
+            <TextField
+              label="Fiş / Fatura No"
+              value={form.fisFaturaNo}
+              onChange={(e) => setForm((f) => ({ ...f, fisFaturaNo: e.target.value }))}
+              fullWidth
+            />
             <FormControl fullWidth>
               <InputLabel>Para birimi</InputLabel>
               <Select value={form.para_birimi} label="Para birimi" onChange={(e) => setForm((f) => ({ ...f, para_birimi: e.target.value as "IQD" | "USD" }))}>
@@ -717,7 +731,7 @@ export default function IdariHarcamalarPage() {
           {importStep === 0 && (
             <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <Alert severity="info" sx={{ fontSize: 13 }}>
-                <strong>Yeni şablon:</strong> Tarih, Kalem Kodu, Alt Kalem, Masraf Yeri, Açıklama, Tutar, Para Birimi, Ödeme Kaynağı.
+                <strong>Yeni şablon:</strong> Tarih, Kalem Kodu, Alt Kalem, Masraf Yeri, Fiş/Fatura No, Açıklama, Tutar, Para Birimi, Ödeme Kaynağı.
                 Şablonda <em>Ana Kalemler / Alt Kalemler / Masraf Yerleri</em> sayfaları referans içindir —{" "}
                 <Button
                   component="a"
@@ -777,6 +791,7 @@ export default function IdariHarcamalarPage() {
                       <TableCell>Kalem</TableCell>
                       <TableCell>Alt kalem</TableCell>
                       <TableCell>Masraf yeri</TableCell>
+                      <TableCell>Fiş/Fatura</TableCell>
                       <TableCell>Açıklama</TableCell>
                       <TableCell align="right">Tutar</TableCell>
                       <TableCell>PB</TableCell>
@@ -793,6 +808,7 @@ export default function IdariHarcamalarPage() {
                         <TableCell>{row.kalemKod || "—"}</TableCell>
                         <TableCell>{row.altKalem || "—"}</TableCell>
                         <TableCell>{row.masrafYeri || "—"}</TableCell>
+                        <TableCell>{row.fisFaturaNo || "—"}</TableCell>
                         <TableCell sx={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {row.aciklama}
                         </TableCell>

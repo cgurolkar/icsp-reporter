@@ -15,6 +15,7 @@ const IslemSchema = z.object({
   islem_tarihi: z.string().regex(/^\d{4}-\d{2}-\d{2}/),
   odeme_kaynagi: z.enum(["Merkez_Banka", "Santiye_Kasa"]).default("Santiye_Kasa"),
   aciklama: z.string().max(500).optional().nullable(),
+  fisFaturaNo: z.string().max(100).optional().nullable(),
   evrak_base64: z.string().optional().nullable(),
   para_birimi: z.enum(["IQD", "USD"]).optional().default("IQD"),
 })
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Geçersiz veri.", details: parsed.error.flatten() }, { status: 400 })
     }
-    const { siteId, kategoriId, altKalemId, masrafYeriId, tutar, islem_tarihi, odeme_kaynagi, aciklama, evrak_base64, para_birimi } = parsed.data
+    const { siteId, kategoriId, altKalemId, masrafYeriId, tutar, islem_tarihi, odeme_kaynagi, aciklama, fisFaturaNo, evrak_base64, para_birimi } = parsed.data
     if (!altKalemId && !kategoriId) {
       return NextResponse.json({ error: "Alt kalem veya kategori gerekli." }, { status: 400 })
     }
@@ -106,6 +107,7 @@ export async function POST(request: NextRequest) {
       para_birimi: para_birimi === "USD" ? "USD" : "IQD",
       alt_kalem_id: altKalemId ?? null,
       masraf_yeri_id: masrafYeriId ?? null,
+      fis_fatura_no: fisFaturaNo?.trim() || null,
     })
     return NextResponse.json({ id })
   } catch (error) {

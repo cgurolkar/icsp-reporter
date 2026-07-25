@@ -27,6 +27,7 @@ type PreviewItem = {
   kalemKod: string
   altKalem: string
   masrafYeri: string
+  fisFaturaNo: string
   aciklama: string
   tutar: number
   parabirimi: string
@@ -122,7 +123,6 @@ export async function POST(request: NextRequest) {
     if (row.format === "eski") {
       aciklama = [
         row.ch && row.ch !== "ICS" ? `[${row.ch}]` : null,
-        row.fatNo ? `#${row.fatNo}` : null,
         row.detay || row.aciklama || null,
       ]
         .filter(Boolean)
@@ -135,6 +135,7 @@ export async function POST(request: NextRequest) {
       kalemKod: kalemKod || "",
       altKalem: row.altKalem,
       masrafYeri: row.masrafYeri,
+      fisFaturaNo: row.fisFaturaNo || row.fatNo || "",
       aciklama,
       tutar: row.tutar,
       parabirimi: row.paraBirimi,
@@ -181,6 +182,7 @@ export async function POST(request: NextRequest) {
         para_birimi: item.parabirimi === "USD" ? "USD" : "IQD",
         alt_kalem_id: item.altKalemId,
         masraf_yeri_id: item.masrafYeriId,
+        fis_fatura_no: item.fisFaturaNo || null,
       })
       created++
     } catch {
