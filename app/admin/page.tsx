@@ -3,7 +3,7 @@
 import type React from "react"
 
 import Link from "next/link"
-import { useState, useEffect, useRef, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo, Fragment } from "react"
 import {
   Container,
   Paper,
@@ -2432,7 +2432,7 @@ function AdminPanel() {
                           {t.amountFormatted}
                         </Typography>
                         <Typography variant="body2" sx={{ color: "#475569" }}>
-                          {t.totalMeters.toLocaleString("tr-TR", { maximumFractionDigits: 2 })} m
+                          {Number(t.totalMeters || 0).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} m
                         </Typography>
                       </CardContent>
                     </Card>
@@ -2470,7 +2470,7 @@ function AdminPanel() {
                       const tierLabel = (t: string) =>
                         t === "secondary" ? "2. fiyat" : t === "primary" ? "1. fiyat" : t === "pre_report" ? "Rapor öncesi" : "Tek fiyat"
                       return (
-                        <React.Fragment key={site.id}>
+                        <Fragment key={site.id}>
                           <TableRow hover sx={{ "& > *": { borderBottom: open ? "unset" : undefined } }}>
                             <TableCell>
                               <IconButton
@@ -2491,7 +2491,7 @@ function AdminPanel() {
                               </Typography>
                             </TableCell>
                             <TableCell align="right">
-                              {site.totalMeters.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}
+                              {Number(site.totalMeters || 0).toLocaleString("tr-TR", { maximumFractionDigits: 2 })}
                             </TableCell>
                             <TableCell align="right" sx={{ fontWeight: 700, color: "#166534" }}>
                               {site.amountFormatted || formatMoney(site.totalAmount, site.currency)}
@@ -2552,7 +2552,7 @@ function AdminPanel() {
                               </Collapse>
                             </TableCell>
                           </TableRow>
-                        </React.Fragment>
+                        </Fragment>
                       )
                     })
                   )}
