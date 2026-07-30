@@ -129,6 +129,7 @@ export async function POST(request: NextRequest) {
       showHakedis: false,
       cumulativeDrilledPiles: pileCounts?.drilled ?? null,
       cumulativeConcretePiles: pileCounts?.concrete ?? null,
+      projectTotalPiles: site?.total_piles != null ? Number(site.total_piles) : null,
       operatorEntries,
     })
     const expensesPageContent = generatePDFExpensesPage(formData)

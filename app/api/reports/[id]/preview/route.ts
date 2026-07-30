@@ -68,6 +68,7 @@ export async function GET(
       hakedisBreakdown,
       cumulativeDrilledPiles: pileCounts?.drilled ?? null,
       cumulativeConcretePiles: pileCounts?.concrete ?? null,
+      projectTotalPiles: site?.total_piles != null ? Number(site.total_piles) : null,
       operatorEntries,
     }) + generatePDFExpensesPage(formData)
     return new NextResponse(html, {

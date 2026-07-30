@@ -161,6 +161,8 @@ export function generatePDFMainReport(
     cumulativeDrilledPiles?: number | null
     /** Kümülatif beton dökülen (adet) */
     cumulativeConcretePiles?: number | null
+    /** Şantiye proje toplam kazık (sites.total_piles) */
+    projectTotalPiles?: number | null
     operatorEntries?: Array<{
       machine_name?: string; machine_hours?: string; used_fuel?: string; work_done?: string; note?: string; username?: string;
       daily_pile_count?: string; total_production?: string; empty_borehole?: string; pre_borehole?: string; concrete_poured?: string;
@@ -210,7 +212,7 @@ export function generatePDFMainReport(
   const dailyPileCount = opts?.computedDailyPileCount?.trim()
     ? opts.computedDailyPileCount
     : (dailyPileCountFromForm > 0 ? String(dailyPileCountFromForm) : (concreteSum > 0 ? String(concreteSum) : "—"))
-  const remainingPiles = (opts?.computedRemainingPiles != null && opts.computedRemainingPiles !== "")
+  const remainingPilesRaw = (opts?.computedRemainingPiles != null && opts.computedRemainingPiles !== "")
     ? opts.computedRemainingPiles
     : (isArray
         ? productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.remainingPiles) || 0), 0)
@@ -220,9 +222,12 @@ export function generatePDFMainReport(
     : (formData.productionSummary?.steelLoweredPiles || 0)
   const concretePoured = concreteSum
 
-  const remainingNum = parseInt(String(remainingPiles), 10) || 0
+  const remainingFromReport = parseInt(String(remainingPilesRaw), 10)
+  const remainingFromReportNum = Number.isFinite(remainingFromReport) ? remainingFromReport : 0
   const drilledCompleted =
-    opts?.cumulativeDrilledPiles != null ? Number(opts.cumulativeDrilledPiles) : null
+    opts?.cumulativeDrilledPiles != null && Number.isFinite(Number(opts.cumulativeDrilledPiles))
+      ? Number(opts.cumulativeDrilledPiles)
+      : null
   let concreteCompleted =
     opts?.cumulativeConcretePiles != null ? Number(opts.cumulativeConcretePiles) : null
   if (concreteCompleted == null || !Number.isFinite(concreteCompleted)) {
@@ -230,14 +235,37 @@ export function generatePDFMainReport(
       ? productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.totalCompletedPiles) || 0), 0)
       : (parseInt(String(formData.productionSummary?.totalCompletedPiles ?? ""), 10) || 0)
     if (fromForm > 0) concreteCompleted = fromForm
-    else if (remainingNum >= 0 && totalPileCountFromForm > 0) {
-      concreteCompleted = Math.max(0, totalPileCountFromForm - remainingNum)
+    else if (remainingFromReportNum >= 0 && totalPileCountFromForm > 0) {
+      concreteCompleted = Math.max(0, totalPileCountFromForm - remainingFromReportNum)
     } else {
       concreteCompleted = null
     }
   }
   const completedNum = concreteCompleted != null && Number.isFinite(concreteCompleted) ? concreteCompleted : 0
-  const totalProjectPiles = completedNum + remainingNum > 0 ? completedNum + remainingNum : (totalPileCountFromForm || 0)
+  const siteTotalPiles =
+    opts?.projectTotalPiles != null && Number.isFinite(Number(opts.projectTotalPiles)) && Number(opts.projectTotalPiles) > 0
+      ? Number(opts.projectTotalPiles)
+      : null
+  // Beton dökülecek = delgisi bitmiş ama beton bekleyen; delgisi yapılmayan = henüz delinmemiş
+  const awaitingConcreteNum =
+    drilledCompleted != null ? Math.max(0, drilledCompleted - completedNum) : null
+  const notDrilledNum =
+    siteTotalPiles != null && drilledCompleted != null
+      ? Math.max(0, siteTotalPiles - drilledCompleted)
+      : null
+  const remainingNum =
+    siteTotalPiles != null
+      ? Math.max(0, siteTotalPiles - completedNum)
+      : awaitingConcreteNum != null && notDrilledNum != null
+        ? awaitingConcreteNum + notDrilledNum
+        : remainingFromReportNum
+  const remainingPiles = remainingNum
+  const totalProjectPiles =
+    siteTotalPiles != null
+      ? siteTotalPiles
+      : completedNum + remainingNum > 0
+        ? completedNum + remainingNum
+        : totalPileCountFromForm || 0
   const progressPct = totalProjectPiles > 0 ? Math.min(100, Math.round((completedNum / totalProjectPiles) * 100)) : 0
 
   // Tarih formatlama
@@ -412,7 +440,7 @@ export function generatePDFMainReport(
     ${showHakedis ? `<div style="font-size:10px;color:#166534;"><strong>Hak edilen:</strong> ${hakedisAmount != null ? formatMoney(hakedisAmount, hakedisCurrency) : "—"}</div>` : ""}
     ${hakedisLinesHtml}
   </div>
-  <div class="stat-grid" style="margin-bottom:10px;grid-template-columns:repeat(5,1fr);">
+  <div class="stat-grid" style="margin-bottom:10px;grid-template-columns:repeat(6,1fr);">
     <div class="stat-card highlight">
       <div class="stat-label">Günlük Delgi</div>
       <div class="stat-value">${v(dailyPileCount)}</div>
@@ -434,8 +462,13 @@ export function generatePDFMainReport(
       <div class="stat-unit">kazık (küm.)</div>
     </div>
     <div class="stat-card orange">
-      <div class="stat-label">Kalan Kazık</div>
-      <div class="stat-value">${v(remainingPiles)}</div>
+      <div class="stat-label">Beton Dökülecek</div>
+      <div class="stat-value">${awaitingConcreteNum != null ? String(awaitingConcreteNum) : "—"}</div>
+      <div class="stat-unit">adet</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Delgisi Yapılmayan</div>
+      <div class="stat-value">${notDrilledNum != null ? String(notDrilledNum) : (remainingPiles != null && remainingPiles !== "" ? String(remainingPiles) : "—")}</div>
       <div class="stat-unit">adet</div>
     </div>
   </div>
@@ -453,7 +486,7 @@ export function generatePDFMainReport(
       </div>
       <div class="progress-label" style="margin-top:3px;">
         <span>${completedNum} beton döküldü</span>
-        <span>${remainingNum} kazık kaldı / ${totalProjectPiles} toplam</span>
+        <span>${remainingNum} kaldı (${awaitingConcreteNum != null ? `${awaitingConcreteNum} beton dökülecek` : "—"}${notDrilledNum != null ? `, ${notDrilledNum} delgisiz` : ""}) / ${totalProjectPiles} toplam</span>
       </div>
     </div>
   </div>
@@ -555,7 +588,10 @@ export function generatePDFMainReport(
               <tr><td style="color:#475569;font-weight:600;">Günlük Delgi</td><td class="td-center" style="color:#16a34a;font-weight:700;">${v(dailyPileCount)} adet</td></tr>
               <tr><td style="color:#475569;font-weight:600;">Delgisi Tamamlanan (Küm.)</td><td class="td-center" style="font-weight:700;">${v(drilledCompleted != null && drilledCompleted > 0 ? drilledCompleted : "")} adet</td></tr>
               <tr><td style="color:#475569;font-weight:600;">Beton Dökülen (Küm.)</td><td class="td-center" style="font-weight:700;">${v(concreteCompleted != null && concreteCompleted > 0 ? concreteCompleted : "")} adet</td></tr>
-              <tr><td style="color:#475569;font-weight:600;">Kalan Kazık</td><td class="td-center" style="color:#d97706;font-weight:700;">${v(remainingPiles)} adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Proje Toplam Kazık</td><td class="td-center" style="font-weight:700;">${v(siteTotalPiles != null ? siteTotalPiles : totalProjectPiles > 0 ? totalProjectPiles : "")} adet</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Beton Dökülecek</td><td class="td-center" style="color:#d97706;font-weight:700;">${awaitingConcreteNum != null ? `${awaitingConcreteNum} adet` : "—"}</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Delgisi Yapılmayan</td><td class="td-center" style="color:#d97706;font-weight:700;">${notDrilledNum != null ? `${notDrilledNum} adet` : "—"}</td></tr>
+              <tr><td style="color:#475569;font-weight:600;">Kalan Kazık (Toplam)</td><td class="td-center" style="color:#d97706;font-weight:700;">${remainingNum} adet</td></tr>
               <tr><td style="color:#475569;font-weight:600;">Demir İndirilen</td><td class="td-center" style="font-weight:700;">${v(steelLoweredPiles)} adet</td></tr>
               <tr><td style="color:#475569;font-weight:600;">Beton Dökülen (Bugün)</td><td class="td-center" style="font-weight:700;">${v(concretePoured)} adet</td></tr>
               <tr><td style="color:#475569;font-weight:600;">Toplam Boy — Beton (Bugün)</td><td class="td-center" style="font-weight:700;color:#1a237e;">${(() => {
