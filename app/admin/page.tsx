@@ -45,8 +45,9 @@ import {
   Toolbar,
   Divider,
   CircularProgress,
+  Collapse,
 } from "@mui/material"
-import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility, Notifications, NotificationsActive, Close, Engineering, ArrowBack, Construction, Email, PictureAsPdf } from "@mui/icons-material"
+import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility, Notifications, NotificationsActive, Close, Engineering, ArrowBack, Construction, Email, PictureAsPdf, ExpandMore, ExpandLess, AttachMoney } from "@mui/icons-material"
 import Badge from "@mui/material/Badge"
 import Snackbar from "@mui/material/Snackbar"
 import Alert from "@mui/material/Alert"
@@ -58,7 +59,7 @@ import { theme } from "@/lib/theme"
 import { LanguageProvider, useLanguage } from "@/contexts/language-context"
 import LanguageSelector from "@/components/language-selector"
 import { useAuth } from "@/contexts/auth-context"
-import { SITE_CURRENCIES, normalizeSiteCurrency, pricePerMeterLabel } from "@/lib/site-currency"
+import { SITE_CURRENCIES, normalizeSiteCurrency, pricePerMeterLabel, formatMoney } from "@/lib/site-currency"
 
 interface TabPanelProps {
   children?: React.ReactNode
@@ -360,6 +361,40 @@ function AdminPanel() {
   const [opFilterSiteId, setOpFilterSiteId] = useState("")
   const [opDetailOpen, setOpDetailOpen] = useState(false)
   const [opDetailRow, setOpDetailRow] = useState<Record<string, unknown> | null>(null)
+  /** Super admin: hakediş özeti */
+  const [hakedisDate, setHakedisDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [hakedisLoading, setHakedisLoading] = useState(false)
+  const [hakedisError, setHakedisError] = useState("")
+  const [hakedisExpandedId, setHakedisExpandedId] = useState<number | null>(null)
+  const [hakedisSummary, setHakedisSummary] = useState<{
+    asOfDate: string
+    siteCount: number
+    sites: Array<{
+      id: number
+      name: string
+      code: string
+      currency: string
+      totalMeters: number
+      totalAmount: number
+      usedRates: boolean
+      amountFormatted: string
+      lines: Array<{
+        diameterMm: number | null
+        label: string
+        priceTier: string
+        unitPrice: number
+        meters: number
+        amount: number
+      }>
+    }>
+    totalsByCurrency: Array<{
+      currency: string
+      totalAmount: number
+      totalMeters: number
+      siteCount: number
+      amountFormatted: string
+    }>
+  } | null>(null)
   /** Super admin: operatör girişi CRUD */
   const [opCrudOpen, setOpCrudOpen] = useState(false)
   const [opCrudMode, setOpCrudMode] = useState<"create" | "edit">("create")
@@ -461,8 +496,30 @@ function AdminPanel() {
   }, [tabValue])
 
   useEffect(() => {
-    if (!isSuperAdmin && tabValue === 5) setTabValue(0)
+    if (!isSuperAdmin && (tabValue === 5 || tabValue === 6)) setTabValue(0)
   }, [isSuperAdmin, tabValue])
+
+  const loadHakedisSummary = async () => {
+    setHakedisLoading(true)
+    setHakedisError("")
+    try {
+      const params = new URLSearchParams()
+      if (hakedisDate) params.set("date", hakedisDate)
+      const res = await fetch(`/api/admin/hakedis-summary?${params}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setHakedisError((data as { error?: string }).error || "Hakediş özeti alınamadı.")
+        setHakedisSummary(null)
+        return
+      }
+      setHakedisSummary(data as typeof hakedisSummary)
+    } catch {
+      setHakedisError("Hakediş özeti alınamadı.")
+      setHakedisSummary(null)
+    } finally {
+      setHakedisLoading(false)
+    }
+  }
 
   const loadOperatorEntries = async () => {
     setOperatorEntriesLoading(true)
@@ -699,6 +756,10 @@ function AdminPanel() {
 
   useEffect(() => {
     if (tabValue === 5 && isSuperAdmin) loadOperatorEntries()
+  }, [tabValue, isSuperAdmin])
+
+  useEffect(() => {
+    if (tabValue === 6 && isSuperAdmin) void loadHakedisSummary()
   }, [tabValue, isSuperAdmin])
 
   // SSE bağlantısı
@@ -1276,6 +1337,7 @@ function AdminPanel() {
             <Tab label="Şantiyeler" />
             <Tab label="Raporlar" />
             {isSuperAdmin && <Tab label="Operatör girişleri" icon={<Engineering />} iconPosition="start" />}
+            {isSuperAdmin && <Tab label="Hakediş" icon={<AttachMoney />} iconPosition="start" />}
           </Tabs>
         </Box>
 
@@ -2310,6 +2372,187 @@ function AdminPanel() {
                             </IconButton>
                           </TableCell>
                         </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </Paper>
+          </TabPanel>
+        )}
+
+        {isSuperAdmin && (
+          <TabPanel value={tabValue} index={6}>
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 1, mb: 1 }}>
+              <Typography variant="h6" sx={{ color: "#1a237e", fontWeight: 600 }}>
+                Hakediş özeti
+              </Typography>
+              <Button
+                size="small"
+                startIcon={<Refresh />}
+                onClick={() => void loadHakedisSummary()}
+                disabled={hakedisLoading}
+                sx={{ color: "#616161" }}
+              >
+                Yenile
+              </Button>
+            </Box>
+            <Typography variant="body2" sx={{ color: "#64748b", mb: 2 }}>
+              Aktif şantiyelerde seçilen güne kadar kümülatif hak edilen metraj ve tutar (rapor önizlemesindeki hakediş ile aynı hesap).
+            </Typography>
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, alignItems: "center", mb: 2 }}>
+              <TextField
+                size="small"
+                type="date"
+                label="Tarih itibarıyla"
+                value={hakedisDate}
+                onChange={(e) => setHakedisDate(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                sx={{ background: "#fff", minWidth: 180 }}
+              />
+              <Button variant="contained" onClick={() => void loadHakedisSummary()} disabled={hakedisLoading}>
+                {hakedisLoading ? "Yükleniyor..." : "Listele"}
+              </Button>
+            </Box>
+            {hakedisError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {hakedisError}
+              </Alert>
+            )}
+            {(hakedisSummary?.totalsByCurrency?.length ?? 0) > 0 && (
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                {hakedisSummary!.totalsByCurrency.map((t) => (
+                  <Grid size={{ xs: 12, sm: 6, md: 3 }} key={t.currency}>
+                    <Card sx={{ border: "1px solid var(--icsp-nav-border)", borderRadius: 2, height: "100%" }}>
+                      <CardContent sx={{ pb: "16px !important" }}>
+                        <Typography variant="caption" sx={{ color: "#64748b", fontWeight: 600 }}>
+                          Toplam ({t.currency}) — {t.siteCount} şantiye
+                        </Typography>
+                        <Typography variant="h6" sx={{ color: "#166534", fontWeight: 700, mt: 0.5 }}>
+                          {t.amountFormatted}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: "#475569" }}>
+                          {t.totalMeters.toLocaleString("tr-TR", { maximumFractionDigits: 2 })} m
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+            )}
+            <Paper sx={{ background: "#fff", border: "1px solid var(--icsp-nav-border)", overflow: "auto" }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600, width: 48 }} />
+                    <TableCell sx={{ fontWeight: 600 }}>Şantiye</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }} align="right">
+                      Metraj (m)
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 600 }} align="right">
+                      Hak edilen
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Tarife</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {hakedisLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={5}>Yükleniyor...</TableCell>
+                    </TableRow>
+                  ) : !hakedisSummary || hakedisSummary.sites.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5}>Aktif şantiye yok.</TableCell>
+                    </TableRow>
+                  ) : (
+                    hakedisSummary.sites.map((site) => {
+                      const open = hakedisExpandedId === site.id
+                      const tierLabel = (t: string) =>
+                        t === "secondary" ? "2. fiyat" : t === "primary" ? "1. fiyat" : t === "pre_report" ? "Rapor öncesi" : "Tek fiyat"
+                      return (
+                        <React.Fragment key={site.id}>
+                          <TableRow hover sx={{ "& > *": { borderBottom: open ? "unset" : undefined } }}>
+                            <TableCell>
+                              <IconButton
+                                size="small"
+                                aria-label={open ? "Kırılımı gizle" : "Kırılımı göster"}
+                                onClick={() => setHakedisExpandedId(open ? null : site.id)}
+                                disabled={!site.lines?.length}
+                              >
+                                {open ? <ExpandLess /> : <ExpandMore />}
+                              </IconButton>
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                {site.name}
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: "#94a3b8" }}>
+                                {site.code}
+                              </Typography>
+                            </TableCell>
+                            <TableCell align="right">
+                              {site.totalMeters.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}
+                            </TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 700, color: "#166534" }}>
+                              {site.amountFormatted || formatMoney(site.totalAmount, site.currency)}
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                size="small"
+                                label={site.usedRates ? "Çap tarifesi" : "Tek fiyat"}
+                                variant="outlined"
+                                color={site.usedRates ? "primary" : "default"}
+                              />
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell colSpan={5} sx={{ py: 0, border: 0 }}>
+                              <Collapse in={open} timeout="auto" unmountOnExit>
+                                <Box sx={{ py: 1.5, px: 2, background: "#f8fafc" }}>
+                                  {(site.lines?.length ?? 0) === 0 ? (
+                                    <Typography variant="body2" color="text.secondary">
+                                      Kırılım yok.
+                                    </Typography>
+                                  ) : (
+                                    <Table size="small">
+                                      <TableHead>
+                                        <TableRow>
+                                          <TableCell sx={{ fontWeight: 600 }}>Çap / etiket</TableCell>
+                                          <TableCell sx={{ fontWeight: 600 }}>Tip</TableCell>
+                                          <TableCell sx={{ fontWeight: 600 }} align="right">
+                                            Birim
+                                          </TableCell>
+                                          <TableCell sx={{ fontWeight: 600 }} align="right">
+                                            Metraj
+                                          </TableCell>
+                                          <TableCell sx={{ fontWeight: 600 }} align="right">
+                                            Tutar
+                                          </TableCell>
+                                        </TableRow>
+                                      </TableHead>
+                                      <TableBody>
+                                        {site.lines.map((line, i) => (
+                                          <TableRow key={`${site.id}-line-${i}`}>
+                                            <TableCell>{line.label || (line.diameterMm != null ? `Ø${line.diameterMm}` : "—")}</TableCell>
+                                            <TableCell>{tierLabel(line.priceTier)}</TableCell>
+                                            <TableCell align="right">
+                                              {Number(line.unitPrice).toLocaleString("tr-TR", { maximumFractionDigits: 2 })}{" "}
+                                              {pricePerMeterLabel(site.currency)}
+                                            </TableCell>
+                                            <TableCell align="right">
+                                              {Number(line.meters).toLocaleString("tr-TR", { maximumFractionDigits: 2 })}
+                                            </TableCell>
+                                            <TableCell align="right">{formatMoney(Number(line.amount) || 0, site.currency)}</TableCell>
+                                          </TableRow>
+                                        ))}
+                                      </TableBody>
+                                    </Table>
+                                  )}
+                                </Box>
+                              </Collapse>
+                            </TableCell>
+                          </TableRow>
+                        </React.Fragment>
                       )
                     })
                   )}
