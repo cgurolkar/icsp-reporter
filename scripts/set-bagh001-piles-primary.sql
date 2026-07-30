@@ -1,17 +1,19 @@
 -- BAGH001: mevcut pile_details satırlarını primary (1. fiyat) olarak işaretle.
 -- diameterRateId boşsa şantiyenin ilk aktif tarifesine bağlar.
+-- 2026-07-30 tarihli raporlara DOKUNMAZ (bugün doğru girildiyse korur).
 -- Önce SELECT ile kontrol edin; ardından UPDATE bloğunu çalıştırın.
 
--- Önizleme
+-- Önizleme (2026-07-30 hariç)
 SELECT wr.id, wr.date, jsonb_array_length(wr.pile_details) AS piles
 FROM work_reports wr
 JOIN sites s ON s.id = wr.site_id
 WHERE UPPER(TRIM(s.code)) = 'BAGH001'
   AND wr.pile_details IS NOT NULL
   AND jsonb_typeof(wr.pile_details) = 'array'
+  AND wr.date <> DATE '2026-07-30'
 ORDER BY wr.date, wr.id;
 
--- Güncelleme
+-- Güncelleme (2026-07-30 hariç)
 WITH site AS (
   SELECT id FROM sites WHERE UPPER(TRIM(code)) = 'BAGH001' LIMIT 1
 ),
@@ -46,4 +48,5 @@ updated_at = CURRENT_TIMESTAMP
 WHERE wr.site_id = (SELECT id FROM site)
   AND wr.pile_details IS NOT NULL
   AND jsonb_typeof(wr.pile_details) = 'array'
-  AND jsonb_array_length(wr.pile_details) > 0;
+  AND jsonb_array_length(wr.pile_details) > 0
+  AND wr.date <> DATE '2026-07-30';

@@ -5,6 +5,7 @@
  * Kullanım:
  *   node scripts/set-bagh001-piles-primary.js           # dry-run (sadece özet)
  *   node scripts/set-bagh001-piles-primary.js --execute  # kalıcı güncelleme
+ *   node scripts/set-bagh001-piles-primary.js --execute --exclude-date=2026-07-30
  *
  * Ortam: POSTGRES_* veya DATABASE_URL (.env.local / .env varsa otomatik okunur)
  * Bağlantı: önce `pg` (npm), yoksa `psql` CLI
@@ -15,6 +16,14 @@ const { spawnSync } = require("child_process")
 
 const SITE_CODE = "BAGH001"
 const EXECUTE = process.argv.includes("--execute")
+const excludeArg = process.argv.find((a) => a.startsWith("--exclude-date="))
+const EXCLUDE_DATE = excludeArg
+  ? excludeArg.slice("--exclude-date=".length).trim().slice(0, 10)
+  : ""
+if (EXCLUDE_DATE && !/^\d{4}-\d{2}-\d{2}$/.test(EXCLUDE_DATE)) {
+  console.error("Geçersiz --exclude-date=YYYY-MM-DD")
+  process.exit(1)
+}
 
 function loadEnvLocal() {
   const candidates = [".env.local", ".env", ".env.production", ".env.production.local"]
@@ -148,6 +157,8 @@ async function mainWithPg(Pool) {
       console.log("Uyarı: aktif site_pile_rates yok — yalnızca priceTier=primary yazılacak.")
     }
 
+    if (EXCLUDE_DATE) console.log(`Hariç tutulan tarih: ${EXCLUDE_DATE}`)
+
     const preview = await client.query(
       `SELECT wr.id, wr.date,
               COALESCE(jsonb_array_length(wr.pile_details), 0) AS pile_count,
@@ -161,8 +172,9 @@ async function mainWithPg(Pool) {
          AND wr.pile_details IS NOT NULL
          AND jsonb_typeof(wr.pile_details) = 'array'
          AND jsonb_array_length(wr.pile_details) > 0
+         AND ($2::date IS NULL OR wr.date <> $2::date)
        ORDER BY wr.date ASC, wr.id ASC`,
-      [site.id],
+      [site.id, EXCLUDE_DATE || null],
     )
 
     const totalReports = preview.rows.length
@@ -173,7 +185,10 @@ async function mainWithPg(Pool) {
     console.log(`Primary olmayan / boş priceTier satırı: ${needFix}`)
 
     if (!EXECUTE) {
-      console.log("\nDry-run. Uygulamak için: node scripts/set-bagh001-piles-primary.js --execute")
+      console.log(
+        "\nDry-run. Uygulamak için: node scripts/set-bagh001-piles-primary.js --execute" +
+          (EXCLUDE_DATE ? ` --exclude-date=${EXCLUDE_DATE}` : ""),
+      )
       return
     }
 
@@ -203,8 +218,9 @@ async function mainWithPg(Pool) {
          AND wr.pile_details IS NOT NULL
          AND jsonb_typeof(wr.pile_details) = 'array'
          AND jsonb_array_length(wr.pile_details) > 0
+         AND ($3::date IS NULL OR wr.date <> $3::date)
        RETURNING wr.id, wr.date`,
-      [site.id, defaultRateId],
+      [site.id, defaultRateId, EXCLUDE_DATE || null],
     )
     await client.query("COMMIT")
     console.log(`\nGüncellenen rapor: ${upd.rowCount}`)
@@ -228,6 +244,8 @@ async function mainWithPg(Pool) {
 
 function mainWithPsql() {
   console.log("(pg yok — psql kullanılıyor)")
+  if (EXCLUDE_DATE) console.log(`Hariç tutulan tarih: ${EXCLUDE_DATE}`)
+  const dateClause = EXCLUDE_DATE ? ` AND wr.date <> DATE '${EXCLUDE_DATE}'` : ""
 
   const siteRows = parseTsvRows(
     runPsql(
@@ -270,7 +288,8 @@ function mainWithPsql() {
        WHERE wr.site_id = ${Number(siteId)}
          AND wr.pile_details IS NOT NULL
          AND jsonb_typeof(wr.pile_details) = 'array'
-         AND jsonb_array_length(wr.pile_details) > 0`,
+         AND jsonb_array_length(wr.pile_details) > 0
+         ${dateClause}`,
     ),
   )[0] || ["0", "0", "0"]
 
@@ -279,7 +298,10 @@ function mainWithPsql() {
   console.log(`Primary olmayan / boş priceTier satırı: ${summary[2]}`)
 
   if (!EXECUTE) {
-    console.log("\nDry-run. Uygulamak için: node scripts/set-bagh001-piles-primary.js --execute")
+    console.log(
+      "\nDry-run. Uygulamak için: node scripts/set-bagh001-piles-primary.js --execute" +
+        (EXCLUDE_DATE ? ` --exclude-date=${EXCLUDE_DATE}` : ""),
+    )
     return
   }
 
@@ -310,6 +332,7 @@ function mainWithPsql() {
          AND wr.pile_details IS NOT NULL
          AND jsonb_typeof(wr.pile_details) = 'array'
          AND jsonb_array_length(wr.pile_details) > 0
+         ${dateClause}
        RETURNING wr.id, wr.date::text
      )
      SELECT id::text, date FROM updated ORDER BY date, id`,
