@@ -115,16 +115,51 @@ export function computeDayHakedis(
   let fromRows = 0
   const piles = Array.isArray(pileDetails) ? pileDetails : []
 
+  // Eski kayıtlarda concretePoured işareti olmayabilir; hiç işaret yoksa metrajlı satırları say.
+  const anyConcreteMarked = piles.some((p) => {
+    const v = (p as { concretePoured?: unknown; concrete_poured?: unknown })?.concretePoured
+      ?? (p as { concrete_poured?: unknown })?.concrete_poured
+    return v === true || v === "true" || v === 1 || v === "1"
+  })
+
   for (const p of piles) {
-    if (!p?.concretePoured) continue
-    const meters = parseMeters(p.drilled)
+    const pouredRaw =
+      (p as { concretePoured?: unknown; concrete_poured?: unknown })?.concretePoured ??
+      (p as { concrete_poured?: unknown })?.concrete_poured
+    const poured =
+      pouredRaw === true || pouredRaw === "true" || pouredRaw === 1 || pouredRaw === "1"
+    if (anyConcreteMarked && !poured) continue
+    const meters = parseMeters(
+      (p as { drilled?: unknown }).drilled ?? (p as { drilled_m?: unknown }).drilled_m,
+    )
     if (meters <= 0) continue
-    fromRows += meters
-    const rateId = p.diameterRateId != null && String(p.diameterRateId).trim() !== "" ? String(p.diameterRateId) : ""
-    const rate = rateId ? byId.get(rateId) : undefined
-    const tier = (p.priceTier === "secondary" ? "secondary" : "primary") as PriceTier
-    const unit = unitPriceFor(rate, tier, fallbackUnitPrice)
+    const rateIdRaw =
+      (p as { diameterRateId?: unknown }).diameterRateId ??
+      (p as { diameter_rate_id?: unknown }).diameter_rate_id
+    const rateId = rateIdRaw != null && String(rateIdRaw).trim() !== "" ? String(rateIdRaw) : ""
+    const activeRates = rates.filter((r) => r.is_active !== false)
+    let rate = rateId ? byId.get(rateId) : undefined
+    // Tek tarife / id yok veya eşleşmiyor: şantiyenin aktif tarifesini kullan
+    if (!rate && isSingleTariffSite(rates) && activeRates[0]) {
+      rate = activeRates[0]
+    }
+    const tierRaw =
+      (p as { priceTier?: unknown }).priceTier ?? (p as { price_tier?: unknown }).price_tier
+    const tier = (tierRaw === "secondary" ? "secondary" : "primary") as PriceTier
+    let unit = unitPriceFor(rate, tier, fallbackUnitPrice)
+    // contract_unit_price boşsa bile tarife fiyatını kullan
+    if (unit == null && rate) {
+      unit =
+        tier === "secondary" && rate.price_secondary != null
+          ? Number(rate.price_secondary)
+          : Number(rate.price_primary) || null
+    }
+    if (unit == null && activeRates[0]) {
+      unit = Number(activeRates[0].price_primary) || null
+      if (unit != null && !rate) rate = activeRates[0]
+    }
     if (unit == null) continue
+    fromRows += meters
     mergeLines(lineMap, {
       diameterMm: rate?.diameter_mm ?? null,
       label: rate ? rateLabel(rate) : "Tek fiyat",
@@ -135,19 +170,28 @@ export function computeDayHakedis(
     })
   }
 
-  // Satır yoksa ama toplam boy + tek fiyat varsa (eski raporlar / tarife yok)
-  if (fromRows <= 0 && rates.length === 0 && fallbackUnitPrice != null) {
+  // Satırlardan metraj çıkmadıysa rapor toplam boyu × birim fiyat (eski raporlar / tarife sonrası)
+  if (fromRows <= 0) {
     const meters = parseMeters(concreteTotalLengthFallback)
     if (meters > 0) {
-      mergeLines(lineMap, {
-        diameterMm: null,
-        label: "Tek fiyat",
-        priceTier: "default",
-        unitPrice: fallbackUnitPrice,
-        meters,
-        amount: meters * fallbackUnitPrice,
-      })
-      fromRows = meters
+      const active = rates.filter((r) => r.is_active !== false)
+      const rate = isSingleTariffSite(rates) ? active[0] : undefined
+      let unit = unitPriceFor(rate, "primary", fallbackUnitPrice)
+      if (unit == null && active[0]) {
+        unit = Number(active[0].price_primary) || null
+      }
+      if (unit != null) {
+        const labelRate = rate ?? active[0]
+        mergeLines(lineMap, {
+          diameterMm: labelRate?.diameter_mm ?? null,
+          label: labelRate ? `${rateLabel(labelRate)} (toplam boy)` : "Tek fiyat",
+          priceTier: labelRate ? "primary" : "default",
+          unitPrice: unit,
+          meters,
+          amount: meters * unit,
+        })
+        fromRows = meters
+      }
     }
   }
 
