@@ -14,7 +14,7 @@ const PatchSchema = z.object({
   altKalemId: z.number({ coerce: true }).int().positive().optional().nullable(),
   masrafYeriId: z.number({ coerce: true }).int().positive().optional().nullable(),
   tutar: z.number({ coerce: true }).positive().optional(),
-  islem_tarihi: z.string().regex(/^\d{4}-\d{2}-\d{2}/).optional(),
+  islem_tarihi: z.string().optional().nullable(),
   odeme_kaynagi: z.enum(["Merkez_Banka", "Santiye_Kasa", "rapor"]).optional(),
   aciklama: z.string().max(500).optional().nullable(),
   fisFaturaNo: z.string().max(100).optional().nullable(),
@@ -47,6 +47,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: "Yetkisiz." }, { status: 403 })
     }
 
+    let islemTarihi = body.islem_tarihi ? String(body.islem_tarihi).slice(0, 10) : undefined
+    if (islemTarihi && !/^\d{4}-\d{2}-\d{2}$/.test(islemTarihi)) {
+      return NextResponse.json({ error: "Geçersiz tarih." }, { status: 400 })
+    }
+
     let kategori_id: number | undefined
     if (body.altKalemId !== undefined) {
       const resolved = await resolveKategoriIdForAltKalem(body.altKalemId, existing.kategori_id)
@@ -58,7 +63,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       site_id: body.siteId,
       kategori_id,
       tutar: body.tutar,
-      islem_tarihi: body.islem_tarihi,
+      islem_tarihi: islemTarihi,
       odeme_kaynagi: body.odeme_kaynagi,
       aciklama: body.aciklama,
       para_birimi: body.para_birimi,
@@ -67,7 +72,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       fis_fatura_no: body.fisFaturaNo !== undefined ? (body.fisFaturaNo?.trim() || null) : undefined,
     })
     if (!updated) return NextResponse.json({ error: "Güncellenemedi." }, { status: 500 })
-    return NextResponse.json({ id: updated })
+
+    const row = await getIslemById(id)
+    return NextResponse.json({ id: updated, row })
   } catch (error) {
     console.error("Islem PATCH error:", error)
     return NextResponse.json({ error: "Güncellenemedi." }, { status: 500 })

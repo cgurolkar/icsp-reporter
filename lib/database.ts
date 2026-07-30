@@ -3742,9 +3742,13 @@ export async function getIslemById(id: number) {
   try {
     const r = await client.query(
       `SELECT i.*,
-        ak.ad AS alt_kalem_adi, hk.id AS kalem_id, hk.kod AS kalem_kod, hk.ad AS kalem_adi,
-        my.ad AS masraf_yeri_adi
+        k.ad AS kategori_adi, k.kod AS kategori_kod,
+        ak.ad AS alt_kalem_adi,
+        COALESCE(ak.id, i.alt_kalem_id) AS alt_kalem_id,
+        hk.id AS kalem_id, hk.kod AS kalem_kod, hk.ad AS kalem_adi,
+        my.ad AS masraf_yeri_adi, my.tip AS masraf_yeri_tip
        FROM islemler i
+       LEFT JOIN harcama_kategorileri k ON k.id = i.kategori_id
        LEFT JOIN harcama_alt_kalemler ak ON ak.id = i.alt_kalem_id
        LEFT JOIN harcama_kalemleri hk ON hk.id = ak.kalem_id
        LEFT JOIN masraf_yerleri my ON my.id = i.masraf_yeri_id
