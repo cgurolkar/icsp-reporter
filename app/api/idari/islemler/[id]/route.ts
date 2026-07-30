@@ -77,7 +77,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ id: updated, row })
   } catch (error) {
     console.error("Islem PATCH error:", error)
-    return NextResponse.json({ error: "Güncellenemedi." }, { status: 500 })
+    const detail = error instanceof Error ? error.message : "Güncellenemedi."
+    return NextResponse.json({ error: "Güncellenemedi.", detail }, { status: 500 })
   }
 }
 

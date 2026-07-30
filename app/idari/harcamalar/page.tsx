@@ -412,7 +412,7 @@ export default function IdariHarcamalarPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setListError(data.error || "Güncellenemedi.")
+        setListError(data.detail || data.error || "Güncellenemedi.")
         return false
       }
       applyRowUpdate(id, data.row as IslemRow)

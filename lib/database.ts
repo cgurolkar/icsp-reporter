@@ -3761,6 +3761,18 @@ export async function getIslemById(id: number) {
   }
 }
 
+/** pg DATE / string / Date → YYYY-MM-DD (String(date).slice bozar: "Wed Jul 29") */
+function toPgDateOnly(v: unknown): string {
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    return v.toISOString().slice(0, 10)
+  }
+  const s = String(v ?? "").trim()
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+  const d = new Date(s)
+  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10)
+  return new Date().toISOString().slice(0, 10)
+}
+
 export async function updateIslem(
   id: number,
   data: {
@@ -3793,13 +3805,14 @@ export async function updateIslem(
           ? "USD"
           : "IQD"
     const { tutar_usd, tutar_iqd, kur_iqd_per_usd } = expenseAmountsToUsdIqd(tutar, cur, iqdPer)
+    const islemTarihi = toPgDateOnly(data.islem_tarihi ?? existing.islem_tarihi)
 
     const r = await client.query(
       `UPDATE islemler SET
         site_id = $2,
         kategori_id = COALESCE($3, kategori_id),
         tutar = $4,
-        islem_tarihi = $5,
+        islem_tarihi = $5::date,
         odeme_kaynagi = COALESCE($6, odeme_kaynagi),
         aciklama = $7,
         para_birimi = $8,
@@ -3817,7 +3830,7 @@ export async function updateIslem(
         siteId,
         data.kategori_id ?? null,
         tutar,
-        (data.islem_tarihi || String(existing.islem_tarihi)).slice(0, 10),
+        islemTarihi,
         data.odeme_kaynagi ?? null,
         data.aciklama !== undefined ? data.aciklama : existing.aciklama,
         cur,
@@ -3826,7 +3839,7 @@ export async function updateIslem(
         tutar_iqd,
         data.alt_kalem_id !== undefined ? data.alt_kalem_id : existing.alt_kalem_id,
         data.masraf_yeri_id !== undefined ? data.masraf_yeri_id : existing.masraf_yeri_id,
-        data.fis_fatura_no !== undefined ? data.fis_fatura_no : existing.fis_fatura_no,
+        data.fis_fatura_no !== undefined ? data.fis_fatura_no : existing.fis_fatura_no ?? null,
       ],
     )
     return r.rows[0]?.id ?? null
