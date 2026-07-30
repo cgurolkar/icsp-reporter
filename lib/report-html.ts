@@ -269,7 +269,13 @@ export function generatePDFMainReport(
       ? hakedisBreakdown.totalMeters
       : cumulativeTotalProduction
   const tierLabel = (t: string) =>
-    t === "secondary" ? "Secondary" : t === "primary" ? "Primary" : t === "pre_report" ? "Rapor öncesi" : "Tek fiyat"
+    t === "secondary"
+      ? "2. fiyat"
+      : t === "primary"
+        ? "1. fiyat"
+        : t === "pre_report"
+          ? "Rapor öncesi"
+          : "Tek fiyat"
   const hakedisLinesHtml =
     showHakedis && hakedisBreakdown && hakedisBreakdown.lines.length > 0
       ? `<div style="margin-top:6px;width:100%;">

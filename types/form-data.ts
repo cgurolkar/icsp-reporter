@@ -148,6 +148,8 @@ export interface SitePileRateOption {
   id: number
   diameterMm: number
   label: string
+  /** Secondary birim fiyat tanımlı mı (kazık cinsi seçimi için) */
+  hasSecondary?: boolean
 }
 
 export interface PuantajEntry {

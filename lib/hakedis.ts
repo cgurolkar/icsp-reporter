@@ -202,12 +202,16 @@ export function computeHakedisFromReports(
   }
 }
 
-export function publicPileRateOptions(rates: HakedisRate[]): Array<{ id: number; diameterMm: number; label: string }> {
+export function publicPileRateOptions(
+  rates: HakedisRate[],
+): Array<{ id: number; diameterMm: number; label: string; hasSecondary: boolean }> {
   return rates
     .filter((r) => r.is_active !== false)
     .map((r) => ({
       id: r.id,
       diameterMm: r.diameter_mm,
       label: rateLabel(r),
+      hasSecondary:
+        r.price_secondary != null && Number.isFinite(Number(r.price_secondary)) && Number(r.price_secondary) >= 0,
     }))
 }

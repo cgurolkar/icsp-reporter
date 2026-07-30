@@ -2578,7 +2578,7 @@ function AdminPanel() {
                   helperText="Çap tarifesi tanımlıysa hakediş tarifeden hesaplanır; yoksa bu fiyat kullanılır. Fiyatlar seçilen para birimindedir."
                 />
                 <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }} color="text.secondary">
-                  Kazık çapı tarifeleri (primary / secondary) — {pricePerMeterLabel(siteDialogData.billingCurrency)}
+                  Kazık çapı tarifeleri (1. / 2. fiyat) — {pricePerMeterLabel(siteDialogData.billingCurrency)}
                 </Typography>
                 {(siteDialogData.pileRates || []).map((row, idx) => (
                   <Box key={idx} sx={{ display: "flex", flexWrap: "wrap", gap: 1, alignItems: "center", mb: 1 }}>
@@ -2613,7 +2613,7 @@ function AdminPanel() {
                     />
                     <TextField
                       size="small"
-                      label={`Primary ${pricePerMeterLabel(siteDialogData.billingCurrency)}`}
+                      label={`1. fiyat ${pricePerMeterLabel(siteDialogData.billingCurrency)}`}
                       type="number"
                       value={row.pricePrimary}
                       onChange={(e) =>
@@ -2628,7 +2628,7 @@ function AdminPanel() {
                     />
                     <TextField
                       size="small"
-                      label={`Secondary ${pricePerMeterLabel(siteDialogData.billingCurrency)}`}
+                      label={`2. fiyat ${pricePerMeterLabel(siteDialogData.billingCurrency)}`}
                       type="number"
                       value={row.priceSecondary}
                       onChange={(e) =>

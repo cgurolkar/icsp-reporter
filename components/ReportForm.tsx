@@ -63,7 +63,10 @@ function reportBasicErrors(fd: FormData): string[] {
   return e
 }
 
-function reportProductionErrors(fd: FormData, pileRateOptions?: { id: number }[]): string[] {
+function reportProductionErrors(
+  fd: FormData,
+  pileRateOptions?: { id: number; hasSecondary?: boolean }[],
+): string[] {
   const e = reportProductionErrorsBase(fd)
   const rates = pileRateOptions ?? []
   if (rates.length > 0) {
@@ -71,6 +74,16 @@ function reportProductionErrors(fd: FormData, pileRateOptions?: { id: number }[]
       (p) => p.concretePoured === true && (p.diameterRateId == null || String(p.diameterRateId).trim() === ""),
     )
     if (missingCap) e.push("Kazık detayları: Beton döküldü satırlarında kazık çapı seçilmelidir.")
+    const byId = new Map(rates.map((r) => [String(r.id), r]))
+    const missingCins = (fd.pileDetails || []).some((p) => {
+      if (!p.concretePoured) return false
+      const rate = byId.get(String(p.diameterRateId ?? ""))
+      if (!rate?.hasSecondary) return false
+      return p.priceTier !== "primary" && p.priceTier !== "secondary"
+    })
+    if (missingCins) {
+      e.push("Kazık detayları: Çift fiyatlı çaplarda kazık cinsi (1. fiyat / 2. fiyat) seçilmelidir.")
+    }
   }
   return e
 }

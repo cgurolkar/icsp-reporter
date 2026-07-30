@@ -23,7 +23,7 @@ import {
 } from "@mui/material"
 import { Add, Delete } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
-import type { PileDetail, MachineProductionSummary, SitePileRateOption, PriceTier } from "@/types/form-data"
+import type { PileDetail, MachineProductionSummary, SitePileRateOption } from "@/types/form-data"
 
 interface PileDetailsStepProps {
   data: PileDetail[]
@@ -50,7 +50,10 @@ export default function PileDetailsStep({
   const machineCols = productionSummary.filter((m) => m.machineId)
   const singleMachineId = machineCols.length === 1 ? machineCols[0].machineId : null
   const hasRates = pileRateOptions.length > 0
+  const siteHasDualPrice = pileRateOptions.some((o) => o.hasSecondary === true)
   const defaultRateId = hasRates ? String(pileRateOptions[0].id) : ""
+  const rateById = (id: string | number | null | undefined) =>
+    pileRateOptions.find((o) => String(o.id) === String(id ?? ""))
 
   const addPile = () => {
     const newPileNumber = Math.max(...data.map((p) => p.pileNumber), 0) + 1
@@ -62,7 +65,7 @@ export default function PileDetailsStep({
         notes: "",
         machineIds: singleMachineId ? [singleMachineId] : [],
         diameterRateId: defaultRateId || "",
-        priceTier: "primary",
+        priceTier: siteHasDualPrice ? "" : "primary",
       },
     ])
   }
@@ -109,6 +112,13 @@ export default function PileDetailsStep({
   const betonMakineEksik = cokluMakine && betonluSatirlar.some((p) => !(p.machineIds && p.machineIds.length > 0))
   const betonCapEksik =
     hasRates && betonluSatirlar.some((p) => p.diameterRateId == null || String(p.diameterRateId).trim() === "")
+  const betonCinsEksik =
+    siteHasDualPrice &&
+    betonluSatirlar.some((p) => {
+      const rate = rateById(p.diameterRateId)
+      if (!rate?.hasSecondary) return false
+      return p.priceTier !== "primary" && p.priceTier !== "secondary"
+    })
 
   return (
     <Box>
@@ -131,189 +141,240 @@ export default function PileDetailsStep({
             Beton döküldü işaretli satırlarda kazık çapını seçin.
           </Alert>
         )}
+        {betonCinsEksik && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Bu şantiyede 1. ve 2. birim fiyat var. Beton döküldü satırlarında <strong>kazık cinsi</strong> (1. fiyat / 2. fiyat)
+            seçilmelidir; aksi halde hakediş hesaplanamaz.
+          </Alert>
+        )}
         <Alert severity="info" sx={{ mb: 2 }}>
           «Beton döküldü» işaretli satırların Delinen (m) toplamı, Üretim Özeti’ndeki <strong>Toplam boy</strong> alanına yazılır
-          {hasRates ? "; çap ve fiyat tipi (primary/secondary) hakediş için kullanılır" : ""}.
+          {hasRates ? "; çap seçimi hakediş için zorunludur" : ""}
+          {siteHasDualPrice ? "; çift fiyatlı tarifede <strong>kazık cinsi</strong> (1. / 2. fiyat) seçilmelidir" : ""}.
         </Alert>
 
         <Typography variant="subtitle1" gutterBottom sx={{ color: "#e65100", fontWeight: 600, mb: 2 }}>
           {t("pile_details_form_title")}
         </Typography>
         <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        <Table size="small" sx={{ border: "2px solid #000", backgroundColor: "white", mb: 3, minWidth: hasRates ? 720 : 520 }}>
-          <TableHead>
-            <TableRow sx={{ backgroundColor: "#f0f0f0" }}>
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                {t("pile_short").toUpperCase()}
-              </TableCell>
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                {t("drilled_short").toUpperCase()}
-              </TableCell>
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                {t("notes").toUpperCase()}
-              </TableCell>
-              {hasRates && (
-                <>
-                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", minWidth: 100 }}>
-                    ÇAP
-                  </TableCell>
-                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", minWidth: 100 }}>
-                    FİYAT TİPİ
-                  </TableCell>
-                </>
-              )}
-              {cokluMakine &&
-                machineCols.map((m) => (
-                  <TableCell
-                    key={m.machineId}
-                    sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", minWidth: 72, fontSize: "0.7rem" }}
-                  >
-                    {m.machineName}
-                  </TableCell>
-                ))}
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                Beton döküldü
-              </TableCell>
-              <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
-                {t("action").toUpperCase()}
-              </TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {data.map((pile, index) => (
-              <TableRow key={index}>
-                <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
-                  <TextField
-                    size="small"
-                    type="number"
-                    value={pile.pileNumber}
-                    onChange={(e) => updatePile(index, "pileNumber", parseInt(e.target.value, 10) || index + 1)}
-                    variant="standard"
-                    InputProps={{ disableUnderline: true, inputProps: { min: 1 } }}
-                    sx={{ width: 56, "& input": { textAlign: "center" } }}
-                  />
+          <Table
+            size="small"
+            sx={{
+              border: "2px solid #000",
+              backgroundColor: "white",
+              mb: 3,
+              minWidth: hasRates ? (siteHasDualPrice ? 820 : 720) : 520,
+            }}
+          >
+            <TableHead>
+              <TableRow sx={{ backgroundColor: "#f0f0f0" }}>
+                <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
+                  {t("pile_short").toUpperCase()}
                 </TableCell>
-                <TableCell sx={{ border: "1px solid #000", p: 0.5 }}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    value={pile.drilled}
-                    onChange={(e) => updatePile(index, "drilled", e.target.value)}
-                    onKeyPress={(e) => handleKeyPress(e, index)}
-                    placeholder="28.00"
-                    variant="standard"
-                    InputProps={{
-                      disableUnderline: true,
-                      inputProps: { "data-pile-index": index },
-                    }}
-                    sx={{ "& input": { textAlign: "center", fontWeight: "bold" } }}
-                  />
+                <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
+                  {t("drilled_short").toUpperCase()}
                 </TableCell>
-                <TableCell sx={{ border: "1px solid #000", p: 0.5 }}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    value={pile.notes}
-                    onChange={(e) => updatePile(index, "notes", e.target.value)}
-                    onKeyPress={(e) => handleKeyPress(e, index)}
-                    placeholder="28. BOŞ FORAJ"
-                    variant="standard"
-                    InputProps={{
-                      disableUnderline: true,
-                      inputProps: { "data-pile-index": `${index}-notes` },
-                    }}
-                    sx={{ "& input": { fontSize: "0.9rem" } }}
-                  />
+                <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
+                  {t("notes").toUpperCase()}
                 </TableCell>
                 {hasRates && (
-                  <>
-                    <TableCell sx={{ border: "1px solid #000", p: 0.5 }}>
-                      <FormControl fullWidth size="small" variant="standard">
-                        <Select
-                          displayEmpty
-                          value={pile.diameterRateId != null ? String(pile.diameterRateId) : ""}
-                          onChange={(e) => updatePile(index, "diameterRateId", e.target.value)}
-                          disableUnderline
-                          sx={{ fontSize: "0.85rem", "& .MuiSelect-select": { py: 0.5, textAlign: "center" } }}
-                        >
-                          <MenuItem value="">
-                            <em>Seç</em>
-                          </MenuItem>
-                          {pileRateOptions.map((opt) => (
-                            <MenuItem key={opt.id} value={String(opt.id)}>
-                              {opt.label}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </TableCell>
-                    <TableCell sx={{ border: "1px solid #000", p: 0.5 }}>
-                      <FormControl fullWidth size="small" variant="standard">
-                        <Select
-                          value={(pile.priceTier as PriceTier) || "primary"}
-                          onChange={(e) => updatePile(index, "priceTier", e.target.value)}
-                          disableUnderline
-                          sx={{ fontSize: "0.85rem", "& .MuiSelect-select": { py: 0.5, textAlign: "center" } }}
-                        >
-                          <MenuItem value="primary">Primary</MenuItem>
-                          <MenuItem value="secondary">Secondary</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </TableCell>
-                  </>
+                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", minWidth: 110 }}>
+                    ÇAP
+                  </TableCell>
+                )}
+                {siteHasDualPrice && (
+                  <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", minWidth: 130 }}>
+                    KAZIK CİNSİ
+                  </TableCell>
                 )}
                 {cokluMakine &&
-                  machineCols.map((m) => {
-                    const checked = (pile.machineIds ?? []).includes(m.machineId)
-                    return (
-                      <TableCell key={m.machineId} sx={{ border: "1px solid #000", textAlign: "center", p: 0.25 }}>
-                        <Checkbox
-                          size="small"
-                          checked={checked}
-                          onChange={() => togglePileMachine(index, m.machineId)}
-                          inputProps={{ "aria-label": m.machineName }}
-                        />
-                      </TableCell>
-                    )
-                  })}
-                <TableCell sx={{ border: "1px solid #000", textAlign: "center", p: 0.5 }}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        size="small"
-                        checked={!!pile.concretePoured}
-                        onChange={(e) => {
-                          const checked = e.target.checked
-                          const newData = [...data]
-                          newData[index] = {
-                            ...newData[index],
-                            concretePoured: checked,
-                            ...(checked && hasRates && !newData[index].diameterRateId
-                              ? { diameterRateId: defaultRateId, priceTier: newData[index].priceTier || "primary" }
-                              : {}),
-                          }
-                          onChange(newData)
-                        }}
-                      />
-                    }
-                    label=""
-                  />
+                  machineCols.map((m) => (
+                    <TableCell
+                      key={m.machineId}
+                      sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center", minWidth: 72, fontSize: "0.7rem" }}
+                    >
+                      {m.machineName}
+                    </TableCell>
+                  ))}
+                <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
+                  Beton döküldü
                 </TableCell>
-                <TableCell sx={{ border: "1px solid #000", textAlign: "center", p: 0.5 }}>
-                  <IconButton
-                    size="small"
-                    color="error"
-                    onClick={() => removePile(index)}
-                    disabled={data.length <= 1}
-                    sx={{ minWidth: "auto", p: 0.5 }}
-                  >
-                    <Delete fontSize="small" />
-                  </IconButton>
+                <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", textAlign: "center" }}>
+                  {t("action").toUpperCase()}
                 </TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHead>
+            <TableBody>
+              {data.map((pile, index) => {
+                const selectedRate = rateById(pile.diameterRateId)
+                const rowNeedsCins = siteHasDualPrice && selectedRate?.hasSecondary === true
+                return (
+                  <TableRow key={index}>
+                    <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
+                      <TextField
+                        size="small"
+                        type="number"
+                        value={pile.pileNumber}
+                        onChange={(e) => updatePile(index, "pileNumber", parseInt(e.target.value, 10) || index + 1)}
+                        variant="standard"
+                        InputProps={{ disableUnderline: true, inputProps: { min: 1 } }}
+                        sx={{ width: 56, "& input": { textAlign: "center" } }}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ border: "1px solid #000", p: 0.5 }}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        value={pile.drilled}
+                        onChange={(e) => updatePile(index, "drilled", e.target.value)}
+                        onKeyPress={(e) => handleKeyPress(e, index)}
+                        placeholder="28.00"
+                        variant="standard"
+                        InputProps={{
+                          disableUnderline: true,
+                          inputProps: { "data-pile-index": index },
+                        }}
+                        sx={{ "& input": { textAlign: "center", fontWeight: "bold" } }}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ border: "1px solid #000", p: 0.5 }}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        value={pile.notes}
+                        onChange={(e) => updatePile(index, "notes", e.target.value)}
+                        onKeyPress={(e) => handleKeyPress(e, index)}
+                        placeholder="28. BOŞ FORAJ"
+                        variant="standard"
+                        InputProps={{
+                          disableUnderline: true,
+                          inputProps: { "data-pile-index": `${index}-notes` },
+                        }}
+                        sx={{ "& input": { fontSize: "0.9rem" } }}
+                      />
+                    </TableCell>
+                    {hasRates && (
+                      <TableCell sx={{ border: "1px solid #000", p: 0.5 }}>
+                        <FormControl fullWidth size="small" variant="standard">
+                          <Select
+                            displayEmpty
+                            value={pile.diameterRateId != null ? String(pile.diameterRateId) : ""}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              const next = rateById(v)
+                              const newData = [...data]
+                              newData[index] = {
+                                ...newData[index],
+                                diameterRateId: v,
+                                priceTier: next?.hasSecondary
+                                  ? newData[index].priceTier === "secondary" || newData[index].priceTier === "primary"
+                                    ? newData[index].priceTier
+                                    : ""
+                                  : "primary",
+                              }
+                              onChange(newData)
+                            }}
+                            disableUnderline
+                            sx={{ fontSize: "0.85rem", "& .MuiSelect-select": { py: 0.5, textAlign: "center" } }}
+                          >
+                            <MenuItem value="">
+                              <em>Seç</em>
+                            </MenuItem>
+                            {pileRateOptions.map((opt) => (
+                              <MenuItem key={opt.id} value={String(opt.id)}>
+                                {opt.label}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </TableCell>
+                    )}
+                    {siteHasDualPrice && (
+                      <TableCell sx={{ border: "1px solid #000", p: 0.5 }}>
+                        <FormControl fullWidth size="small" variant="standard">
+                          <Select
+                            displayEmpty
+                            value={
+                              selectedRate?.hasSecondary
+                                ? pile.priceTier === "primary" || pile.priceTier === "secondary"
+                                  ? pile.priceTier
+                                  : ""
+                                : "primary"
+                            }
+                            disabled={!!selectedRate && !selectedRate.hasSecondary}
+                            onChange={(e) => updatePile(index, "priceTier", e.target.value)}
+                            disableUnderline
+                            sx={{ fontSize: "0.85rem", "& .MuiSelect-select": { py: 0.5, textAlign: "center" } }}
+                          >
+                            {rowNeedsCins && (
+                              <MenuItem value="">
+                                <em>Seçin</em>
+                              </MenuItem>
+                            )}
+                            <MenuItem value="primary">1. fiyat</MenuItem>
+                            {(rowNeedsCins || !selectedRate) && <MenuItem value="secondary">2. fiyat</MenuItem>}
+                          </Select>
+                        </FormControl>
+                      </TableCell>
+                    )}
+                    {cokluMakine &&
+                      machineCols.map((m) => {
+                        const checked = (pile.machineIds ?? []).includes(m.machineId)
+                        return (
+                          <TableCell key={m.machineId} sx={{ border: "1px solid #000", textAlign: "center", p: 0.25 }}>
+                            <Checkbox
+                              size="small"
+                              checked={checked}
+                              onChange={() => togglePileMachine(index, m.machineId)}
+                              inputProps={{ "aria-label": m.machineName }}
+                            />
+                          </TableCell>
+                        )
+                      })}
+                    <TableCell sx={{ border: "1px solid #000", textAlign: "center", p: 0.5 }}>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            size="small"
+                            checked={!!pile.concretePoured}
+                            onChange={(e) => {
+                              const checked = e.target.checked
+                              const newData = [...data]
+                              const rate = rateById(newData[index].diameterRateId) ?? rateById(defaultRateId)
+                              newData[index] = {
+                                ...newData[index],
+                                concretePoured: checked,
+                                ...(checked && hasRates && !newData[index].diameterRateId
+                                  ? {
+                                      diameterRateId: defaultRateId,
+                                      priceTier: rate?.hasSecondary ? "" : "primary",
+                                    }
+                                  : {}),
+                              }
+                              onChange(newData)
+                            }}
+                          />
+                        }
+                        label=""
+                        sx={{ m: 0 }}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ border: "1px solid #000", textAlign: "center", p: 0.5 }}>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => removePile(index)}
+                        disabled={data.length <= 1}
+                        sx={{ minWidth: "auto", p: 0.5 }}
+                      >
+                        <Delete fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
         </Box>
 
         <Box sx={{ display: "flex", justifyContent: "center" }}>
