@@ -32,8 +32,11 @@ import {
   IconButton,
   Tooltip,
   TablePagination,
+  Menu,
+  ListItemText,
+  ListItemIcon,
 } from "@mui/material"
-import { Add, FileUpload, CheckCircle, Download, Settings, Edit, Delete, FileDownload } from "@mui/icons-material"
+import { Add, FileUpload, CheckCircle, Download, Settings, Edit, Delete, FileDownload, ViewColumn } from "@mui/icons-material"
 import Link from "next/link"
 import { useAuth } from "@/contexts/auth-context"
 import { downloadIslemlerExcel } from "@/lib/harcama-excel"
@@ -137,6 +140,62 @@ const KATEGORI_RENK: Record<string, string> = {
   diger: "#f5f5f5",
 }
 
+type ColKey =
+  | "tarih"
+  | "kalem"
+  | "altKalem"
+  | "masrafYeri"
+  | "fis"
+  | "pb"
+  | "tutar"
+  | "usd"
+  | "iqd"
+  | "odeme"
+  | "aciklama"
+  | "islem"
+
+const COL_DEFS: { key: ColKey; label: string; width: number; hideable: boolean }[] = [
+  { key: "tarih", label: "Tarih", width: 150, hideable: true },
+  { key: "kalem", label: "Kalem", width: 170, hideable: true },
+  { key: "altKalem", label: "Alt kalem", width: 160, hideable: true },
+  { key: "masrafYeri", label: "Masraf yeri", width: 160, hideable: true },
+  { key: "fis", label: "Fiş/Fatura", width: 110, hideable: true },
+  { key: "pb", label: "PB", width: 80, hideable: true },
+  { key: "tutar", label: "Tutar", width: 110, hideable: true },
+  { key: "usd", label: "USD", width: 90, hideable: true },
+  { key: "iqd", label: "IQD", width: 100, hideable: true },
+  { key: "odeme", label: "Ödeme", width: 140, hideable: true },
+  { key: "aciklama", label: "Açıklama", width: 160, hideable: true },
+  { key: "islem", label: "İşlem", width: 90, hideable: true },
+]
+
+const DEFAULT_VISIBLE_COLS: Record<ColKey, boolean> = {
+  tarih: true,
+  kalem: true,
+  altKalem: true,
+  masrafYeri: true,
+  fis: true,
+  pb: true,
+  tutar: true,
+  usd: true,
+  iqd: true,
+  odeme: true,
+  aciklama: true,
+  islem: true,
+}
+
+const COLS_STORAGE_KEY = "idari-harcamalar-visible-cols"
+
+const cellSelectSx = {
+  width: "100%",
+  maxWidth: "100%",
+  "& .MuiSelect-select": {
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+} as const
+
 export default function IdariHarcamalarPage() {
   const { user } = useAuth()
   const [sites, setSites] = useState<SiteItem[]>([])
@@ -159,6 +218,8 @@ export default function IdariHarcamalarPage() {
   const [bitis, setBitis] = useState(() => new Date().toISOString().slice(0, 10))
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(25)
+  const [visibleCols, setVisibleCols] = useState<Record<ColKey, boolean>>(DEFAULT_VISIBLE_COLS)
+  const [colsMenuAnchor, setColsMenuAnchor] = useState<null | HTMLElement>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [saving, setSaving] = useState(false)
@@ -204,7 +265,57 @@ export default function IdariHarcamalarPage() {
         setMasrafYerleri(d.masrafYerleri || [])
       })
       .catch(() => {})
+    try {
+      const raw = localStorage.getItem(COLS_STORAGE_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<Record<ColKey, boolean>>
+        setVisibleCols((prev) => ({ ...prev, ...parsed }))
+      }
+    } catch {
+      /* ignore */
+    }
   }, [])
+
+  const toggleCol = (key: ColKey) => {
+    setVisibleCols((prev) => {
+      const next = { ...prev, [key]: !prev[key] }
+      // En az bir veri kolonu açık kalsın
+      const dataKeys = COL_DEFS.filter((c) => c.key !== "islem").map((c) => c.key)
+      if (!dataKeys.some((k) => next[k])) return prev
+      try {
+        localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }
+
+  const show = (key: ColKey) => visibleCols[key] !== false
+
+  const tableMinWidth = useMemo(() => {
+    let w = canManage ? 48 : 0
+    for (const c of COL_DEFS) {
+      if (c.key === "islem" && !canManage) continue
+      if (visibleCols[c.key] !== false) w += c.width
+    }
+    return Math.max(w, 640)
+  }, [visibleCols, canManage])
+
+  // Toplam satırı: checkbox + soldaki kolonlar | USD | IQD | sağdaki kolonlar
+  const totalLeftSpan = useMemo(() => {
+    const beforeUsd: ColKey[] = ["tarih", "kalem", "altKalem", "masrafYeri", "fis", "pb", "tutar"]
+    return (canManage ? 1 : 0) + beforeUsd.filter((k) => visibleCols[k] !== false).length
+  }, [visibleCols, canManage])
+
+  const totalRightSpan = useMemo(() => {
+    const afterIqd: ColKey[] = ["odeme", "aciklama"]
+    return (
+      afterIqd.filter((k) => visibleCols[k] !== false).length +
+      (canManage && visibleCols.islem !== false ? 1 : 0)
+    )
+  }, [visibleCols, canManage])
+
 
   const loadList = useCallback(() => {
     if (!siteId) {
@@ -626,6 +737,30 @@ export default function IdariHarcamalarPage() {
             }
             label="Sadece eksik kalem"
           />
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<ViewColumn />}
+            onClick={(e) => setColsMenuAnchor(e.currentTarget)}
+            sx={{ borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}
+          >
+            Kolonlar
+          </Button>
+          <Menu
+            anchorEl={colsMenuAnchor}
+            open={Boolean(colsMenuAnchor)}
+            onClose={() => setColsMenuAnchor(null)}
+            keepMounted
+          >
+            {COL_DEFS.filter((c) => (c.key === "islem" ? canManage : true)).map((c) => (
+              <MenuItem key={c.key} dense onClick={() => toggleCol(c.key)}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <Checkbox edge="start" size="small" checked={show(c.key)} tabIndex={-1} disableRipple />
+                </ListItemIcon>
+                <ListItemText primary={c.label} />
+              </MenuItem>
+            ))}
+          </Menu>
           {canManage && (
             <Box sx={{ display: "flex", gap: 1, ml: "auto", flexWrap: "wrap" }}>
               {selected.size > 0 && (
@@ -703,11 +838,18 @@ export default function IdariHarcamalarPage() {
           <Typography color="text.secondary">{list.length === 0 ? "Kayıt yok." : "Filtrelere uygun kayıt yok."}</Typography>
         ) : (
           <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-            <Table size="small">
+            <Table
+              size="small"
+              sx={{
+                tableLayout: "fixed",
+                minWidth: tableMinWidth,
+                "& td, & th": { verticalAlign: "middle", px: 0.75 },
+              }}
+            >
               <TableHead>
                 <TableRow>
                   {canManage && (
-                    <TableCell padding="checkbox">
+                    <TableCell padding="checkbox" sx={{ width: 48 }}>
                       <Checkbox
                         size="small"
                         checked={pageAllSelected}
@@ -716,18 +858,18 @@ export default function IdariHarcamalarPage() {
                       />
                     </TableCell>
                   )}
-                  <TableCell><strong>Tarih</strong></TableCell>
-                  <TableCell sx={{ minWidth: 150 }}><strong>Kalem</strong></TableCell>
-                  <TableCell sx={{ minWidth: 150 }}><strong>Alt kalem</strong></TableCell>
-                  <TableCell sx={{ minWidth: 150 }}><strong>Masraf yeri</strong></TableCell>
-                  <TableCell sx={{ minWidth: 100 }}><strong>Fiş/Fatura</strong></TableCell>
-                  <TableCell align="center"><strong>PB</strong></TableCell>
-                  <TableCell align="right" sx={{ minWidth: 100 }}><strong>Tutar</strong></TableCell>
-                  <TableCell align="right"><strong>USD</strong></TableCell>
-                  <TableCell align="right"><strong>IQD</strong></TableCell>
-                  <TableCell sx={{ minWidth: 130 }}><strong>Ödeme</strong></TableCell>
-                  <TableCell sx={{ minWidth: 140 }}><strong>Açıklama</strong></TableCell>
-                  {canManage && <TableCell align="right"><strong>İşlem</strong></TableCell>}
+                  {show("tarih") && <TableCell sx={{ width: 150 }}><strong>Tarih</strong></TableCell>}
+                  {show("kalem") && <TableCell sx={{ width: 170 }}><strong>Kalem</strong></TableCell>}
+                  {show("altKalem") && <TableCell sx={{ width: 160 }}><strong>Alt kalem</strong></TableCell>}
+                  {show("masrafYeri") && <TableCell sx={{ width: 160 }}><strong>Masraf yeri</strong></TableCell>}
+                  {show("fis") && <TableCell sx={{ width: 110 }}><strong>Fiş/Fatura</strong></TableCell>}
+                  {show("pb") && <TableCell align="center" sx={{ width: 80 }}><strong>PB</strong></TableCell>}
+                  {show("tutar") && <TableCell align="right" sx={{ width: 110 }}><strong>Tutar</strong></TableCell>}
+                  {show("usd") && <TableCell align="right" sx={{ width: 90 }}><strong>USD</strong></TableCell>}
+                  {show("iqd") && <TableCell align="right" sx={{ width: 100 }}><strong>IQD</strong></TableCell>}
+                  {show("odeme") && <TableCell sx={{ width: 140 }}><strong>Ödeme</strong></TableCell>}
+                  {show("aciklama") && <TableCell sx={{ width: 160 }}><strong>Açıklama</strong></TableCell>}
+                  {canManage && show("islem") && <TableCell align="right" sx={{ width: 90 }}><strong>İşlem</strong></TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -743,209 +885,242 @@ export default function IdariHarcamalarPage() {
                           <Checkbox size="small" checked={selected.has(row.id)} onChange={() => toggleSelect(row.id)} />
                         </TableCell>
                       )}
-                      <TableCell sx={{ verticalAlign: "middle" }}>
-                        {canManage ? (
-                          <TextField
-                            type="date"
-                            size="small"
-                            value={String(row.islem_tarihi).slice(0, 10)}
-                            disabled={busy}
-                            onChange={(e) => {
-                              const v = e.target.value.slice(0, 10)
-                              setList((prev) => prev.map((r) => (r.id === row.id ? { ...r, islem_tarihi: v } : r)))
-                            }}
-                            onBlur={(e) => {
-                              const v = e.target.value.slice(0, 10)
-                              if (/^\d{4}-\d{2}-\d{2}$/.test(v)) void patchRow(row.id, { islem_tarihi: v })
-                            }}
-                            InputLabelProps={{ shrink: true }}
-                            sx={{ width: 140 }}
-                          />
-                        ) : (
-                          String(row.islem_tarihi).slice(0, 10)
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {canManage ? (
-                          <Select
-                            size="small"
-                            fullWidth
-                            displayEmpty
-                            value={kid}
-                            disabled={busy}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              setPendingKalemByRow((p) => ({ ...p, [row.id]: v }))
-                              setList((prev) =>
-                                prev.map((r) =>
-                                  r.id === row.id
-                                    ? { ...r, kalem_id: v ? Number(v) : null, alt_kalem_id: null, alt_kalem_adi: null }
-                                    : r,
-                                ),
-                              )
-                            }}
-                          >
-                            <MenuItem value=""><em>Seçin</em></MenuItem>
-                            {kalemler.map((k) => (
-                              <MenuItem key={k.id} value={String(k.id)}>{k.kod} — {k.ad}</MenuItem>
-                            ))}
-                          </Select>
-                        ) : row.kalem_kod ? (
-                          `${row.kalem_kod} ${row.kalem_adi || ""}`
-                        ) : (
-                          <Chip size="small" label={row.kategori_adi || "Eksik"} color="warning" variant="outlined" />
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {canManage ? (
-                          <Select
-                            size="small"
-                            fullWidth
-                            displayEmpty
-                            value={
-                              row.alt_kalem_id != null && rowAlts.some((a) => a.id === row.alt_kalem_id)
-                                ? String(row.alt_kalem_id)
-                                : ""
-                            }
-                            disabled={busy || !kid}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              void patchRow(row.id, { altKalemId: v ? Number(v) : null })
-                            }}
-                          >
-                            <MenuItem value=""><em>Seçin</em></MenuItem>
-                            {rowAlts.map((a) => (
-                              <MenuItem key={a.id} value={String(a.id)}>{a.ad}</MenuItem>
-                            ))}
-                          </Select>
-                        ) : (
-                          row.alt_kalem_adi || "—"
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {canManage ? (
-                          <Select
-                            size="small"
-                            fullWidth
-                            displayEmpty
-                            value={row.masraf_yeri_id != null ? String(row.masraf_yeri_id) : ""}
-                            disabled={busy}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              void patchRow(row.id, { masrafYeriId: v ? Number(v) : null })
-                            }}
-                          >
-                            <MenuItem value=""><em>—</em></MenuItem>
-                            {masrafYerleri.map((m) => (
-                              <MenuItem key={m.id} value={String(m.id)}>{m.ad} ({m.tip})</MenuItem>
-                            ))}
-                          </Select>
-                        ) : row.masraf_yeri_adi ? (
-                          `${row.masraf_yeri_adi}${row.masraf_yeri_tip ? ` (${row.masraf_yeri_tip})` : ""}`
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {canManage ? (
-                          <TextField
-                            size="small"
-                            fullWidth
-                            defaultValue={row.fis_fatura_no || ""}
-                            key={`fis-${row.id}-${row.fis_fatura_no || ""}`}
-                            disabled={busy}
-                            onBlur={(e) => {
-                              const v = e.target.value.trim()
-                              if (v !== (row.fis_fatura_no || "")) {
-                                void patchRow(row.id, { fisFaturaNo: v || null })
+                      {show("tarih") && (
+                        <TableCell>
+                          {canManage ? (
+                            <TextField
+                              type="date"
+                              size="small"
+                              value={String(row.islem_tarihi).slice(0, 10)}
+                              disabled={busy}
+                              onChange={(e) => {
+                                const v = e.target.value.slice(0, 10)
+                                setList((prev) => prev.map((r) => (r.id === row.id ? { ...r, islem_tarihi: v } : r)))
+                              }}
+                              onBlur={(e) => {
+                                const v = e.target.value.slice(0, 10)
+                                if (/^\d{4}-\d{2}-\d{2}$/.test(v)) void patchRow(row.id, { islem_tarihi: v })
+                              }}
+                              InputLabelProps={{ shrink: true }}
+                              sx={{ width: "100%" }}
+                            />
+                          ) : (
+                            String(row.islem_tarihi).slice(0, 10)
+                          )}
+                        </TableCell>
+                      )}
+                      {show("kalem") && (
+                        <TableCell>
+                          {canManage ? (
+                            <Select
+                              size="small"
+                              displayEmpty
+                              value={kid}
+                              disabled={busy}
+                              sx={cellSelectSx}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                setPendingKalemByRow((p) => ({ ...p, [row.id]: v }))
+                                setList((prev) =>
+                                  prev.map((r) =>
+                                    r.id === row.id
+                                      ? { ...r, kalem_id: v ? Number(v) : null, alt_kalem_id: null, alt_kalem_adi: null }
+                                      : r,
+                                  ),
+                                )
+                              }}
+                            >
+                              <MenuItem value=""><em>Seçin</em></MenuItem>
+                              {kalemler.map((k) => (
+                                <MenuItem key={k.id} value={String(k.id)}>{k.kod} — {k.ad}</MenuItem>
+                              ))}
+                            </Select>
+                          ) : row.kalem_kod ? (
+                            <Box sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {`${row.kalem_kod} ${row.kalem_adi || ""}`}
+                            </Box>
+                          ) : (
+                            <Chip size="small" label={row.kategori_adi || "Eksik"} color="warning" variant="outlined" />
+                          )}
+                        </TableCell>
+                      )}
+                      {show("altKalem") && (
+                        <TableCell>
+                          {canManage ? (
+                            <Select
+                              size="small"
+                              displayEmpty
+                              value={
+                                row.alt_kalem_id != null && rowAlts.some((a) => a.id === row.alt_kalem_id)
+                                  ? String(row.alt_kalem_id)
+                                  : ""
                               }
-                            }}
-                          />
-                        ) : (
-                          row.fis_fatura_no || "—"
-                        )}
-                      </TableCell>
-                      <TableCell align="center">
-                        {canManage ? (
-                          <Select
-                            size="small"
-                            value={row.para_birimi === "USD" ? "USD" : "IQD"}
-                            disabled={busy}
-                            onChange={(e) => void patchRow(row.id, { para_birimi: e.target.value })}
-                          >
-                            <MenuItem value="IQD">IQD</MenuItem>
-                            <MenuItem value="USD">USD</MenuItem>
-                          </Select>
-                        ) : (
-                          row.para_birimi === "USD" ? "USD" : "IQD"
-                        )}
-                      </TableCell>
-                      <TableCell align="right">
-                        {canManage ? (
-                          <TextField
-                            size="small"
-                            type="number"
-                            defaultValue={row.tutar}
-                            key={`tutar-${row.id}-${row.tutar}`}
-                            disabled={busy}
-                            inputProps={{ step: 0.01, style: { textAlign: "right" } }}
-                            sx={{ width: 100 }}
-                            onBlur={(e) => {
-                              const n = parseFloat(e.target.value)
-                              if (!Number.isNaN(n) && n > 0 && n !== Number(row.tutar)) {
-                                void patchRow(row.id, { tutar: n })
-                              }
-                            }}
-                          />
-                        ) : (
-                          Number(row.tutar).toLocaleString("tr-TR")
-                        )}
-                      </TableCell>
-                      <TableCell align="right">{row.tutar_usd != null ? Number(row.tutar_usd).toLocaleString("tr-TR", { maximumFractionDigits: 2 }) : "—"}</TableCell>
-                      <TableCell align="right">{row.tutar_iqd != null ? Number(row.tutar_iqd).toLocaleString("tr-TR", { maximumFractionDigits: 0 }) : "—"}</TableCell>
-                      <TableCell>
-                        {canManage ? (
-                          <Select
-                            size="small"
-                            fullWidth
-                            value={row.odeme_kaynagi || "Santiye_Kasa"}
-                            disabled={busy}
-                            onChange={(e) => void patchRow(row.id, { odeme_kaynagi: e.target.value })}
-                          >
-                            <MenuItem value="Santiye_Kasa">Şantiye Kasası</MenuItem>
-                            <MenuItem value="Merkez_Banka">Merkez Banka</MenuItem>
-                            <MenuItem value="rapor">Günlük Rapor</MenuItem>
-                          </Select>
-                        ) : row.odeme_kaynagi === "Merkez_Banka" ? (
-                          "Merkez"
-                        ) : row.odeme_kaynagi === "rapor" ? (
-                          "Günlük Rapor"
-                        ) : (
-                          "Şantiye Kasası"
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {canManage ? (
-                          <TextField
-                            size="small"
-                            fullWidth
-                            defaultValue={row.aciklama || ""}
-                            key={`ack-${row.id}-${row.aciklama || ""}`}
-                            disabled={busy}
-                            onBlur={(e) => {
-                              const v = e.target.value.trim()
-                              if (v !== (row.aciklama || "")) {
-                                void patchRow(row.id, { aciklama: v || null })
-                              }
-                            }}
-                          />
-                        ) : (
-                          <Box sx={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {row.aciklama ?? "—"}
-                          </Box>
-                        )}
-                      </TableCell>
-                      {canManage && (
+                              disabled={busy || !kid}
+                              sx={cellSelectSx}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                void patchRow(row.id, { altKalemId: v ? Number(v) : null })
+                              }}
+                            >
+                              <MenuItem value=""><em>Seçin</em></MenuItem>
+                              {rowAlts.map((a) => (
+                                <MenuItem key={a.id} value={String(a.id)}>{a.ad}</MenuItem>
+                              ))}
+                            </Select>
+                          ) : (
+                            <Box sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {row.alt_kalem_adi || "—"}
+                            </Box>
+                          )}
+                        </TableCell>
+                      )}
+                      {show("masrafYeri") && (
+                        <TableCell>
+                          {canManage ? (
+                            <Select
+                              size="small"
+                              displayEmpty
+                              value={row.masraf_yeri_id != null ? String(row.masraf_yeri_id) : ""}
+                              disabled={busy}
+                              sx={cellSelectSx}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                void patchRow(row.id, { masrafYeriId: v ? Number(v) : null })
+                              }}
+                            >
+                              <MenuItem value=""><em>—</em></MenuItem>
+                              {masrafYerleri.map((m) => (
+                                <MenuItem key={m.id} value={String(m.id)}>{m.ad} ({m.tip})</MenuItem>
+                              ))}
+                            </Select>
+                          ) : (
+                            <Box sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {row.masraf_yeri_adi
+                                ? `${row.masraf_yeri_adi}${row.masraf_yeri_tip ? ` (${row.masraf_yeri_tip})` : ""}`
+                                : "—"}
+                            </Box>
+                          )}
+                        </TableCell>
+                      )}
+                      {show("fis") && (
+                        <TableCell>
+                          {canManage ? (
+                            <TextField
+                              size="small"
+                              fullWidth
+                              defaultValue={row.fis_fatura_no || ""}
+                              key={`fis-${row.id}-${row.fis_fatura_no || ""}`}
+                              disabled={busy}
+                              onBlur={(e) => {
+                                const v = e.target.value.trim()
+                                if (v !== (row.fis_fatura_no || "")) {
+                                  void patchRow(row.id, { fisFaturaNo: v || null })
+                                }
+                              }}
+                            />
+                          ) : (
+                            row.fis_fatura_no || "—"
+                          )}
+                        </TableCell>
+                      )}
+                      {show("pb") && (
+                        <TableCell align="center">
+                          {canManage ? (
+                            <Select
+                              size="small"
+                              value={row.para_birimi === "USD" ? "USD" : "IQD"}
+                              disabled={busy}
+                              sx={cellSelectSx}
+                              onChange={(e) => void patchRow(row.id, { para_birimi: e.target.value })}
+                            >
+                              <MenuItem value="IQD">IQD</MenuItem>
+                              <MenuItem value="USD">USD</MenuItem>
+                            </Select>
+                          ) : (
+                            row.para_birimi === "USD" ? "USD" : "IQD"
+                          )}
+                        </TableCell>
+                      )}
+                      {show("tutar") && (
+                        <TableCell align="right">
+                          {canManage ? (
+                            <TextField
+                              size="small"
+                              type="number"
+                              defaultValue={row.tutar}
+                              key={`tutar-${row.id}-${row.tutar}`}
+                              disabled={busy}
+                              inputProps={{ step: 0.01, style: { textAlign: "right" } }}
+                              sx={{ width: "100%" }}
+                              onBlur={(e) => {
+                                const n = parseFloat(e.target.value)
+                                if (!Number.isNaN(n) && n > 0 && n !== Number(row.tutar)) {
+                                  void patchRow(row.id, { tutar: n })
+                                }
+                              }}
+                            />
+                          ) : (
+                            Number(row.tutar).toLocaleString("tr-TR")
+                          )}
+                        </TableCell>
+                      )}
+                      {show("usd") && (
+                        <TableCell align="right">
+                          {row.tutar_usd != null ? Number(row.tutar_usd).toLocaleString("tr-TR", { maximumFractionDigits: 2 }) : "—"}
+                        </TableCell>
+                      )}
+                      {show("iqd") && (
+                        <TableCell align="right">
+                          {row.tutar_iqd != null ? Number(row.tutar_iqd).toLocaleString("tr-TR", { maximumFractionDigits: 0 }) : "—"}
+                        </TableCell>
+                      )}
+                      {show("odeme") && (
+                        <TableCell>
+                          {canManage ? (
+                            <Select
+                              size="small"
+                              value={row.odeme_kaynagi || "Santiye_Kasa"}
+                              disabled={busy}
+                              sx={cellSelectSx}
+                              onChange={(e) => void patchRow(row.id, { odeme_kaynagi: e.target.value })}
+                            >
+                              <MenuItem value="Santiye_Kasa">Şantiye Kasası</MenuItem>
+                              <MenuItem value="Merkez_Banka">Merkez Banka</MenuItem>
+                              <MenuItem value="rapor">Günlük Rapor</MenuItem>
+                            </Select>
+                          ) : row.odeme_kaynagi === "Merkez_Banka" ? (
+                            "Merkez"
+                          ) : row.odeme_kaynagi === "rapor" ? (
+                            "Günlük Rapor"
+                          ) : (
+                            "Şantiye Kasası"
+                          )}
+                        </TableCell>
+                      )}
+                      {show("aciklama") && (
+                        <TableCell>
+                          {canManage ? (
+                            <TextField
+                              size="small"
+                              fullWidth
+                              defaultValue={row.aciklama || ""}
+                              key={`ack-${row.id}-${row.aciklama || ""}`}
+                              disabled={busy}
+                              onBlur={(e) => {
+                                const v = e.target.value.trim()
+                                if (v !== (row.aciklama || "")) {
+                                  void patchRow(row.id, { aciklama: v || null })
+                                }
+                              }}
+                            />
+                          ) : (
+                            <Box sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {row.aciklama ?? "—"}
+                            </Box>
+                          )}
+                        </TableCell>
+                      )}
+                      {canManage && show("islem") && (
                         <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
                           <Tooltip title="Detaylı düzenle">
                             <IconButton size="small" onClick={() => openEdit(row)} color="primary" disabled={busy}>
@@ -963,10 +1138,22 @@ export default function IdariHarcamalarPage() {
                   )
                 })}
                 <TableRow sx={{ backgroundColor: "#f5f5f5" }}>
-                  <TableCell colSpan={canManage ? 8 : 7}><strong>Toplam (filtrelenmiş — USD / IQD)</strong></TableCell>
-                  <TableCell align="right"><strong>{listSumUsd.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}</strong></TableCell>
-                  <TableCell align="right"><strong>{listSumIqd.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}</strong></TableCell>
-                  <TableCell colSpan={canManage ? 3 : 2} />
+                  {totalLeftSpan > 0 && (
+                    <TableCell colSpan={totalLeftSpan}>
+                      <strong>Toplam (filtrelenmiş — USD / IQD)</strong>
+                    </TableCell>
+                  )}
+                  {show("usd") && (
+                    <TableCell align="right">
+                      <strong>{listSumUsd.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}</strong>
+                    </TableCell>
+                  )}
+                  {show("iqd") && (
+                    <TableCell align="right">
+                      <strong>{listSumIqd.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}</strong>
+                    </TableCell>
+                  )}
+                  {totalRightSpan > 0 && <TableCell colSpan={totalRightSpan} />}
                 </TableRow>
               </TableBody>
             </Table>
