@@ -40,6 +40,7 @@ import { Add, FileUpload, CheckCircle, Download, Settings, Edit, Delete, FileDow
 import Link from "next/link"
 import { useAuth } from "@/contexts/auth-context"
 import { downloadIslemlerExcel } from "@/lib/harcama-excel"
+import { SortableTh, type SortDir } from "@/components/idari/SortableTh"
 
 interface SiteItem {
   id: number
@@ -218,6 +219,8 @@ export default function IdariHarcamalarPage() {
   const [bitis, setBitis] = useState(() => new Date().toISOString().slice(0, 10))
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(25)
+  const [sortBy, setSortBy] = useState<"tarih" | "kalem" | "masrafYeri">("tarih")
+  const [sortDir, setSortDir] = useState<SortDir>("desc")
   const [visibleCols, setVisibleCols] = useState<Record<ColKey, boolean>>(DEFAULT_VISIBLE_COLS)
   const [colsMenuAnchor, setColsMenuAnchor] = useState<null | HTMLElement>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -352,7 +355,7 @@ export default function IdariHarcamalarPage() {
 
   const filteredList = useMemo(() => {
     const q = filterQ.trim().toLocaleLowerCase("tr")
-    return list.filter((r) => {
+    const filtered = list.filter((r) => {
       if (filterMasrafYeriId && String(r.masraf_yeri_id ?? "") !== filterMasrafYeriId) return false
       if (filterOdeme && (r.odeme_kaynagi || "") !== filterOdeme) return false
       if (q) {
@@ -372,11 +375,45 @@ export default function IdariHarcamalarPage() {
       }
       return true
     })
-  }, [list, filterMasrafYeriId, filterOdeme, filterQ])
+
+    const dir = sortDir === "asc" ? 1 : -1
+    const sortKey = (r: IslemRow): string => {
+      if (sortBy === "tarih") {
+        const t = r.islem_tarihi as string | Date
+        if (t instanceof Date) return t.toISOString().slice(0, 10)
+        return String(t ?? "").slice(0, 10)
+      }
+      if (sortBy === "kalem") {
+        const kod = r.kalem_kod ? String(r.kalem_kod) : ""
+        const ad = r.kalem_adi || r.kategori_adi || ""
+        return `${kod} ${ad}`.trim().toLocaleLowerCase("tr")
+      }
+      return String(r.masraf_yeri_adi || "").toLocaleLowerCase("tr")
+    }
+
+    return [...filtered].sort((a, b) => {
+      const av = sortKey(a)
+      const bv = sortKey(b)
+      const aEmpty = !av
+      const bEmpty = !bv
+      if (aEmpty && bEmpty) return b.id - a.id
+      if (aEmpty) return 1
+      if (bEmpty) return -1
+      const cmp = av.localeCompare(bv, "tr", { numeric: true, sensitivity: "base" })
+      if (cmp !== 0) return cmp * dir
+      return b.id - a.id
+    })
+  }, [list, filterMasrafYeriId, filterOdeme, filterQ, sortBy, sortDir])
 
   useEffect(() => {
     setPage(0)
-  }, [siteId, baslangic, bitis, filterKalemId, filterAltKalemId, filterMasrafYeriId, filterOdeme, filterQ, eksikKalem])
+  }, [siteId, baslangic, bitis, filterKalemId, filterAltKalemId, filterMasrafYeriId, filterOdeme, filterQ, eksikKalem, sortBy, sortDir])
+
+  const handleListSort = (key: string, dir: SortDir) => {
+    if (key !== "tarih" && key !== "kalem" && key !== "masrafYeri") return
+    setSortBy(key)
+    setSortDir(dir)
+  }
 
   useEffect(() => {
     const maxPage = Math.max(0, Math.ceil(filteredList.length / rowsPerPage) - 1)
@@ -858,10 +895,37 @@ export default function IdariHarcamalarPage() {
                       />
                     </TableCell>
                   )}
-                  {show("tarih") && <TableCell sx={{ width: 150 }}><strong>Tarih</strong></TableCell>}
-                  {show("kalem") && <TableCell sx={{ width: 170 }}><strong>Kalem</strong></TableCell>}
+                  {show("tarih") && (
+                    <SortableTh
+                      label="Tarih"
+                      sortKey="tarih"
+                      sortBy={sortBy}
+                      sortDir={sortDir}
+                      onSort={handleListSort}
+                      sx={{ width: 150 }}
+                    />
+                  )}
+                  {show("kalem") && (
+                    <SortableTh
+                      label="Kalem"
+                      sortKey="kalem"
+                      sortBy={sortBy}
+                      sortDir={sortDir}
+                      onSort={handleListSort}
+                      sx={{ width: 170 }}
+                    />
+                  )}
                   {show("altKalem") && <TableCell sx={{ width: 160 }}><strong>Alt kalem</strong></TableCell>}
-                  {show("masrafYeri") && <TableCell sx={{ width: 160 }}><strong>Masraf yeri</strong></TableCell>}
+                  {show("masrafYeri") && (
+                    <SortableTh
+                      label="Masraf yeri"
+                      sortKey="masrafYeri"
+                      sortBy={sortBy}
+                      sortDir={sortDir}
+                      onSort={handleListSort}
+                      sx={{ width: 160 }}
+                    />
+                  )}
                   {show("fis") && <TableCell sx={{ width: 110 }}><strong>Fiş/Fatura</strong></TableCell>}
                   {show("pb") && <TableCell align="center" sx={{ width: 80 }}><strong>PB</strong></TableCell>}
                   {show("tutar") && <TableCell align="right" sx={{ width: 110 }}><strong>Tutar</strong></TableCell>}

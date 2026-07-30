@@ -1,6 +1,7 @@
 "use client"
 
 import { Box, IconButton, TableCell, Tooltip, Typography } from "@mui/material"
+import type { SxProps, Theme } from "@mui/material/styles"
 
 export type SortDir = "asc" | "desc"
 
@@ -11,6 +12,7 @@ export function SortableTh({
   sortDir,
   onSort,
   align,
+  sx,
 }: {
   label: string
   sortKey: string
@@ -18,12 +20,13 @@ export function SortableTh({
   sortDir: SortDir
   onSort: (key: string, dir: SortDir) => void
   align?: "left" | "center" | "right"
+  sx?: SxProps<Theme>
 }) {
   const active = sortBy === sortKey
   const justify =
     align === "right" ? "flex-end" : align === "center" ? "center" : "flex-start"
   return (
-    <TableCell align={align}>
+    <TableCell align={align} sx={sx}>
       <Box
         sx={{
           display: "flex",
