@@ -1,5 +1,12 @@
 /** Rapor HTML içeriği üretimi — hem send-report hem preview (eski raporlar) tarafından kullanılır. */
 
+import {
+  normalizeSiteCurrency,
+  pricePerMeterLabel,
+  formatMoney,
+  currencyLabel,
+} from "@/lib/site-currency"
+
 function normName(s: unknown): string {
   return String(s ?? "").trim().toLocaleLowerCase("tr-TR")
 }
@@ -133,10 +140,13 @@ export function generatePDFMainReport(
     showHakedis?: boolean
     contractUnitPrice?: number | null
     cumulativeTotalProduction?: number | null
+    /** Hakediş para birimi (sites.billing_currency) */
+    billingCurrency?: string | null
     /** Kırılımlı hakediş (çap / tier) — super_admin önizleme */
     hakedisBreakdown?: {
       totalMeters: number
       totalAmount: number
+      currency?: string
       lines: Array<{
         diameterMm: number | null
         label: string
@@ -245,6 +255,9 @@ export function generatePDFMainReport(
   const contractUnitPrice = opts?.contractUnitPrice != null ? Number(opts.contractUnitPrice) : null
   const cumulativeTotalProduction = opts?.cumulativeTotalProduction != null ? Number(opts.cumulativeTotalProduction) : null
   const hakedisBreakdown = opts?.hakedisBreakdown ?? null
+  const hakedisCurrency = normalizeSiteCurrency(
+    hakedisBreakdown?.currency ?? opts?.billingCurrency ?? "USD",
+  )
   const hakedisAmount =
     showHakedis && hakedisBreakdown != null
       ? hakedisBreakdown.totalAmount
@@ -255,12 +268,13 @@ export function generatePDFMainReport(
     showHakedis && hakedisBreakdown != null
       ? hakedisBreakdown.totalMeters
       : cumulativeTotalProduction
-  const tierLabel = (t: string) => (t === "secondary" ? "Secondary" : t === "primary" ? "Primary" : "Tek fiyat")
+  const tierLabel = (t: string) =>
+    t === "secondary" ? "Secondary" : t === "primary" ? "Primary" : t === "pre_report" ? "Rapor öncesi" : "Tek fiyat"
   const hakedisLinesHtml =
     showHakedis && hakedisBreakdown && hakedisBreakdown.lines.length > 0
       ? `<div style="margin-top:6px;width:100%;">
           <table style="width:100%;font-size:10px;">
-            <thead><tr><th>Çap</th><th>Tip</th><th>Metraj (m)</th><th>Birim (USD/m)</th><th>Tutar (USD)</th></tr></thead>
+            <thead><tr><th>Çap</th><th>Tip</th><th>Metraj (m)</th><th>Birim (${pricePerMeterLabel(hakedisCurrency)})</th><th>Tutar (${currencyLabel(hakedisCurrency)})</th></tr></thead>
             <tbody>
               ${hakedisBreakdown.lines
                 .map(
@@ -387,9 +401,9 @@ export function generatePDFMainReport(
   <div style="margin-bottom:8px;padding:6px 10px;border:1px solid #c7d2e8;border-radius:6px;background:#f8fafc;display:flex;gap:12px;flex-wrap:wrap;">
     <div style="font-size:10px;color:#475569;"><strong>İşe başlama tarihi:</strong> ${projectStartDate || "—"}</div>
     <div style="font-size:10px;color:#475569;"><strong>Geçen gün:</strong> ${elapsedDays != null && elapsedDays >= 0 ? elapsedDays : "—"}</div>
-    ${showHakedis && !hakedisBreakdown?.usedRates ? `<div style="font-size:10px;color:#1a237e;"><strong>Birim fiyat:</strong> ${contractUnitPrice != null ? `${contractUnitPrice.toLocaleString("tr-TR")} USD/m` : "—"}</div>` : ""}
+    ${showHakedis && !hakedisBreakdown?.usedRates ? `<div style="font-size:10px;color:#1a237e;"><strong>Birim fiyat:</strong> ${contractUnitPrice != null ? `${contractUnitPrice.toLocaleString("tr-TR")} ${pricePerMeterLabel(hakedisCurrency)}` : "—"}</div>` : ""}
     ${showHakedis ? `<div style="font-size:10px;color:#1a237e;"><strong>Beton dökülen toplam boy (küm.):</strong> ${hakedisMeters != null ? hakedisMeters.toLocaleString("tr-TR", { maximumFractionDigits: 2 }) : "—"} m</div>` : ""}
-    ${showHakedis ? `<div style="font-size:10px;color:#166534;"><strong>Hak edilen:</strong> ${hakedisAmount != null ? `${hakedisAmount.toLocaleString("tr-TR", { maximumFractionDigits: 2 })} USD` : "—"}</div>` : ""}
+    ${showHakedis ? `<div style="font-size:10px;color:#166534;"><strong>Hak edilen:</strong> ${hakedisAmount != null ? formatMoney(hakedisAmount, hakedisCurrency) : "—"}</div>` : ""}
     ${hakedisLinesHtml}
   </div>
   <div class="stat-grid" style="margin-bottom:10px;grid-template-columns:repeat(5,1fr);">

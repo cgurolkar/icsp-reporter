@@ -63,6 +63,7 @@ export async function GET(
       daysElapsed,
       showHakedis,
       contractUnitPrice: showHakedis && site?.contract_unit_price != null ? Number(site.contract_unit_price) : null,
+      billingCurrency: showHakedis && site?.billing_currency != null ? String(site.billing_currency) : null,
       cumulativeTotalProduction,
       hakedisBreakdown,
       cumulativeDrilledPiles: pileCounts?.drilled ?? null,

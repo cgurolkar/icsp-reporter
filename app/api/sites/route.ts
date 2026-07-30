@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getAllSites, getSitesWithReportCount, createSite, initializeDatabase, replaceSitePileRates, getSitePileRates } from "@/lib/database"
 import { getSessionFromRequest, canAccessAdmin, canViewAllSites, getAllowedSiteIds } from "@/lib/auth"
+import { normalizeSiteCurrency } from "@/lib/site-currency"
 
 export async function GET(request: NextRequest) {
   const session = await getSessionFromRequest(request)
@@ -78,10 +79,37 @@ export async function POST(request: NextRequest) {
     const iqdPerUsdRaw = body.iqdPerUsd
     const iqdPerUsd =
       iqdPerUsdRaw != null && !Number.isNaN(Number(iqdPerUsdRaw)) && Number(iqdPerUsdRaw) > 0 ? Number(iqdPerUsdRaw) : undefined
+    const billingCurrency = normalizeSiteCurrency(body.billingCurrency)
+    const initialConcreteMeters =
+      body.initialConcreteMeters != null && String(body.initialConcreteMeters).trim() !== "" && !Number.isNaN(Number(body.initialConcreteMeters))
+        ? Number(body.initialConcreteMeters)
+        : null
     if (!name || !code) {
       return NextResponse.json({ error: "Şantiye adı ve kod zorunludur." }, { status: 400 })
     }
-    const site = await createSite({ name, code, emailList, totalPiles, region, city, country, timezone, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, initialEmptyBorehole, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, contractUnitPrice, iqdPerUsd })
+    const site = await createSite({
+      name,
+      code,
+      emailList,
+      totalPiles,
+      region,
+      city,
+      country,
+      timezone,
+      authorizedPerson,
+      employer,
+      projectStartDate,
+      isOngoing,
+      initialPilesDone,
+      initialEmptyBorehole,
+      assignedMachineIds,
+      assignedOperatorIds,
+      assignedMachineOperators,
+      contractUnitPrice,
+      iqdPerUsd,
+      billingCurrency,
+      initialConcreteMeters,
+    })
     let pile_rates: Awaited<ReturnType<typeof getSitePileRates>> = []
     if (session.role === "super_admin" && Array.isArray(body.pileRates) && site?.id) {
       const parsed = (body.pileRates as Array<Record<string, unknown>>)

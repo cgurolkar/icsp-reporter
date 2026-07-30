@@ -58,6 +58,7 @@ import { theme } from "@/lib/theme"
 import { LanguageProvider, useLanguage } from "@/contexts/language-context"
 import LanguageSelector from "@/components/language-selector"
 import { useAuth } from "@/contexts/auth-context"
+import { SITE_CURRENCIES, normalizeSiteCurrency, pricePerMeterLabel } from "@/lib/site-currency"
 
 interface TabPanelProps {
   children?: React.ReactNode
@@ -260,6 +261,7 @@ function AdminPanel() {
     emailList: string[]
     totalPiles: string
     iqdPerUsd: string
+    billingCurrency: string
     contractUnitPrice: string
     /** Çap tarifeleri: diameterMm, label, pricePrimary, priceSecondary */
     pileRates: { diameterMm: string; label: string; pricePrimary: string; priceSecondary: string }[]
@@ -269,6 +271,7 @@ function AdminPanel() {
     isOngoing: boolean
     initialPilesDone: string
     initialEmptyBorehole: string
+    initialConcreteMeters: string
     assignedMachineIds: string[]
     assignedOperatorIds: number[]
     assignedMachineOperators: { machineId: string; personelId: number }[]
@@ -282,6 +285,7 @@ function AdminPanel() {
     emailList: [],
     totalPiles: "",
     iqdPerUsd: "1320",
+    billingCurrency: "USD",
     contractUnitPrice: "",
     pileRates: [],
     authorizedPerson: "",
@@ -290,6 +294,7 @@ function AdminPanel() {
     isOngoing: false,
     initialPilesDone: "",
     initialEmptyBorehole: "",
+    initialConcreteMeters: "",
     assignedMachineIds: [],
     assignedOperatorIds: [],
     assignedMachineOperators: [],
@@ -1854,7 +1859,7 @@ function AdminPanel() {
               variant="contained"
               startIcon={<Add />}
               onClick={() => {
-                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", iqdPerUsd: "1320", contractUnitPrice: "", pileRates: [], authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", initialEmptyBorehole: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [], isActive: true, releaseMachinesWhenClosed: true })
+                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", iqdPerUsd: "1320", billingCurrency: "USD", contractUnitPrice: "", pileRates: [], authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", initialEmptyBorehole: "", initialConcreteMeters: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [], isActive: true, releaseMachinesWhenClosed: true })
                 if (personelList.length === 0) fetch("/api/idari/personel?limit=500").then((r) => (r.ok ? r.json() : { data: [] })).then((res: any) => setPersonelList(Array.isArray(res) ? res : (res.data ?? []))).catch(() => {})
                 setSiteDialogOpen(true)
               }}
@@ -1881,7 +1886,8 @@ function AdminPanel() {
                         : ""}
                       <strong>Rapor sayısı: {Number(site.report_count) || 0}</strong>
                       {site.total_piles != null ? ` · Proje toplam kazık sayısı (Ad.): ${site.total_piles}` : ""}
-                      {isSuperAdmin && site.contract_unit_price != null ? ` · Birim fiyat: ${Number(site.contract_unit_price).toLocaleString("tr-TR")} USD/m` : ""}
+                      {isSuperAdmin && site.contract_unit_price != null ? ` · Birim fiyat: ${Number(site.contract_unit_price).toLocaleString("tr-TR")} ${pricePerMeterLabel((site as any).billing_currency)}` : ""}
+                      {isSuperAdmin && (site as any).billing_currency ? ` · ${(site as any).billing_currency}` : ""}
                     </>
                   }
                 />
@@ -1962,6 +1968,7 @@ function AdminPanel() {
                       emailList: site.email_list || [],
                       totalPiles: site.total_piles != null ? String(site.total_piles) : "",
                       iqdPerUsd: (site as any).iqd_per_usd != null ? String((site as any).iqd_per_usd) : "1320",
+                      billingCurrency: normalizeSiteCurrency((site as any).billing_currency),
                       contractUnitPrice: (site as any).contract_unit_price != null ? String((site as any).contract_unit_price) : "",
                       pileRates,
                       authorizedPerson: (site as any).authorized_person != null ? String((site as any).authorized_person) : "",
@@ -1970,6 +1977,7 @@ function AdminPanel() {
                       isOngoing: (site as any).is_ongoing === true,
                       initialPilesDone: (site as any).initial_piles_done != null ? String((site as any).initial_piles_done) : "",
                       initialEmptyBorehole: (site as any).initial_empty_borehole != null ? String((site as any).initial_empty_borehole) : "",
+                      initialConcreteMeters: (site as any).initial_concrete_meters != null ? String((site as any).initial_concrete_meters) : "",
                       assignedMachineIds: assignedIds,
                       assignedOperatorIds: Array.isArray((site as any).assigned_operator_ids) ? (site as any).assigned_operator_ids.map((x: unknown) => Number(x)).filter((n: number) => !Number.isNaN(n)) : [],
                       assignedMachineOperators: ops.map((o: any) => ({ machineId: String(o.machineId ?? o.machine_id ?? ""), personelId: Number(o.personelId ?? o.personel_id ?? 0) })).filter((o: { machineId: string; personelId: number }) => o.machineId && o.personelId > 0),
@@ -2539,19 +2547,38 @@ function AdminPanel() {
             />
             {isSuperAdmin && (
               <Box sx={{ mt: 1, mb: 1 }}>
+                <FormControl fullWidth margin="dense" size="small">
+                  <InputLabel>İş / hakediş para birimi</InputLabel>
+                  <Select
+                    label="İş / hakediş para birimi"
+                    value={siteDialogData.billingCurrency || "USD"}
+                    onChange={(e) =>
+                      setSiteDialogData((prev) => ({
+                        ...prev,
+                        billingCurrency: normalizeSiteCurrency(e.target.value),
+                      }))
+                    }
+                  >
+                    {SITE_CURRENCIES.map((c) => (
+                      <MenuItem key={c} value={c}>
+                        {c}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
                 <TextField
                   margin="dense"
                   fullWidth
                   type="number"
-                  label="Varsayılan tek fiyat (USD / m) — tarife yoksa"
+                  label={`Varsayılan tek fiyat (${pricePerMeterLabel(siteDialogData.billingCurrency)}) — tarife yoksa`}
                   value={siteDialogData.contractUnitPrice}
                   onChange={(e) => setSiteDialogData((prev) => ({ ...prev, contractUnitPrice: e.target.value }))}
                   placeholder="Örn: 85"
                   inputProps={{ min: 0, step: "0.01" }}
-                  helperText="Çap tarifesi tanımlıysa hakediş tarifeden hesaplanır; yoksa bu fiyat kullanılır."
+                  helperText="Çap tarifesi tanımlıysa hakediş tarifeden hesaplanır; yoksa bu fiyat kullanılır. Fiyatlar seçilen para birimindedir."
                 />
                 <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }} color="text.secondary">
-                  Kazık çapı tarifeleri (primary / secondary)
+                  Kazık çapı tarifeleri (primary / secondary) — {pricePerMeterLabel(siteDialogData.billingCurrency)}
                 </Typography>
                 {(siteDialogData.pileRates || []).map((row, idx) => (
                   <Box key={idx} sx={{ display: "flex", flexWrap: "wrap", gap: 1, alignItems: "center", mb: 1 }}>
@@ -2586,7 +2613,7 @@ function AdminPanel() {
                     />
                     <TextField
                       size="small"
-                      label="Primary USD/m"
+                      label={`Primary ${pricePerMeterLabel(siteDialogData.billingCurrency)}`}
                       type="number"
                       value={row.pricePrimary}
                       onChange={(e) =>
@@ -2596,12 +2623,12 @@ function AdminPanel() {
                           return { ...prev, pileRates: next }
                         })
                       }
-                      sx={{ width: 130 }}
+                      sx={{ width: 140 }}
                       inputProps={{ min: 0, step: "0.01" }}
                     />
                     <TextField
                       size="small"
-                      label="Secondary USD/m"
+                      label={`Secondary ${pricePerMeterLabel(siteDialogData.billingCurrency)}`}
                       type="number"
                       value={row.priceSecondary}
                       onChange={(e) =>
@@ -2611,7 +2638,7 @@ function AdminPanel() {
                           return { ...prev, pileRates: next }
                         })
                       }
-                      sx={{ width: 140 }}
+                      sx={{ width: 150 }}
                       inputProps={{ min: 0, step: "0.01" }}
                     />
                     <IconButton
@@ -2708,6 +2735,19 @@ function AdminPanel() {
                   inputProps={{ min: 0 }}
                   helperText="Kalan kazık = Proje toplamı − yapılan kazık − günlük yapılanlar (boş foraj bu hesaba katılmaz). Kaydettikten sonra alttaki düğmeyle eski raporlardaki kalan kazıkları güncelleyin."
                 />
+                {isSuperAdmin && (siteDialogData.pileRates || []).filter((r) => r.diameterMm.trim()).length <= 1 && (
+                  <TextField
+                    margin="dense"
+                    fullWidth
+                    type="number"
+                    label="Rapor öncesi beton metrajı (m)"
+                    value={siteDialogData.initialConcreteMeters}
+                    onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialConcreteMeters: e.target.value }))}
+                    placeholder="Örn: 1250.5"
+                    inputProps={{ min: 0, step: "0.01" }}
+                    helperText={`Tek çap/fiyatlı şantiyelerde hakedişe eklenir (${pricePerMeterLabel(siteDialogData.billingCurrency)}).`}
+                  />
+                )}
               </Box>
             )}
             <Typography variant="body2" sx={{ mt: 2, mb: 1 }} color="text.secondary">
@@ -2806,8 +2846,15 @@ function AdminPanel() {
                   isOngoing: siteDialogData.isOngoing,
                   initialPilesDone: siteDialogData.isOngoing && siteDialogData.initialPilesDone.trim() ? parseInt(siteDialogData.initialPilesDone, 10) || null : null,
                   initialEmptyBorehole: siteDialogData.isOngoing && siteDialogData.initialEmptyBorehole.trim() ? parseInt(siteDialogData.initialEmptyBorehole, 10) || null : null,
+                  initialConcreteMeters:
+                    siteDialogData.isOngoing &&
+                    (siteDialogData.pileRates || []).filter((r) => r.diameterMm.trim()).length <= 1 &&
+                    siteDialogData.initialConcreteMeters.trim()
+                      ? Number(siteDialogData.initialConcreteMeters)
+                      : null,
                   ...(isSuperAdmin
                     ? {
+                        billingCurrency: normalizeSiteCurrency(siteDialogData.billingCurrency),
                         contractUnitPrice: siteDialogData.contractUnitPrice.trim()
                           ? Number(siteDialogData.contractUnitPrice)
                           : null,

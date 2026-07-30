@@ -24,6 +24,7 @@ export type HakedisBreakdown = {
   totalAmount: number
   lines: HakedisLine[]
   usedRates: boolean
+  currency?: string
 }
 
 function rateLabel(rate: HakedisRate): string {
@@ -50,6 +51,55 @@ function mergeLines(into: Map<string, HakedisLine>, line: HakedisLine) {
     prev.amount += line.amount
   } else {
     into.set(key, { ...line })
+  }
+}
+
+/** Aktif tarife sayısı 0 veya 1 → tek fiyat / tek çap şantiyesi */
+export function isSingleTariffSite(rates: HakedisRate[]): boolean {
+  const active = rates.filter((r) => r.is_active !== false)
+  return active.length <= 1
+}
+
+/**
+ * Devam eden + tek tarife şantiyelerde rapor öncesi beton metrajını hakedişe ekler.
+ */
+export function withPreReportMeters(
+  base: HakedisBreakdown,
+  opts: {
+    isOngoing: boolean
+    initialConcreteMeters: number
+    rates: HakedisRate[]
+    fallbackUnitPrice: number | null
+  },
+): HakedisBreakdown {
+  const meters = Number(opts.initialConcreteMeters) || 0
+  if (!opts.isOngoing || meters <= 0 || !isSingleTariffSite(opts.rates)) {
+    return base
+  }
+  const active = opts.rates.filter((r) => r.is_active !== false)
+  const rate = active[0]
+  const unit = unitPriceFor(rate, "primary", opts.fallbackUnitPrice)
+  if (unit == null) return base
+
+  const lineMap = new Map<string, HakedisLine>()
+  for (const line of base.lines) mergeLines(lineMap, line)
+  mergeLines(lineMap, {
+    diameterMm: rate?.diameter_mm ?? null,
+    label: rate ? `${rateLabel(rate)} (rapor öncesi)` : "Rapor öncesi",
+    priceTier: "pre_report",
+    unitPrice: unit,
+    meters,
+    amount: meters * unit,
+  })
+  const lines = [...lineMap.values()].sort(
+    (a, b) => (a.diameterMm ?? 0) - (b.diameterMm ?? 0) || a.priceTier.localeCompare(b.priceTier),
+  )
+  return {
+    totalMeters: lines.reduce((s, l) => s + l.meters, 0),
+    totalAmount: lines.reduce((s, l) => s + l.amount, 0),
+    lines,
+    usedRates: base.usedRates || active.length > 0,
+    currency: base.currency,
   }
 }
 

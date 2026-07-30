@@ -348,6 +348,12 @@ async function _doInitializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'iqd_per_usd') THEN
           ALTER TABLE sites ADD COLUMN iqd_per_usd DECIMAL(14,4) DEFAULT 1320;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'billing_currency') THEN
+          ALTER TABLE sites ADD COLUMN billing_currency VARCHAR(3) NOT NULL DEFAULT 'USD';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'initial_concrete_meters') THEN
+          ALTER TABLE sites ADD COLUMN initial_concrete_meters DECIMAL(14,2) DEFAULT NULL;
+        END IF;
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'sites project columns: %', SQLERRM;
       END $$
     `)
@@ -2212,6 +2218,7 @@ export async function replaceSitePileRates(
 /**
  * Şantiye bazında kümülatif hakediş kırılımı (beton dökülen m × satır fiyatı).
  * Tarife varsa pile_details üzerinden; yoksa concrete_total_length × contract_unit_price.
+ * Devam eden + tek tarife: initial_concrete_meters eklenir.
  */
 export async function getCumulativeHakedisBreakdown(
   siteId: number,
@@ -2228,17 +2235,28 @@ export async function getCumulativeHakedisBreakdown(
     amount: number
   }>
   usedRates: boolean
+  currency: string
 }> {
-  const { computeHakedisFromReports } = await import("@/lib/hakedis")
+  const { computeHakedisFromReports, withPreReportMeters } = await import("@/lib/hakedis")
+  const { normalizeSiteCurrency } = await import("@/lib/site-currency")
   const client = await pool.connect()
   try {
     const d = (date || "").slice(0, 10)
     const site = await client.query(
-      `SELECT contract_unit_price FROM sites WHERE id = $1`,
+      `SELECT contract_unit_price, billing_currency, is_ongoing, initial_concrete_meters
+       FROM sites WHERE id = $1`,
       [siteId],
     )
+    const siteRow = site.rows[0]
     const fallbackPrice =
-      site.rows[0]?.contract_unit_price != null ? Number(site.rows[0].contract_unit_price) : null
+      siteRow?.contract_unit_price != null ? Number(siteRow.contract_unit_price) : null
+    const currency = normalizeSiteCurrency(siteRow?.billing_currency)
+    const isOngoing = siteRow?.is_ongoing === true
+    const initialMeters =
+      siteRow?.initial_concrete_meters != null && !Number.isNaN(Number(siteRow.initial_concrete_meters))
+        ? Number(siteRow.initial_concrete_meters)
+        : 0
+
     const ratesResult = await client.query(
       `SELECT id, site_id, diameter_mm, label, price_primary, price_secondary, sort_order, is_active
        FROM site_pile_rates WHERE site_id = $1 ORDER BY sort_order ASC, diameter_mm ASC`,
@@ -2261,7 +2279,7 @@ export async function getCumulativeHakedisBreakdown(
        ORDER BY date ASC, id ASC`,
       [siteId, d],
     )
-    return computeHakedisFromReports(
+    const base = computeHakedisFromReports(
       reports.rows.map((r) => ({
         pile_details: r.pile_details,
         concrete_total_length: r.concrete_total_length,
@@ -2269,6 +2287,15 @@ export async function getCumulativeHakedisBreakdown(
       rates,
       fallbackPrice,
     )
+    return {
+      ...withPreReportMeters(base, {
+        isOngoing,
+        initialConcreteMeters: initialMeters,
+        rates,
+        fallbackUnitPrice: fallbackPrice,
+      }),
+      currency,
+    }
   } finally {
     client.release()
   }
@@ -2308,14 +2335,24 @@ export async function createSite(data: {
   contractUnitPrice?: number | null
   /** 1 USD = kaç IQD */
   iqdPerUsd?: number | null
+  /** İş / hakediş para birimi: USD | IQD | EUR | TRY */
+  billingCurrency?: string | null
+  /** Rapor öncesi beton metrajı (m) — tek tarife + devam eden */
+  initialConcreteMeters?: number | null
 }) {
   const client = await pool.connect()
   try {
     const ops = data.assignedMachineOperators || []
     const iqdUsd = data.iqdPerUsd != null && !Number.isNaN(Number(data.iqdPerUsd)) && Number(data.iqdPerUsd) > 0 ? Number(data.iqdPerUsd) : 1320
+    const { normalizeSiteCurrency } = await import("@/lib/site-currency")
+    const billingCurrency = normalizeSiteCurrency(data.billingCurrency)
+    const initialMeters =
+      data.initialConcreteMeters != null && !Number.isNaN(Number(data.initialConcreteMeters)) && Number(data.initialConcreteMeters) >= 0
+        ? Number(data.initialConcreteMeters)
+        : null
     const result = await client.query(
-      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, initial_empty_borehole, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators, timezone, contract_unit_price, iqd_per_usd)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING *`,
+      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, initial_empty_borehole, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators, timezone, contract_unit_price, iqd_per_usd, billing_currency, initial_concrete_meters)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING *`,
       [
         data.name,
         data.code,
@@ -2336,6 +2373,8 @@ export async function createSite(data: {
         data.timezone ?? null,
         data.contractUnitPrice ?? null,
         iqdUsd,
+        billingCurrency,
+        initialMeters,
       ]
     )
     const newSite = result.rows[0]
@@ -2385,6 +2424,8 @@ export async function updateSite(id: number, data: {
   timezone?: string | null
   contractUnitPrice?: number | null
   iqdPerUsd?: number | null
+  billingCurrency?: string | null
+  initialConcreteMeters?: number | null
 }) {
   const client = await pool.connect()
   try {
@@ -2395,6 +2436,19 @@ export async function updateSite(id: number, data: {
     if (data.budget !== undefined) { updates.push(`budget = $${i++}`); values.push(data.budget) }
     if (data.contractUnitPrice !== undefined) { updates.push(`contract_unit_price = $${i++}`); values.push(data.contractUnitPrice) }
     if (data.iqdPerUsd !== undefined) { updates.push(`iqd_per_usd = $${i++}`); values.push(data.iqdPerUsd) }
+    if (data.billingCurrency !== undefined) {
+      const { normalizeSiteCurrency } = await import("@/lib/site-currency")
+      updates.push(`billing_currency = $${i++}`)
+      values.push(normalizeSiteCurrency(data.billingCurrency))
+    }
+    if (data.initialConcreteMeters !== undefined) {
+      updates.push(`initial_concrete_meters = $${i++}`)
+      values.push(
+        data.initialConcreteMeters != null && !Number.isNaN(Number(data.initialConcreteMeters))
+          ? Number(data.initialConcreteMeters)
+          : null,
+      )
+    }
     if (data.timezone !== undefined) { updates.push(`timezone = $${i++}`); values.push(data.timezone) }
     if (data.code !== undefined) { updates.push(`code = $${i++}`); values.push(data.code) }
     if (data.emailList !== undefined) { updates.push(`email_list = $${i++}`); values.push(JSON.stringify(data.emailList)) }
