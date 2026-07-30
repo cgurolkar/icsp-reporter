@@ -390,3 +390,94 @@ export function matchMasrafYeriId(
   const partial = masrafYerleri.find((m) => norm(m.ad).includes(target) || target.includes(norm(m.ad)))
   return partial?.id ?? null
 }
+
+export type IslemExportRow = {
+  islem_tarihi: string
+  kalem_kod?: string | null
+  kalem_adi?: string | null
+  alt_kalem_adi?: string | null
+  masraf_yeri_adi?: string | null
+  masraf_yeri_tip?: string | null
+  fis_fatura_no?: string | null
+  aciklama?: string | null
+  tutar: number
+  para_birimi?: string | null
+  tutar_usd?: number | string | null
+  tutar_iqd?: number | string | null
+  odeme_kaynagi?: string | null
+  kategori_adi?: string | null
+}
+
+function odemeLabel(v: string | null | undefined): string {
+  if (v === "Merkez_Banka") return "Merkez Banka"
+  if (v === "rapor") return "Günlük Rapor"
+  return "Şantiye Kasası"
+}
+
+/** Filtrelenmiş harcama listesini Excel workbook olarak üretir */
+export function buildIslemlerExportWorkbook(rows: IslemExportRow[], siteName?: string): XLSX.WorkBook {
+  const wb = XLSX.utils.book_new()
+  const header = [
+    "Tarih",
+    "Kalem Kodu",
+    "Ana Kalem",
+    "Alt Kalem",
+    "Masraf Yeri",
+    "Masraf Tip",
+    "Fiş/Fatura No",
+    "Açıklama",
+    "Tutar",
+    "Para Birimi",
+    "USD",
+    "IQD",
+    "Ödeme Kaynağı",
+    "Eski Kategori",
+  ]
+  const data = rows.map((r) => [
+    String(r.islem_tarihi).slice(0, 10),
+    r.kalem_kod || "",
+    r.kalem_adi || "",
+    r.alt_kalem_adi || "",
+    r.masraf_yeri_adi || "",
+    r.masraf_yeri_tip || "",
+    r.fis_fatura_no || "",
+    r.aciklama || "",
+    Number(r.tutar),
+    r.para_birimi === "USD" ? "USD" : "IQD",
+    r.tutar_usd != null ? Number(r.tutar_usd) : "",
+    r.tutar_iqd != null ? Number(r.tutar_iqd) : "",
+    odemeLabel(r.odeme_kaynagi),
+    r.kategori_adi || "",
+  ])
+  const ws = XLSX.utils.aoa_to_sheet([
+    [`Harcama Listesi${siteName ? ` — ${siteName}` : ""}`],
+    [],
+    header,
+    ...data,
+  ])
+  ws["!cols"] = [
+    { wch: 12 },
+    { wch: 10 },
+    { wch: 22 },
+    { wch: 22 },
+    { wch: 22 },
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 30 },
+    { wch: 12 },
+    { wch: 10 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 14 },
+  ]
+  XLSX.utils.book_append_sheet(wb, ws, "Harcamalar")
+  return wb
+}
+
+/** Tarayıcıda filtrelenmiş listeyi Excel olarak indirir */
+export function downloadIslemlerExcel(rows: IslemExportRow[], siteName?: string, filename?: string) {
+  const wb = buildIslemlerExportWorkbook(rows, siteName)
+  const stamp = new Date().toISOString().slice(0, 10)
+  XLSX.writeFile(wb, filename || `harcamalar_${stamp}.xlsx`)
+}

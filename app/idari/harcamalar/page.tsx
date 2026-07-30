@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import {
   Box,
   Typography,
@@ -31,10 +31,12 @@ import {
   FormControlLabel,
   IconButton,
   Tooltip,
+  TablePagination,
 } from "@mui/material"
-import { Add, FileUpload, CheckCircle, Download, Settings, Edit, Delete } from "@mui/icons-material"
+import { Add, FileUpload, CheckCircle, Download, Settings, Edit, Delete, FileDownload } from "@mui/icons-material"
 import Link from "next/link"
 import { useAuth } from "@/contexts/auth-context"
+import { downloadIslemlerExcel } from "@/lib/harcama-excel"
 
 interface SiteItem {
   id: number
@@ -145,6 +147,9 @@ export default function IdariHarcamalarPage() {
   const [siteId, setSiteId] = useState<string>("")
   const [filterKalemId, setFilterKalemId] = useState("")
   const [filterAltKalemId, setFilterAltKalemId] = useState("")
+  const [filterMasrafYeriId, setFilterMasrafYeriId] = useState("")
+  const [filterOdeme, setFilterOdeme] = useState("")
+  const [filterQ, setFilterQ] = useState("")
   const [eksikKalem, setEksikKalem] = useState(false)
   const [baslangic, setBaslangic] = useState(() => {
     const d = new Date()
@@ -152,6 +157,8 @@ export default function IdariHarcamalarPage() {
     return d.toISOString().slice(0, 10)
   })
   const [bitis, setBitis] = useState(() => new Date().toISOString().slice(0, 10))
+  const [page, setPage] = useState(0)
+  const [rowsPerPage, setRowsPerPage] = useState(25)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [saving, setSaving] = useState(false)
@@ -231,6 +238,44 @@ export default function IdariHarcamalarPage() {
   const formAltOptions = form.kalemId
     ? altKalemler.filter((a) => String(a.kalem_id) === form.kalemId)
     : altKalemler
+
+  const filteredList = useMemo(() => {
+    const q = filterQ.trim().toLocaleLowerCase("tr")
+    return list.filter((r) => {
+      if (filterMasrafYeriId && String(r.masraf_yeri_id ?? "") !== filterMasrafYeriId) return false
+      if (filterOdeme && (r.odeme_kaynagi || "") !== filterOdeme) return false
+      if (q) {
+        const hay = [
+          r.aciklama,
+          r.fis_fatura_no,
+          r.kalem_adi,
+          r.kalem_kod,
+          r.alt_kalem_adi,
+          r.masraf_yeri_adi,
+          r.kategori_adi,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLocaleLowerCase("tr")
+        if (!hay.includes(q)) return false
+      }
+      return true
+    })
+  }, [list, filterMasrafYeriId, filterOdeme, filterQ])
+
+  useEffect(() => {
+    setPage(0)
+  }, [siteId, baslangic, bitis, filterKalemId, filterAltKalemId, filterMasrafYeriId, filterOdeme, filterQ, eksikKalem])
+
+  useEffect(() => {
+    const maxPage = Math.max(0, Math.ceil(filteredList.length / rowsPerPage) - 1)
+    if (page > maxPage) setPage(maxPage)
+  }, [filteredList.length, rowsPerPage, page])
+
+  const pagedList = useMemo(() => {
+    const start = page * rowsPerPage
+    return filteredList.slice(start, start + rowsPerPage)
+  }, [filteredList, page, rowsPerPage])
 
   const applyRowUpdate = (id: number, row: IslemRow | null | undefined) => {
     if (!row) {
@@ -382,8 +427,21 @@ export default function IdariHarcamalarPage() {
   }
 
   const toggleSelectAll = () => {
-    if (selected.size === list.length) setSelected(new Set())
-    else setSelected(new Set(list.map((r) => r.id)))
+    const pageIds = pagedList.map((r) => r.id)
+    const allSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id))
+    if (allSelected) {
+      setSelected((prev) => {
+        const next = new Set(prev)
+        pageIds.forEach((id) => next.delete(id))
+        return next
+      })
+    } else {
+      setSelected((prev) => {
+        const next = new Set(prev)
+        pageIds.forEach((id) => next.add(id))
+        return next
+      })
+    }
   }
 
   const openImport = () => {
@@ -465,9 +523,17 @@ export default function IdariHarcamalarPage() {
   }
 
   const siteName = (id: string) => sites.find((s) => String(s.id) === id)?.name ?? ""
-  const listSumUsd = list.reduce((s, r) => s + (r.tutar_usd != null ? Number(r.tutar_usd) : 0), 0)
-  const listSumIqd = list.reduce((s, r) => s + (r.tutar_iqd != null ? Number(r.tutar_iqd) : Number(r.tutar)), 0)
+  const listSumUsd = filteredList.reduce((s, r) => s + (r.tutar_usd != null ? Number(r.tutar_usd) : 0), 0)
+  const listSumIqd = filteredList.reduce((s, r) => s + (r.tutar_iqd != null ? Number(r.tutar_iqd) : Number(r.tutar)), 0)
   const eksikCount = list.filter((r) => !r.alt_kalem_id).length
+  const pageSelectedCount = pagedList.filter((r) => selected.has(r.id)).length
+  const pageAllSelected = pagedList.length > 0 && pageSelectedCount === pagedList.length
+  const pageSomeSelected = pageSelectedCount > 0 && pageSelectedCount < pagedList.length
+
+  const handleExportExcel = () => {
+    if (filteredList.length === 0) return
+    downloadIslemlerExcel(filteredList, siteName(siteId))
+  }
 
   return (
     <Box>
@@ -518,6 +584,32 @@ export default function IdariHarcamalarPage() {
               ))}
             </Select>
           </FormControl>
+          <FormControl size="small" sx={{ minWidth: 160 }}>
+            <InputLabel>Masraf yeri</InputLabel>
+            <Select value={filterMasrafYeriId} label="Masraf yeri" onChange={(e) => setFilterMasrafYeriId(e.target.value)}>
+              <MenuItem value="">Tümü</MenuItem>
+              {masrafYerleri.map((m) => (
+                <MenuItem key={m.id} value={String(m.id)}>{m.ad}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel>Ödeme</InputLabel>
+            <Select value={filterOdeme} label="Ödeme" onChange={(e) => setFilterOdeme(e.target.value)}>
+              <MenuItem value="">Tümü</MenuItem>
+              <MenuItem value="Santiye_Kasa">Şantiye Kasası</MenuItem>
+              <MenuItem value="Merkez_Banka">Merkez Banka</MenuItem>
+              <MenuItem value="rapor">Günlük Rapor</MenuItem>
+            </Select>
+          </FormControl>
+          <TextField
+            label="Ara"
+            size="small"
+            value={filterQ}
+            onChange={(e) => setFilterQ(e.target.value)}
+            placeholder="Açıklama, fiş, kalem…"
+            sx={{ minWidth: 180 }}
+          />
           <FormControlLabel
             control={
               <Checkbox
@@ -549,6 +641,15 @@ export default function IdariHarcamalarPage() {
               )}
               <Button
                 variant="outlined"
+                startIcon={<FileDownload />}
+                onClick={handleExportExcel}
+                disabled={!siteId || filteredList.length === 0}
+                sx={{ borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}
+              >
+                Excel&apos;e aktar ({filteredList.length})
+              </Button>
+              <Button
+                variant="outlined"
                 startIcon={<Download />}
                 href="/api/idari/islemler/template"
                 download="harcama_sablonu.xlsx"
@@ -569,6 +670,19 @@ export default function IdariHarcamalarPage() {
               </Button>
             </Box>
           )}
+          {!canManage && (
+            <Box sx={{ display: "flex", gap: 1, ml: "auto" }}>
+              <Button
+                variant="outlined"
+                startIcon={<FileDownload />}
+                onClick={handleExportExcel}
+                disabled={!siteId || filteredList.length === 0}
+                sx={{ borderColor: "var(--icsp-lacivert)", color: "var(--icsp-lacivert)" }}
+              >
+                Excel&apos;e aktar ({filteredList.length})
+              </Button>
+            </Box>
+          )}
         </Box>
 
         {listError && (
@@ -585,8 +699,8 @@ export default function IdariHarcamalarPage() {
 
         {!siteId ? (
           <Typography color="text.secondary">Şantiye seçin.</Typography>
-        ) : list.length === 0 ? (
-          <Typography color="text.secondary">Kayıt yok.</Typography>
+        ) : filteredList.length === 0 ? (
+          <Typography color="text.secondary">{list.length === 0 ? "Kayıt yok." : "Filtrelere uygun kayıt yok."}</Typography>
         ) : (
           <Box sx={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
             <Table size="small">
@@ -596,8 +710,8 @@ export default function IdariHarcamalarPage() {
                     <TableCell padding="checkbox">
                       <Checkbox
                         size="small"
-                        checked={list.length > 0 && selected.size === list.length}
-                        indeterminate={selected.size > 0 && selected.size < list.length}
+                        checked={pageAllSelected}
+                        indeterminate={pageSomeSelected}
                         onChange={toggleSelectAll}
                       />
                     </TableCell>
@@ -617,7 +731,7 @@ export default function IdariHarcamalarPage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {list.map((row) => {
+                {pagedList.map((row) => {
                   const missing = !row.alt_kalem_id
                   const busy = savingRowId === row.id
                   const kid = rowKalemId(row)
@@ -849,13 +963,27 @@ export default function IdariHarcamalarPage() {
                   )
                 })}
                 <TableRow sx={{ backgroundColor: "#f5f5f5" }}>
-                  <TableCell colSpan={canManage ? 8 : 7}><strong>Toplam (USD / IQD)</strong></TableCell>
+                  <TableCell colSpan={canManage ? 8 : 7}><strong>Toplam (filtrelenmiş — USD / IQD)</strong></TableCell>
                   <TableCell align="right"><strong>{listSumUsd.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}</strong></TableCell>
                   <TableCell align="right"><strong>{listSumIqd.toLocaleString("tr-TR", { maximumFractionDigits: 0 })}</strong></TableCell>
                   <TableCell colSpan={canManage ? 3 : 2} />
                 </TableRow>
               </TableBody>
             </Table>
+            <TablePagination
+              component="div"
+              count={filteredList.length}
+              page={page}
+              onPageChange={(_, p) => setPage(p)}
+              rowsPerPage={rowsPerPage}
+              onRowsPerPageChange={(e) => {
+                setRowsPerPage(parseInt(e.target.value, 10))
+                setPage(0)
+              }}
+              rowsPerPageOptions={[10, 25, 50, 100]}
+              labelRowsPerPage="Sayfa başına"
+              labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+            />
           </Box>
         )}
       </Paper>
