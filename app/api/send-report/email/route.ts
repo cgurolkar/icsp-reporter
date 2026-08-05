@@ -120,8 +120,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "E-posta gönderimi etkin değil (SMTP ayarları eksik)." })
     }
 
+    const totalPiles = site?.total_piles != null ? Number(site.total_piles) : null
+    const remainingComputed =
+      totalPiles != null && pileCounts != null
+        ? String(Math.max(0, totalPiles - (Number(pileCounts.concrete) || 0)))
+        : String(rawReport.remaining_piles ?? curPs?.remainingPiles ?? "")
+
     const mainReportContent = generatePDFMainReport(formData, {
-      computedRemainingPiles: String(curPs?.remainingPiles ?? rawReport.remaining_piles ?? ""),
+      computedRemainingPiles: remainingComputed,
       computedDailyPileCount: dailyPileForDb,
       concretePouredSum,
       projectStartDate,
@@ -129,7 +135,7 @@ export async function POST(request: NextRequest) {
       showHakedis: false,
       cumulativeDrilledPiles: pileCounts?.drilled ?? null,
       cumulativeConcretePiles: pileCounts?.concrete ?? null,
-      projectTotalPiles: site?.total_piles != null ? Number(site.total_piles) : null,
+      projectTotalPiles: totalPiles,
       operatorEntries,
     })
     const expensesPageContent = generatePDFExpensesPage(formData)
@@ -150,7 +156,7 @@ export async function POST(request: NextRequest) {
       personnelTotal: fd.personnel?.total,
       dailyFuelUsage: dailyFuelUsageVal,
       expenseTotal: expenseTotal || null,
-      remainingPiles: curPs?.remainingPiles,
+      remainingPiles: remainingComputed,
       notes: String(fd.notes ?? ""),
       dailyNotes: String(fd.dailyInfo?.notes ?? ""),
       selectedMachineName: String(fd.machineSelection?.selectedMachine?.name ?? ""),
@@ -167,9 +173,13 @@ export async function POST(request: NextRequest) {
       project: projectName,
       submittedBy: session.username || session.role,
       dailyPileCount: dailyPileForDb,
-      totalPileCount: totalPileForDb,
-      remainingPiles: curPs?.remainingPiles,
+      dailyDrilledPiles: dailyPileForDb,
+      dailyConcretePiles: concretePouredSum,
+      totalPileCount: pileCounts?.drilled != null ? String(pileCounts.drilled) : totalPileForDb,
+      remainingPiles: remainingComputed,
       concretePoured: String(concretePouredSum),
+      cumulativeDrilledPiles: pileCounts?.drilled ?? null,
+      cumulativeConcretePiles: pileCounts?.concrete ?? null,
       personnelTotal: fd.personnel?.total,
       engineerCount: fd.personnel?.engineer,
       machineHours: String(currentMachine?.machineHours ?? ""),

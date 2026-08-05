@@ -1063,7 +1063,35 @@ export async function getWorkReportsFiltered(options: { siteId?: number | null; 
                (SELECT string_agg(ms.machine_name, ', ' ORDER BY ms.is_primary DESC NULLS LAST, ms.id)
                 FROM machine_selections ms WHERE ms.report_id = wr.id),
                NULLIF(TRIM(COALESCE(wr.selected_machine_name, '')), '')
-             ) AS machine_names_list
+             ) AS machine_names_list,
+             CASE
+               WHEN s.total_piles IS NOT NULL THEN
+                 GREATEST(
+                   0,
+                   s.total_piles
+                   - (
+                     COALESCE((
+                       SELECT SUM(
+                         CASE
+                           WHEN COALESCE(TRIM(w2.concrete_poured), '') ~ '^[0-9]+$' THEN TRIM(w2.concrete_poured)::int
+                           ELSE 0
+                         END
+                       )
+                       FROM work_reports w2
+                       WHERE w2.site_id = wr.site_id
+                         AND (
+                           w2.date < wr.date
+                           OR (w2.date = wr.date AND w2.id <= wr.id)
+                         )
+                     ), 0)
+                     + CASE
+                         WHEN s.is_ongoing = true THEN COALESCE(s.initial_piles_done, 0)
+                         ELSE 0
+                       END
+                   )
+                 )::text
+               ELSE wr.remaining_piles
+             END AS remaining_piles
       FROM work_reports wr
       LEFT JOIN sites s ON wr.site_id = s.id
       LEFT JOIN users u ON u.id = wr.submitted_by_user_id
@@ -1718,26 +1746,74 @@ export async function getAdminDashboardSiteSummaries(options: { siteId?: number 
       [siteIds]
     )
 
-    const latestRem = await client.query<{ site_id: number; remaining_piles: string | null }>(
-      `SELECT DISTINCT ON (wr.site_id) wr.site_id, wr.remaining_piles
-       FROM work_reports wr
-       WHERE wr.site_id = ANY($1::int[])
-       ORDER BY wr.site_id, wr.date DESC, wr.id DESC`,
+    const latestRem = await client.query<{ site_id: number; remaining_computed: string | null }>(
+      `SELECT s.id AS site_id,
+        CASE
+          WHEN s.total_piles IS NOT NULL THEN
+            GREATEST(
+              0,
+              s.total_piles
+              - (
+                COALESCE((
+                  SELECT SUM(
+                    CASE
+                      WHEN COALESCE(TRIM(w2.concrete_poured), '') ~ '^[0-9]+$' THEN TRIM(w2.concrete_poured)::int
+                      ELSE 0
+                    END
+                  )
+                  FROM work_reports w2
+                  WHERE w2.site_id = s.id
+                ), 0)
+                + CASE WHEN s.is_ongoing = true THEN COALESCE(s.initial_piles_done, 0) ELSE 0 END
+              )
+            )::text
+          ELSE (
+            SELECT wr.remaining_piles FROM work_reports wr
+            WHERE wr.site_id = s.id
+            ORDER BY wr.date DESC, wr.id DESC LIMIT 1
+          )
+        END AS remaining_computed
+       FROM sites s
+       WHERE s.id = ANY($1::int[])`,
       [siteIds]
     )
 
-    const todayRem = await client.query<{ site_id: number; remaining_piles: string | null }>(
-      `SELECT DISTINCT ON (wr.site_id) wr.site_id, wr.remaining_piles
-       FROM work_reports wr
-       WHERE wr.site_id = ANY($1::int[]) AND wr.date::text = $2
-       ORDER BY wr.site_id, wr.id DESC`,
+    const todayRem = await client.query<{ site_id: number; remaining_computed: string | null }>(
+      `SELECT s.id AS site_id,
+        CASE
+          WHEN s.total_piles IS NOT NULL THEN
+            GREATEST(
+              0,
+              s.total_piles
+              - (
+                COALESCE((
+                  SELECT SUM(
+                    CASE
+                      WHEN COALESCE(TRIM(w2.concrete_poured), '') ~ '^[0-9]+$' THEN TRIM(w2.concrete_poured)::int
+                      ELSE 0
+                    END
+                  )
+                  FROM work_reports w2
+                  WHERE w2.site_id = s.id AND w2.date::text <= $2
+                ), 0)
+                + CASE WHEN s.is_ongoing = true THEN COALESCE(s.initial_piles_done, 0) ELSE 0 END
+              )
+            )::text
+          ELSE (
+            SELECT wr.remaining_piles FROM work_reports wr
+            WHERE wr.site_id = s.id AND wr.date::text = $2
+            ORDER BY wr.id DESC LIMIT 1
+          )
+        END AS remaining_computed
+       FROM sites s
+       WHERE s.id = ANY($1::int[])`,
       [siteIds, today]
     )
 
     const todayMap = new Map(todayAgg.rows.map((r) => [r.site_id, r]))
     const totalMap = new Map(totalProdAgg.rows.map((r) => [r.site_id, r]))
-    const latestRemMap = new Map(latestRem.rows.map((r) => [r.site_id, r.remaining_piles]))
-    const todayRemMap = new Map(todayRem.rows.map((r) => [r.site_id, r.remaining_piles]))
+    const latestRemMap = new Map(latestRem.rows.map((r) => [r.site_id, r.remaining_computed]))
+    const todayRemMap = new Map(todayRem.rows.map((r) => [r.site_id, r.remaining_computed]))
 
     const siteRows: AdminSiteDashboardRow[] = sites.map((s) => {
       const ta = todayMap.get(s.id)
@@ -1969,20 +2045,56 @@ export async function getSitesWithReportCount(
   }
 }
 
-/** Bir şantiyenin bir önceki rapor tarihine ait kalan kazık (son rapor) */
-export async function getLastReportRemainingBySite(siteId: number | null) {
+/** Bir şantiyenin verilen tarihten önceki (date < beforeDate) son rapor kalan kazığı */
+export async function getLastReportRemainingBySite(siteId: number | null, beforeDate?: string | null) {
   if (siteId == null) return null
   const client = await pool.connect()
   try {
-    const result = await client.query(
-      `SELECT date, remaining_piles FROM work_reports WHERE site_id = $1 ORDER BY date DESC LIMIT 1`,
-      [siteId]
-    )
+    const before = (beforeDate || "").slice(0, 10)
+    const result = before
+      ? await client.query(
+          `SELECT date, remaining_piles FROM work_reports
+           WHERE site_id = $1 AND date < $2::date
+           ORDER BY date DESC, id DESC LIMIT 1`,
+          [siteId, before],
+        )
+      : await client.query(
+          `SELECT date, remaining_piles FROM work_reports WHERE site_id = $1 ORDER BY date DESC, id DESC LIMIT 1`,
+          [siteId],
+        )
     const row = result.rows[0]
     return row ? { date: row.date, remainingPiles: row.remaining_piles } : null
   } catch (error) {
     console.error('Error fetching last report remaining:', error)
     return null
+  } finally {
+    client.release()
+  }
+}
+
+/** Verilen tarihten önce (date < beforeDate) dökülen beton adedi + devam eden projede rapor öncesi. */
+export async function getConcretePouredBeforeDate(siteId: number, beforeDate: string): Promise<number> {
+  const client = await pool.connect()
+  try {
+    const d = (beforeDate || "").slice(0, 10)
+    const site = await client.query(
+      `SELECT is_ongoing, initial_piles_done FROM sites WHERE id = $1`,
+      [siteId],
+    )
+    const siteRow = site.rows[0]
+    const initial =
+      siteRow?.is_ongoing === true && siteRow?.initial_piles_done != null
+        ? Number(siteRow.initial_piles_done) || 0
+        : 0
+    const r = await client.query(
+      `SELECT COALESCE(SUM(
+         CASE WHEN COALESCE(concrete_poured, '') ~ '^[0-9]+$' THEN concrete_poured::int ELSE 0 END
+       ), 0) AS concrete
+       FROM work_reports
+       WHERE site_id = $1 AND date < $2::date`,
+      [siteId, d],
+    )
+    return (parseInt(String(r.rows[0]?.concrete ?? "0"), 10) || 0) + initial
   } finally {
     client.release()
   }
@@ -2043,15 +2155,9 @@ export async function recalculateRemainingPilesForSite(siteId: number): Promise<
         cumulativeDoneBeforeToday = initialPilesDone
       }
       let todayPiles = 0
-      const dailyRaw = row.daily_pile_count != null ? String(row.daily_pile_count).trim() : ""
       const concRaw = row.concrete_poured != null ? String(row.concrete_poured).trim() : ""
-      const dailyParsed = dailyRaw ? parseInt(dailyRaw, 10) : NaN
-      if (!Number.isNaN(dailyParsed)) {
-        todayPiles = Math.max(0, dailyParsed)
-      } else {
-        const concParsed = concRaw ? parseInt(concRaw, 10) : NaN
-        if (!Number.isNaN(concParsed)) todayPiles = Math.max(0, concParsed)
-      }
+      const concParsed = concRaw ? parseInt(concRaw, 10) : NaN
+      if (!Number.isNaN(concParsed)) todayPiles = Math.max(0, concParsed)
       const newRemaining = Math.max(0, totalPiles - cumulativeDoneBeforeToday - todayPiles)
       const newRemainingStr = String(newRemaining)
       const dateStr = (row.date || "").slice(0, 10)

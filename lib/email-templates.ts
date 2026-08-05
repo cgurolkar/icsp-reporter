@@ -10,10 +10,17 @@ export interface ReportNotificationData {
   siteCode?: string | null
   project?: string
   submittedBy?: string
-  // Üretim
+  // Üretim — günlük
+  dailyDrilledPiles?: string | number | null
+  dailyConcretePiles?: string | number | null
+  /** Gün sonu kalan (beton dökülecek = toplam − kümülatif beton) */
+  remainingPiles?: string | number | null
+  // Üretim — kümülatif
+  cumulativeDrilledPiles?: string | number | null
+  cumulativeConcretePiles?: string | number | null
+  /** Geriye dönük uyumluluk */
   dailyPileCount?: string | number | null
   totalPileCount?: string | number | null
-  remainingPiles?: string | number | null
   concretePoured?: string | number | null
   // Personel
   personnelTotal?: string | number | null
@@ -123,6 +130,9 @@ function baseLayout(title: string, content: string): string {
 }
 
 function stat(label: string, value: string | number | null | undefined, icon = "—"): string {
+  if (!label) {
+    return `<td style="padding:12px 8px;"></td>`
+  }
   const displayVal = (value != null && value !== "" && value !== "—") ? String(value) : "—"
   return `
   <td style="text-align:center;padding:12px 8px;">
@@ -176,16 +186,28 @@ export function buildReportNotificationEmail(data: ReportNotificationData): { su
     <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:${COLORS.textSecondary};font-weight:600;margin-bottom:12px;">Üretim Özeti</div>
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid ${COLORS.border};border-radius:10px;">
       <tr>
-        ${stat("Günlük Kazık", data.dailyPileCount, "adet")}
-        ${stat("Toplam Kazık", data.totalPileCount, "kümülatif")}
-        ${stat("Kalan Kazık", data.remainingPiles, "adet")}
+        <td colspan="4" style="padding:10px 12px 4px;font-size:11px;font-weight:700;color:${COLORS.accent};text-transform:uppercase;letter-spacing:0.5px;">Bugün (günlük)</td>
+      </tr>
+      <tr>
+        ${stat("Delgi", data.dailyDrilledPiles ?? data.dailyPileCount, "adet")}
+        ${stat("Beton dökülen", data.dailyConcretePiles ?? data.concretePoured, "adet")}
+        ${stat("Kalan (beton)", data.remainingPiles, "adet")}
         ${stat("Makine Saati", data.machineHours, "saat")}
       </tr>
       <tr style="border-top:1px solid ${COLORS.border};">
+        <td colspan="4" style="padding:10px 12px 4px;font-size:11px;font-weight:700;color:${COLORS.accent};text-transform:uppercase;letter-spacing:0.5px;">Toplam (kümülatif)</td>
+      </tr>
+      <tr>
+        ${stat("Delgi", data.cumulativeDrilledPiles ?? data.totalPileCount, "adet")}
+        ${stat("Beton dökülen", data.cumulativeConcretePiles ?? data.concretePoured, "adet")}
+        ${stat("Kalan (beton)", data.remainingPiles, "adet")}
         ${stat("Personel", data.personnelTotal, "kişi")}
+      </tr>
+      <tr style="border-top:1px solid ${COLORS.border};">
         ${stat("Yakıt", data.dailyFuelUsage, "litre")}
         ${stat("Harcama", expenseStr, "bugün")}
-        ${stat("Beton", data.concretePoured, "adet")}
+        ${stat("", null, "")}
+        ${stat("", null, "")}
       </tr>
     </table>
   </div>

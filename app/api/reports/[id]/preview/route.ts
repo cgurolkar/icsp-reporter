@@ -55,8 +55,15 @@ export async function GET(
     const hakedisBreakdown =
       showHakedis && siteId && reportDate ? await getCumulativeHakedisBreakdown(siteId, reportDate) : null
     const pileCounts = siteId && reportDate ? await getCumulativePileCounts(siteId, reportDate) : null
+    const totalPiles = site?.total_piles != null ? Number(site.total_piles) : null
+    const remainingComputed =
+      totalPiles != null && pileCounts != null
+        ? String(Math.max(0, totalPiles - (Number(pileCounts.concrete) || 0)))
+        : r.remaining_piles != null && String(r.remaining_piles).trim() !== ""
+          ? String(r.remaining_piles)
+          : undefined
     const html = generatePDFMainReport(formData, {
-      computedRemainingPiles: r.remaining_piles != null && String(r.remaining_piles).trim() !== "" ? String(r.remaining_piles) : undefined,
+      computedRemainingPiles: remainingComputed,
       computedDailyPileCount: r.daily_pile_count != null && String(r.daily_pile_count).trim() !== "" ? String(r.daily_pile_count) : (concretePoured > 0 ? String(concretePoured) : undefined),
       concretePouredSum: concretePoured || undefined,
       projectStartDate,
@@ -68,7 +75,7 @@ export async function GET(
       hakedisBreakdown,
       cumulativeDrilledPiles: pileCounts?.drilled ?? null,
       cumulativeConcretePiles: pileCounts?.concrete ?? null,
-      projectTotalPiles: site?.total_piles != null ? Number(site.total_piles) : null,
+      projectTotalPiles: totalPiles,
       operatorEntries,
     }) + generatePDFExpensesPage(formData)
     return new NextResponse(html, {

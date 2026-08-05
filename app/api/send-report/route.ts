@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { randomUUID } from "crypto"
 import fs from "fs"
 import path from "path"
-import { saveWorkReport, initializeDatabase, getMergedNotificationEmails, getSiteById, getLastReportRemainingBySite, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativePileCounts } from "@/lib/database"
+import { saveWorkReport, initializeDatabase, getMergedNotificationEmails, getSiteById, getLastReportRemainingBySite, getConcretePouredBeforeDate, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativePileCounts } from "@/lib/database"
 import { formatMeters, sumConcretePouredDrilledMeters } from "@/lib/concrete-meters"
 import { fullReportHtmlAttachment, isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
@@ -113,22 +113,21 @@ export async function POST(request: NextRequest) {
     const daysElapsed = projectStartDate && reportDateStr
       ? Math.max(0, Math.floor((new Date(`${reportDateStr}T00:00:00Z`).getTime() - new Date(`${projectStartDate}T00:00:00Z`).getTime()) / 86400000) + 1)
       : null
-    // Kalan kazık: Yeni proje = 0 başlangıç; Devam eden = rapor başlangıcında girilen yapılan düşülür. Kümülatif = önceki yapılan + bugün
+    // Kalan kazık = proje toplamı − kümülatif beton (bugünden önceki raporlar + bugün)
     let remainingPilesForDb = currentProductionSummary?.remainingPiles ?? ""
     let cumulativeConcreteAfterToday = 0
     if (siteIdForDb && site) {
       const totalPiles = site.total_piles != null ? Number(site.total_piles) : null
-      const last = await getLastReportRemainingBySite(siteIdForDb)
-      let cumulativeDoneBeforeToday = 0
-      if (last?.remainingPiles != null && totalPiles != null) {
-        cumulativeDoneBeforeToday = totalPiles - (parseInt(String(last.remainingPiles), 10) || 0)
-      } else if (site.is_ongoing && site.initial_piles_done != null) {
-        cumulativeDoneBeforeToday = Number(site.initial_piles_done)
-      }
+      const beforeConcrete = await getConcretePouredBeforeDate(siteIdForDb, reportDateStr)
       const todayPiles = concretePouredSum || 0
-      cumulativeConcreteAfterToday = cumulativeDoneBeforeToday + todayPiles
-      if (totalPiles != null) {
+      cumulativeConcreteAfterToday = beforeConcrete + todayPiles
+      if (totalPiles != null && Number.isFinite(totalPiles)) {
         remainingPilesForDb = String(Math.max(0, totalPiles - cumulativeConcreteAfterToday))
+      } else {
+        const last = await getLastReportRemainingBySite(siteIdForDb, reportDateStr)
+        if (last?.remainingPiles != null) {
+          remainingPilesForDb = String(Math.max(0, (parseInt(String(last.remainingPiles), 10) || 0) - todayPiles))
+        }
       }
     }
     const totalProductionAllMachines = productionSummary.reduce(
@@ -284,13 +283,17 @@ export async function POST(request: NextRequest) {
     // E-posta: SMTP_USER + global admin listesi (Postgres) + şantiye email_list
     const reportRecipients = await getMergedNotificationEmails({ siteId: siteIdForDb })
 
-    // Kayıt sonrası kümülatif delgi/beton (hakediş e-postada yok — yalnızca önizleme)
+    // Kayıt sonrası kümülatif delgi/beton
     const pileCountsAfterSave =
       siteIdForDb && reportDateStr ? await getCumulativePileCounts(siteIdForDb, reportDateStr) : null
+    const remainingAfterSave =
+      site?.total_piles != null && pileCountsAfterSave != null
+        ? String(Math.max(0, Number(site.total_piles) - (Number(pileCountsAfterSave.concrete) || 0)))
+        : remainingPilesForDb
 
     // Rapor HTML içeriği (e-posta gövdesi / yazdırma için) — hesaplanan kalan/günlük kazık kullanılsın
     const mainReportContent = generatePDFMainReport(formData, {
-      computedRemainingPiles: remainingPilesForDb,
+      computedRemainingPiles: remainingAfterSave,
       computedDailyPileCount: dailyPileForDb,
       concretePouredSum,
       projectStartDate,
@@ -365,9 +368,13 @@ export async function POST(request: NextRequest) {
         project: projectName,
         submittedBy: session.username || session.role,
         dailyPileCount: dailyPileForDb,
-        totalPileCount: totalPileForDb,
-        remainingPiles: remainingPilesForDb,
-        concretePoured: currentProductionSummary?.concretePoured,
+        dailyDrilledPiles: dailyPileForDb,
+        dailyConcretePiles: concretePouredSum,
+        totalPileCount: pileCountsAfterSave?.drilled != null ? String(pileCountsAfterSave.drilled) : totalPileForDb,
+        remainingPiles: remainingAfterSave,
+        concretePoured: String(concretePouredSum),
+        cumulativeDrilledPiles: pileCountsAfterSave?.drilled ?? null,
+        cumulativeConcretePiles: pileCountsAfterSave?.concrete ?? null,
         personnelTotal: formData.personnel?.total,
         engineerCount: formData.personnel?.engineer,
         machineHours: currentMachine?.machineHours,
