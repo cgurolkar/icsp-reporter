@@ -2966,6 +2966,7 @@ function AdminPanel() {
                   onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialEmptyBorehole: e.target.value }))}
                   placeholder="Rapor başlamadan önce yapılan boş foraj"
                   inputProps={{ min: 0 }}
+                  helperText="Delgisi tamamlanan / delgisi yapılmayan sayılarına eklenir (raporlarda anında). Kalan kazık hesabına girmez; bu alan için «yeniden hesapla» gerekmez."
                 />
                 <TextField
                   margin="dense"
@@ -2974,9 +2975,9 @@ function AdminPanel() {
                   label="Rapor öncesi yapılan kazık (Ad.)"
                   value={siteDialogData.initialPilesDone}
                   onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialPilesDone: e.target.value }))}
-                  placeholder="Rapor öncesi kümülatif yapılan kazık"
+                  placeholder="Rapor öncesi kümülatif beton dökülen kazık"
                   inputProps={{ min: 0 }}
-                  helperText="Kalan kazık = Proje toplamı − kümülatif beton dökülen (adet). Delgi adedi bu hesaba katılmaz. Kaydettikten sonra alttaki düğmeyle eski raporlardaki kalan kazıkları güncelleyin."
+                  helperText="Kalan kazık = Proje toplamı − (bu değer + raporlardaki beton dökülen adet). Değiştirdikten sonra önce Kaydet, sonra «Kalan kazıkları yeniden hesapla»."
                 />
                 {isSuperAdmin && (siteDialogData.pileRates || []).filter((r) => r.diameterMm.trim()).length <= 1 && (
                   <TextField
@@ -3026,13 +3027,82 @@ function AdminPanel() {
                   }
                   if (
                     !confirm(
-                      "Bu şantiye için veritabanındaki tüm raporlarda kalan kazık, kayıtlı şantiye ayarına göre yeniden hesaplanacak. Devam edilsin mi?"
+                      "Önce bu diyalogdaki şantiye ayarları kaydedilir, sonra tüm raporlarda kalan kazık (toplam − kümülatif beton) yeniden hesaplanır.\n\nNot: Rapor öncesi boş foraj kalan kazığı değiştirmez; yalnızca delgi kümülasyonuna eklenir.\n\nDevam edilsin mi?"
                     )
                   ) {
                     return
                   }
                   setSiteRemainingRecalcLoading(true)
                   try {
+                    const kazikIds = siteDialogData.assignedMachineIds.filter((id) =>
+                      idariMachineOptions.some((m) => String(m.id) === id && m.machine_type === "Kazık Makinesi"),
+                    )
+                    const savePayload = {
+                      name: siteDialogData.name.trim(),
+                      code: siteDialogData.code.trim(),
+                      country: siteDialogData.country.trim() || null,
+                      timezone: siteDialogData.timezone.trim() || null,
+                      emailList: Array.isArray(siteDialogData.emailList) ? siteDialogData.emailList : [],
+                      totalPiles: siteDialogData.totalPiles.trim() ? parseInt(siteDialogData.totalPiles, 10) || null : null,
+                      iqdPerUsd: siteDialogData.iqdPerUsd.trim() ? Number(siteDialogData.iqdPerUsd) : 1320,
+                      authorizedPerson: siteDialogData.authorizedPerson.trim() || null,
+                      employer: siteDialogData.employer.trim() || null,
+                      projectStartDate: siteDialogData.projectStartDate.trim() || null,
+                      isOngoing: siteDialogData.isOngoing,
+                      initialPilesDone:
+                        siteDialogData.isOngoing && siteDialogData.initialPilesDone.trim()
+                          ? parseInt(siteDialogData.initialPilesDone, 10) || null
+                          : null,
+                      initialEmptyBorehole:
+                        siteDialogData.isOngoing && siteDialogData.initialEmptyBorehole.trim()
+                          ? parseInt(siteDialogData.initialEmptyBorehole, 10) || null
+                          : null,
+                      initialConcreteMeters:
+                        siteDialogData.isOngoing &&
+                        (siteDialogData.pileRates || []).filter((r) => r.diameterMm.trim()).length <= 1 &&
+                        siteDialogData.initialConcreteMeters.trim()
+                          ? Number(siteDialogData.initialConcreteMeters)
+                          : null,
+                      ...(isSuperAdmin
+                        ? {
+                            billingCurrency: normalizeSiteCurrency(siteDialogData.billingCurrency),
+                            contractUnitPrice: siteDialogData.contractUnitPrice.trim()
+                              ? Number(siteDialogData.contractUnitPrice)
+                              : null,
+                            pileRates: (siteDialogData.pileRates || [])
+                              .map((r) => ({
+                                diameterMm: Number(r.diameterMm),
+                                label: r.label.trim() || null,
+                                pricePrimary: Number(r.pricePrimary),
+                                priceSecondary: r.priceSecondary.trim() ? Number(r.priceSecondary) : null,
+                              }))
+                              .filter(
+                                (r) =>
+                                  Number.isFinite(r.diameterMm) &&
+                                  r.diameterMm > 0 &&
+                                  Number.isFinite(r.pricePrimary) &&
+                                  r.pricePrimary >= 0,
+                              ),
+                          }
+                        : {}),
+                      assignedMachineIds: kazikIds,
+                      assignedOperatorIds: siteDialogData.assignedOperatorIds || [],
+                      assignedMachineOperators: (siteDialogData.assignedMachineOperators || []).filter(
+                        (o) => o.personelId > 0 && kazikIds.includes(o.machineId),
+                      ),
+                      isActive: siteDialogData.isActive,
+                      releaseMachinesFromSite: !siteDialogData.isActive && siteDialogData.releaseMachinesWhenClosed,
+                    }
+                    const saveRes = await fetch(`/api/sites/${siteDialogData.id}`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(savePayload),
+                    })
+                    const saveData = await saveRes.json().catch(() => ({}))
+                    if (!saveRes.ok) {
+                      alert(saveData.error || saveData.message || `Şantiye kaydedilemedi (${saveRes.status})`)
+                      return
+                    }
                     const res = await fetch("/api/admin/recalculate-site-remaining", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
@@ -3040,13 +3110,14 @@ function AdminPanel() {
                     })
                     const data = await res.json().catch(() => ({}))
                     if (res.ok) {
+                      await loadSites()
                       alert(
                         data.updatedCount > 0
-                          ? `${data.updatedCount} raporda kalan kazık güncellendi.`
-                          : "Tüm raporlar zaten güncel görünüyor (değişen satır yok)."
+                          ? `Şantiye kaydedildi. ${data.updatedCount} raporda kalan kazık güncellendi.`
+                          : "Şantiye kaydedildi. Kalan kazık zaten güncel (beton kümülasyonuna göre değişen satır yok).\n\nRapor öncesi boş foraj yalnızca delgi sayılarını etkiler; rapor/önizlemede anında görünür.",
                       )
                     } else {
-                      alert(data.error || "İşlem başarısız.")
+                      alert(data.error || "Kalan kazık hesaplaması başarısız (şantiye kaydedildi).")
                     }
                   } catch (e) {
                     console.error(e)
