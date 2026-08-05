@@ -2961,24 +2961,47 @@ function AdminPanel() {
                   margin="dense"
                   fullWidth
                   type="number"
-                  label="Rapor öncesi boş foraj (Ad.)"
+                  label="Rapor öncesi boş foraj (Ad.) — sadece delgi"
                   value={siteDialogData.initialEmptyBorehole}
                   onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialEmptyBorehole: e.target.value }))}
-                  placeholder="Rapor başlamadan önce yapılan boş foraj"
+                  placeholder="Beton dökülmemiş, yalnızca delinmiş kazık"
                   inputProps={{ min: 0 }}
-                  helperText="Delgisi tamamlanan / delgisi yapılmayan sayılarına eklenir (raporlarda anında). Kalan kazık hesabına girmez; bu alan için «yeniden hesapla» gerekmez."
+                  helperText="Yalnızca delgi kümülasyonuna eklenir."
                 />
                 <TextField
                   margin="dense"
                   fullWidth
                   type="number"
-                  label="Rapor öncesi yapılan kazık (Ad.)"
+                  label="Rapor öncesi beton dökülen kazık (Ad.)"
                   value={siteDialogData.initialPilesDone}
                   onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialPilesDone: e.target.value }))}
-                  placeholder="Rapor öncesi kümülatif beton dökülen kazık"
+                  placeholder="Rapor öncesi beton dökülmüş kazık adedi"
                   inputProps={{ min: 0 }}
-                  helperText="Kalan kazık = Proje toplamı − (bu değer + raporlardaki beton dökülen adet). Değiştirdikten sonra önce Kaydet, sonra «Kalan kazıkları yeniden hesapla»."
+                  helperText="Yalnızca beton kümülasyonuna eklenir (delgiye karışmaz)."
                 />
+                <Box
+                  sx={{
+                    p: 1.5,
+                    borderRadius: 1,
+                    bgcolor: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                  }}
+                >
+                  <Typography variant="caption" sx={{ display: "block", color: "#334155", fontWeight: 600, mb: 0.75 }}>
+                    İki ayrı kalan hesabı (Kaydet sonrası raporlarda)
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: "block", color: "#475569", mb: 0.5 }}>
+                    <strong>Kalan delinmemiş</strong> (Delgisi yapılmayan) = Toplam − boş foraj − rapor delgileri
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: "block", color: "#475569", mb: 0.5 }}>
+                    <strong>Kalan beton dökülmemiş</strong> (Beton dökülecek / listedeki kalan) = Toplam − beton dökülen
+                    (öncesi) − rapor betonları
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: "block", color: "#64748b" }}>
+                    «Kalan kazıkları yeniden hesapla» yalnızca beton kalanını DB’de günceller. Delgi kalanı Kaydet ile anında
+                    değişir.
+                  </Typography>
+                </Box>
                 {isSuperAdmin && (siteDialogData.pileRates || []).filter((r) => r.diameterMm.trim()).length <= 1 && (
                   <TextField
                     margin="dense"
@@ -3027,7 +3050,7 @@ function AdminPanel() {
                   }
                   if (
                     !confirm(
-                      "Önce bu diyalogdaki şantiye ayarları kaydedilir, sonra tüm raporlarda kalan kazık (toplam − kümülatif beton) yeniden hesaplanır.\n\nNot: Rapor öncesi boş foraj kalan kazığı değiştirmez; yalnızca delgi kümülasyonuna eklenir.\n\nDevam edilsin mi?"
+                      "Önce bu diyalogdaki şantiye ayarları kaydedilir, sonra tüm raporlarda kalan kazık (toplam − kümülatif beton) yeniden hesaplanır.\n\nKalan delinmemiş (Delgisi yapılmayan) Kaydet sonrası anında: Toplam − boş foraj − rapor delgileri.\n\nDevam edilsin mi?"
                     )
                   ) {
                     return
@@ -3113,8 +3136,8 @@ function AdminPanel() {
                       await loadSites()
                       alert(
                         data.updatedCount > 0
-                          ? `Şantiye kaydedildi. ${data.updatedCount} raporda kalan kazık güncellendi.`
-                          : "Şantiye kaydedildi. Kalan kazık zaten güncel (beton kümülasyonuna göre değişen satır yok).\n\nRapor öncesi boş foraj yalnızca delgi sayılarını etkiler; rapor/önizlemede anında görünür.",
+                          ? `Şantiye kaydedildi. ${data.updatedCount} raporda kalan kazık (beton) güncellendi.`
+                          : "Şantiye kaydedildi. Kalan beton zaten güncel.\n\nKalan delinmemiş (Delgisi yapılmayan) rapor/önizlemede: Toplam − boş foraj − rapor delgileri.",
                       )
                     } else {
                       alert(data.error || "Kalan kazık hesaplaması başarısız (şantiye kaydedildi).")

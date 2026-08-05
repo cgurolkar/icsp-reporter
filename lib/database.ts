@@ -2807,8 +2807,7 @@ export async function getCumulativePileCounts(
       isOngoing && siteRow?.initial_piles_done != null
         ? Number(siteRow.initial_piles_done) || 0
         : 0
-    // Devam eden şantiyede rapor öncesi boş foraj da delgisi tamamlanan sayılır.
-    // Günlük emptyBorehole ayrıca eklenmez — o gün delgi adedi (dailyDrilledPiles) zaten o günün delgisidir.
+    // Boş foraj → yalnızca delgi. Beton dökülen (öncesi) → yalnızca beton. İkisi karışmaz.
     const initialEmptyBorehole =
       isOngoing && siteRow?.initial_empty_borehole != null
         ? Number(siteRow.initial_empty_borehole) || 0
