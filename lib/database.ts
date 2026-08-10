@@ -2789,7 +2789,56 @@ export async function getCumulativeTotalProduction(siteId: number, date: string)
   }
 }
 
-/** Şantiye bazında kümülatif delgi (adet) + beton dökülen (adet). */
+/** Bir rapor satırından o günün delgi adedi.
+ * Öncelik: production_summary dailyDrilledPiles.
+ * Beton (concrete_poured / dailyPileCount=beton) delgiye karışmaz.
+ */
+function drilledCountFromReportRow(row: {
+  production_summary_json?: unknown
+  daily_pile_count?: unknown
+  concrete_poured?: unknown
+}): number {
+  const raw = row.production_summary_json
+  let ps: unknown[] | null = null
+  if (Array.isArray(raw)) ps = raw
+  else if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) ps = parsed
+    } catch {
+      ps = null
+    }
+  }
+  if (ps && ps.length > 0) {
+    let drilledSum = 0
+    let anyDrilled = false
+    for (const m of ps) {
+      if (!m || typeof m !== "object") continue
+      const rec = m as Record<string, unknown>
+      const d = String(rec.dailyDrilledPiles ?? rec.daily_drilled_piles ?? "").trim()
+      if (d === "") continue
+      const n = parseInt(d, 10)
+      if (!Number.isFinite(n)) continue
+      anyDrilled = true
+      drilledSum += Math.max(0, n)
+    }
+    if (anyDrilled) return drilledSum
+    // JSON var ama delgi yok → beton sütununa düşme
+    return 0
+  }
+  // Eski kayıt: production_summary yok; daily_pile_count yalnızca betondan farklıysa delgi kabul
+  const fallback = String(row.daily_pile_count ?? "").trim()
+  const concrete = String(row.concrete_poured ?? "").trim()
+  if (fallback !== "" && /^\d+$/.test(fallback) && fallback !== concrete) {
+    return Math.max(0, parseInt(fallback, 10) || 0)
+  }
+  return 0
+}
+
+/** Şantiye bazında kümülatif delgi (adet) + beton dökülen (adet).
+ * Kalan delinmemiş = total − rapor öncesi boş foraj − Σ günlük delgi (≤ date)
+ * Kalan beton = total − rapor öncesi beton − Σ concrete_poured
+ */
 export async function getCumulativePileCounts(
   siteId: number,
   date: string,
@@ -2807,45 +2856,36 @@ export async function getCumulativePileCounts(
       isOngoing && siteRow?.initial_piles_done != null
         ? Number(siteRow.initial_piles_done) || 0
         : 0
-    // Boş foraj → yalnızca delgi. Beton dökülen (öncesi) → yalnızca beton. İkisi karışmaz.
+    // Rapor öncesi boş foraj → delgi kümülasyonu (değer varsa)
     const initialEmptyBorehole =
-      isOngoing && siteRow?.initial_empty_borehole != null
+      siteRow?.initial_empty_borehole != null
         ? Number(siteRow.initial_empty_borehole) || 0
         : 0
 
-    const r = await client.query(
-      `SELECT
-          COALESCE(SUM(
-            CASE
-              WHEN production_summary_json IS NOT NULL AND jsonb_typeof(production_summary_json) = 'array' THEN
-                (
-                  SELECT COALESCE(SUM(
-                    CASE
-                      WHEN COALESCE(elem->>'dailyDrilledPiles', elem->>'dailyPileCount', '') ~ '^[0-9]+'
-                        THEN COALESCE(NULLIF(elem->>'dailyDrilledPiles', ''), NULLIF(elem->>'dailyPileCount', ''), '0')::int
-                      ELSE 0
-                    END
-                  ), 0)
-                  FROM jsonb_array_elements(production_summary_json) AS elem
-                )
-              WHEN COALESCE(daily_pile_count, '') ~ '^[0-9]+' THEN daily_pile_count::int
-              ELSE 0
-            END
-          ), 0) AS drilled,
-          COALESCE(SUM(
-            CASE
-              WHEN COALESCE(concrete_poured, '') ~ '^[0-9]+' THEN concrete_poured::int
-              ELSE 0
-            END
-          ), 0) AS concrete
+    const reports = await client.query<{
+      production_summary_json: unknown
+      daily_pile_count: string | null
+      concrete_poured: string | null
+    }>(
+      `SELECT production_summary_json, daily_pile_count, concrete_poured
        FROM work_reports
-       WHERE site_id = $1 AND date <= $2`,
+       WHERE site_id = $1 AND date <= $2::date
+       ORDER BY date ASC, id ASC`,
       [siteId, d],
     )
-    const drilledFromReports = parseInt(String(r.rows[0]?.drilled ?? "0"), 10) || 0
-    const drilled = drilledFromReports + initialEmptyBorehole
-    const concreteFromReports = (parseInt(String(r.rows[0]?.concrete ?? "0"), 10) || 0) + initialConcrete
-    return { drilled, concrete: concreteFromReports }
+
+    let drilledFromReports = 0
+    let concreteFromReports = 0
+    for (const row of reports.rows) {
+      drilledFromReports += drilledCountFromReportRow(row)
+      const c = String(row.concrete_poured ?? "").trim()
+      if (c !== "" && /^\d+$/.test(c)) concreteFromReports += Math.max(0, parseInt(c, 10) || 0)
+    }
+
+    return {
+      drilled: drilledFromReports + initialEmptyBorehole,
+      concrete: concreteFromReports + initialConcrete,
+    }
   } finally {
     client.release()
   }

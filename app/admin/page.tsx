@@ -2991,7 +2991,8 @@ function AdminPanel() {
                     İki ayrı kalan hesabı (Kaydet sonrası raporlarda)
                   </Typography>
                   <Typography variant="caption" sx={{ display: "block", color: "#475569", mb: 0.5 }}>
-                    <strong>Kalan delinmemiş</strong> (Delgisi yapılmayan) = Toplam − boş foraj − rapor delgileri
+                    <strong>Kalan delinmemiş</strong> (Delgisi yapılmayan) = Proje toplamı − rapor öncesi boş foraj − o güne
+                    kadar günlük rapor delgi toplamları
                   </Typography>
                   <Typography variant="caption" sx={{ display: "block", color: "#475569", mb: 0.5 }}>
                     <strong>Kalan beton dökülmemiş</strong> (Beton dökülecek / listedeki kalan) = Toplam − beton dökülen
