@@ -735,6 +735,27 @@ async function _doInitializeDatabase() {
       CREATE INDEX IF NOT EXISTS idx_machine_operator_personel ON machine_operator_atama(personel_id);
     `)
 
+    // Çift açık operatör atamalarını tek satıra indir; bugün soft-delete edilenleri dün bitiş yap
+    await client.query(`
+      UPDATE machine_operator_atama moa
+      SET bitis_tarihi = (CURRENT_DATE - INTERVAL '1 day')::date
+      FROM (
+        SELECT id,
+               ROW_NUMBER() OVER (
+                 PARTITION BY machine_id, personel_id
+                 ORDER BY baslangic_tarihi ASC NULLS LAST, id ASC
+               ) AS rn
+        FROM machine_operator_atama
+        WHERE bitis_tarihi IS NULL
+      ) d
+      WHERE moa.id = d.id AND d.rn > 1
+    `)
+    await client.query(`
+      UPDATE machine_operator_atama
+      SET bitis_tarihi = (CURRENT_DATE - INTERVAL '1 day')::date
+      WHERE bitis_tarihi = CURRENT_DATE
+    `)
+
     console.log('Database tables created successfully')
   } catch (error) {
     console.error('Error initializing database:', error)
@@ -1899,19 +1920,107 @@ async function resolveMachineLabelForPersonel(client: { query: (q: string, p?: u
   return MACHINE_ID_TO_NAME[machineId] || machineId
 }
 
+/** Açık makine-operatör atamasını kapatır (bitiş = dün → anında pasif). */
+async function closeOpenMachineOperators(
+  client: { query: (q: string, p?: unknown[]) => Promise<unknown> },
+  machineIds: number[],
+): Promise<void> {
+  if (machineIds.length === 0) return
+  await client.query(
+    `UPDATE machine_operator_atama
+     SET bitis_tarihi = (CURRENT_DATE - INTERVAL '1 day')::date
+     WHERE bitis_tarihi IS NULL AND machine_id = ANY($1::int[])`,
+    [machineIds],
+  )
+}
+
+/** Makineyi diğer şantiyelerin assigned_machine_ids / assigned_machine_operators listelerinden çıkarır. */
+async function removeMachinesFromOtherSitesJson(
+  client: { query: (q: string, p?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> },
+  machineIds: number[],
+  keepSiteId: number | null,
+): Promise<void> {
+  if (machineIds.length === 0) return
+  const idSet = new Set(machineIds.map(String))
+  const sites = await client.query(
+    `SELECT id, assigned_machine_ids, assigned_machine_operators
+     FROM sites
+     WHERE ($1::int IS NULL OR id <> $1)`,
+    [keepSiteId],
+  )
+  for (const site of sites.rows) {
+    const idsRaw = site.assigned_machine_ids
+    const opsRaw = site.assigned_machine_operators
+    const ids = Array.isArray(idsRaw) ? idsRaw : []
+    const ops = Array.isArray(opsRaw) ? opsRaw : []
+    const newIds = ids.filter((x) => !idSet.has(String(x)))
+    const newOps = ops.filter((o) => {
+      if (!o || typeof o !== "object") return true
+      return !idSet.has(String((o as { machineId?: unknown }).machineId))
+    })
+    if (newIds.length === ids.length && newOps.length === ops.length) continue
+    await client.query(
+      `UPDATE sites
+       SET assigned_machine_ids = $1::jsonb,
+           assigned_machine_operators = $2::jsonb,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3`,
+      [JSON.stringify(newIds), JSON.stringify(newOps), site.id],
+    )
+  }
+}
+
+/** İdari makine şantiye değişince JSON listelerini senkronlar. */
+export async function syncMachineSiteMembership(
+  machineId: number,
+  newSiteId: number | null,
+): Promise<void> {
+  const client = await pool.connect()
+  try {
+    await removeMachinesFromOtherSitesJson(client, [machineId], newSiteId)
+    if (newSiteId == null) return
+    const site = await client.query(
+      `SELECT assigned_machine_ids FROM sites WHERE id = $1`,
+      [newSiteId],
+    )
+    const row = site.rows[0]
+    if (!row) return
+    const ids = Array.isArray(row.assigned_machine_ids) ? [...row.assigned_machine_ids] : []
+    if (ids.some((x) => String(x) === String(machineId))) return
+    ids.push(String(machineId))
+    await client.query(
+      `UPDATE sites SET assigned_machine_ids = $1::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [JSON.stringify(ids), newSiteId],
+    )
+  } finally {
+    client.release()
+  }
+}
+
 /** Şantiyedeki tüm makinelerin konumunu sıfırlar; bu makinelerdeki açık operatör atamalarına bitiş tarihi verir. */
 export async function releaseMachinesFromSite(siteId: number): Promise<void> {
   const client = await pool.connect()
   try {
-    await client.query(
-      `UPDATE machine_operator_atama moa
-       SET bitis_tarihi = CURRENT_DATE
-       FROM machines m
-       WHERE moa.machine_id = m.id AND m.current_site_id = $1 AND moa.bitis_tarihi IS NULL`,
+    const leaving = await client.query<{ id: number }>(
+      `SELECT id FROM machines WHERE current_site_id = $1`,
       [siteId],
+    )
+    await closeOpenMachineOperators(
+      client,
+      leaving.rows.map((r) => r.id),
     )
     await client.query(
       `UPDATE machines SET current_site_id = NULL, updated_at = NOW() WHERE current_site_id = $1`,
+      [siteId],
+    )
+    await removeMachinesFromOtherSitesJson(client, leaving.rows.map((r) => r.id), null)
+    // Bu şantiyenin kendi JSON listelerini de temizle
+    await client.query(
+      `UPDATE sites
+       SET assigned_machine_ids = '[]'::jsonb,
+           assigned_machine_operators = '[]'::jsonb,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
       [siteId],
     )
   } finally {
@@ -1925,12 +2034,13 @@ export async function softDeleteSite(siteId: number, releaseMachines = true): Pr
   try {
     await client.query("BEGIN")
     if (releaseMachines) {
-      await client.query(
-        `UPDATE machine_operator_atama moa
-         SET bitis_tarihi = CURRENT_DATE
-         FROM machines m
-         WHERE moa.machine_id = m.id AND m.current_site_id = $1 AND moa.bitis_tarihi IS NULL`,
+      const leaving = await client.query<{ id: number }>(
+        `SELECT id FROM machines WHERE current_site_id = $1`,
         [siteId],
+      )
+      await closeOpenMachineOperators(
+        client,
+        leaving.rows.map((r) => r.id),
       )
       await client.query(
         `UPDATE machines SET current_site_id = NULL, updated_at = NOW() WHERE current_site_id = $1`,
@@ -1961,19 +2071,31 @@ export async function syncSiteMachineAssignments(
   const client = await pool.connect()
   try {
     if (numericIds.length === 0) {
-      await client.query(
-        `UPDATE machine_operator_atama moa
-         SET bitis_tarihi = CURRENT_DATE
-         FROM machines m
-         WHERE moa.machine_id = m.id AND m.current_site_id = $1 AND moa.bitis_tarihi IS NULL`,
+      const leaving = await client.query<{ id: number }>(
+        `SELECT id FROM machines WHERE current_site_id = $1`,
         [siteId],
+      )
+      await closeOpenMachineOperators(
+        client,
+        leaving.rows.map((r) => r.id),
       )
       await client.query(`UPDATE machines SET current_site_id = NULL, updated_at = NOW() WHERE current_site_id = $1`, [siteId])
     } else {
+      // Bu şantiyeden çıkan makineler: operatör atamalarını kapat + current_site temizle
+      const leaving = await client.query<{ id: number }>(
+        `SELECT id FROM machines WHERE current_site_id = $1 AND NOT (id = ANY($2::int[]))`,
+        [siteId, numericIds],
+      )
+      await closeOpenMachineOperators(
+        client,
+        leaving.rows.map((r) => r.id),
+      )
       await client.query(
         `UPDATE machines SET current_site_id = NULL, updated_at = NOW() WHERE current_site_id = $1 AND NOT (id = ANY($2::int[]))`,
         [siteId, numericIds],
       )
+      // Başka şantiyelerin JSON listelerinden çıkar (eski şantiyede görünmesin)
+      await removeMachinesFromOtherSitesJson(client, numericIds, siteId)
       // Şantiyeye atanan makineler bilgi girişinde görünsün diye aktif yapılır
       await client.query(
         `UPDATE machines SET current_site_id = $1, status = 'aktif', updated_at = NOW() WHERE id = ANY($2::int[])`,
@@ -1984,10 +2106,14 @@ export async function syncSiteMachineAssignments(
     client.release()
   }
   for (const mid of numericIds) {
-    const pids = assignedMachineOperators
-      .filter((o) => String(o.machineId) === String(mid))
-      .map((o) => o.personelId)
-      .filter((id) => id > 0)
+    const pids = [
+      ...new Set(
+        assignedMachineOperators
+          .filter((o) => String(o.machineId) === String(mid))
+          .map((o) => o.personelId)
+          .filter((id) => id > 0),
+      ),
+    ]
     await upsertMachineOperators(mid, pids)
   }
 }
@@ -2485,18 +2611,13 @@ export async function createSite(data: {
     )
     const newSite = result.rows[0]
     await syncSiteMachineAssignments(newSite.id, data.assignedMachineIds || [], ops)
-    const today = new Date().toISOString().slice(0, 10)
     const seenCreate = new Set<number>()
     for (const { machineId, personelId } of ops) {
       const machineName = await resolveMachineLabelForPersonel(client, machineId)
       await client.query(`UPDATE personeller SET calistigi_bolum = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [machineName, personelId])
       if (!seenCreate.has(personelId)) {
         seenCreate.add(personelId)
-        await client.query(`
-          INSERT INTO personel_atama (personel_id, site_id, baslangic_tarihi)
-          VALUES ($1, $2, $3)
-          ON CONFLICT (personel_id, site_id, baslangic_tarihi) DO NOTHING
-        `, [personelId, newSite.id, today])
+        await upsertPersonelAtama(personelId, newSite.id)
       }
     }
     return newSite
@@ -2583,19 +2704,14 @@ export async function updateSite(id: number, data: {
     if (data.assignedMachineIds !== undefined) {
       await syncSiteMachineAssignments(id, data.assignedMachineIds, ops)
     }
-    const today = new Date().toISOString().slice(0, 10)
     const seenPersonelIds = new Set<number>()
     for (const { machineId, personelId } of ops) {
       const machineName = await resolveMachineLabelForPersonel(client, machineId)
       await client.query(`UPDATE personeller SET calistigi_bolum = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [machineName, personelId])
-      // personel_atama sync: eğer bu şantiyede aktif atama yoksa yeni kayıt oluştur
+      // personel_atama: diğer şantiyelerdeki aktif atamayı kapatıp buraya bağla
       if (!seenPersonelIds.has(personelId)) {
         seenPersonelIds.add(personelId)
-        await client.query(`
-          INSERT INTO personel_atama (personel_id, site_id, baslangic_tarihi)
-          VALUES ($1, $2, $3)
-          ON CONFLICT (personel_id, site_id, baslangic_tarihi) DO NOTHING
-        `, [personelId, id, today])
+        await upsertPersonelAtama(personelId, id)
       }
     }
     return result.rows[0] || null
@@ -4794,20 +4910,8 @@ export async function getMachines(opts: { siteId?: number | null; status?: strin
     const params: unknown[] = []
     let i = 1
     if (opts.siteId != null) {
-      // Hem current_site_id hem sites.assigned_machine_ids (yönetici panelindeki atama)
-      conditions.push(`(
-        m.current_site_id = $${i}
-        OR m.id IN (
-          SELECT CASE
-            WHEN jsonb_typeof(elem) = 'number' THEN (elem #>> '{}')::int
-            WHEN jsonb_typeof(elem) = 'string' AND (elem #>> '{}') ~ '^[0-9]+$' THEN (elem #>> '{}')::int
-            ELSE NULL
-          END
-          FROM sites s
-          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(s.assigned_machine_ids, '[]'::jsonb)) AS elem
-          WHERE s.id = $${i}
-        )
-      )`)
+      // Tek kaynak: current_site_id (JSON yedek listeler senkron tutulur)
+      conditions.push(`m.current_site_id = $${i}`)
       params.push(opts.siteId)
       i++
     }
@@ -4815,17 +4919,27 @@ export async function getMachines(opts: { siteId?: number | null; status?: strin
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
     const r = await client.query(
       `SELECT m.*, s.name AS site_name,
-        COALESCE(
-          json_agg(json_build_object('personel_id', p.id, 'ad', p.ad, 'soyad', p.soyad, 'gorev', p.gorev,
-            'baslangic_tarihi', moa.baslangic_tarihi, 'bitis_tarihi', moa.bitis_tarihi))
-          FILTER (WHERE p.id IS NOT NULL), '[]'
-        ) AS operators
+        COALESCE((
+          SELECT json_agg(obj ORDER BY (obj->>'ad'), (obj->>'soyad'))
+          FROM (
+            SELECT DISTINCT ON (p.id)
+              json_build_object(
+                'personel_id', p.id,
+                'ad', p.ad,
+                'soyad', p.soyad,
+                'gorev', p.gorev,
+                'baslangic_tarihi', moa.baslangic_tarihi,
+                'bitis_tarihi', moa.bitis_tarihi
+              ) AS obj
+            FROM machine_operator_atama moa
+            INNER JOIN personeller p ON p.id = moa.personel_id
+            WHERE moa.machine_id = m.id AND moa.bitis_tarihi IS NULL
+            ORDER BY p.id, moa.baslangic_tarihi DESC NULLS LAST, moa.id DESC
+          ) uniq
+        ), '[]') AS operators
        FROM machines m
        LEFT JOIN sites s ON m.current_site_id = s.id
-       LEFT JOIN machine_operator_atama moa ON moa.machine_id = m.id AND (moa.bitis_tarihi IS NULL OR moa.bitis_tarihi >= CURRENT_DATE)
-       LEFT JOIN personeller p ON moa.personel_id = p.id
        ${where}
-       GROUP BY m.id, s.name
        ORDER BY s.name NULLS LAST, m.name`,
       params
     )
@@ -4882,21 +4996,49 @@ export async function updateMachine(id: number, data: Partial<{
 }
 
 export async function upsertMachineOperators(machineId: number, personelIds: number[]): Promise<void> {
+  const uniqueIds = [...new Set(personelIds.filter((id) => Number.isFinite(id) && id > 0))]
   const client = await pool.connect()
   try {
-    // Aktif atamaları kapat (bitis_tarihi = bugün)
+    // Seçilmeyenleri anında kapat (dün bitiş → listeden düşer)
     await client.query(
-      `UPDATE machine_operator_atama SET bitis_tarihi = CURRENT_DATE
-       WHERE machine_id = $1 AND bitis_tarihi IS NULL AND personel_id != ALL($2::int[])`,
-      [machineId, personelIds.length > 0 ? personelIds : [0]]
+      `UPDATE machine_operator_atama
+       SET bitis_tarihi = (CURRENT_DATE - INTERVAL '1 day')::date
+       WHERE machine_id = $1
+         AND bitis_tarihi IS NULL
+         AND personel_id != ALL($2::int[])`,
+      [machineId, uniqueIds.length > 0 ? uniqueIds : [0]],
     )
-    // Yeni atamaları ekle
-    for (const pId of personelIds) {
+    // Aynı operatör için birden fazla açık satır varsa fazlaları kapat
+    await client.query(
+      `UPDATE machine_operator_atama moa
+       SET bitis_tarihi = (CURRENT_DATE - INTERVAL '1 day')::date
+       FROM (
+         SELECT id,
+                ROW_NUMBER() OVER (
+                  PARTITION BY machine_id, personel_id
+                  ORDER BY baslangic_tarihi ASC NULLS LAST, id ASC
+                ) AS rn
+         FROM machine_operator_atama
+         WHERE machine_id = $1 AND bitis_tarihi IS NULL
+       ) d
+       WHERE moa.id = d.id AND d.rn > 1`,
+      [machineId],
+    )
+    // Açık atama yoksa ekle / aynı gün conflict ise yeniden aç
+    for (const pId of uniqueIds) {
+      const exists = await client.query(
+        `SELECT id FROM machine_operator_atama
+         WHERE machine_id = $1 AND personel_id = $2 AND bitis_tarihi IS NULL
+         LIMIT 1`,
+        [machineId, pId],
+      )
+      if ((exists.rowCount ?? 0) > 0) continue
       await client.query(
         `INSERT INTO machine_operator_atama (machine_id, personel_id, baslangic_tarihi)
          VALUES ($1, $2, CURRENT_DATE)
-         ON CONFLICT (machine_id, personel_id, baslangic_tarihi) DO NOTHING`,
-        [machineId, pId]
+         ON CONFLICT (machine_id, personel_id, baslangic_tarihi) DO UPDATE
+         SET bitis_tarihi = NULL`,
+        [machineId, pId],
       )
     }
   } finally {
@@ -4919,7 +5061,7 @@ export async function getOperatorMachinesForSite(userId: number, siteId: number)
         FROM machines m
         INNER JOIN machine_operator_atama moa ON moa.machine_id = m.id
           AND moa.personel_id = $1
-          AND (moa.bitis_tarihi IS NULL OR moa.bitis_tarihi >= CURRENT_DATE)
+          AND moa.bitis_tarihi IS NULL
         WHERE m.current_site_id = $2 AND m.status = 'aktif'
         ORDER BY m.name
       `, [personelId, siteId])
@@ -4939,33 +5081,26 @@ export async function getOperatorMachinesForSite(userId: number, siteId: number)
   }
 }
 
-/** Şantiyedeki makineleri döner (atanmış / current_site_id). Hurda hariç — bilgi girişi için. */
+/** Şantiyedeki makineleri döner (current_site_id). Hurda hariç — bilgi girişi için. */
 export async function getMachinesForSite(siteId: number): Promise<{ id: number; name: string; machine_type: string; marka: string | null; model: string | null; status?: string; operators: { personel_id: number; ad: string; soyad: string }[] }[]> {
   const client = await pool.connect()
   try {
     const r = await client.query(`
       SELECT m.id, m.name, m.machine_type, m.marka, m.model, m.status,
         COALESCE((
-          SELECT json_agg(json_build_object('personel_id', p.id, 'ad', p.ad, 'soyad', p.soyad))
-          FROM machine_operator_atama moa
-          INNER JOIN personeller p ON p.id = moa.personel_id
-          WHERE moa.machine_id = m.id AND (moa.bitis_tarihi IS NULL OR moa.bitis_tarihi >= CURRENT_DATE)
+          SELECT json_agg(obj ORDER BY (obj->>'ad'), (obj->>'soyad'))
+          FROM (
+            SELECT DISTINCT ON (p.id)
+              json_build_object('personel_id', p.id, 'ad', p.ad, 'soyad', p.soyad) AS obj
+            FROM machine_operator_atama moa
+            INNER JOIN personeller p ON p.id = moa.personel_id
+            WHERE moa.machine_id = m.id AND moa.bitis_tarihi IS NULL
+            ORDER BY p.id, moa.baslangic_tarihi DESC NULLS LAST, moa.id DESC
+          ) uniq
         ), '[]') AS operators
       FROM machines m
       WHERE m.status <> 'hurda'
-        AND (
-          m.current_site_id = $1
-          OR m.id IN (
-            SELECT CASE
-              WHEN jsonb_typeof(elem) = 'number' THEN (elem #>> '{}')::int
-              WHEN jsonb_typeof(elem) = 'string' AND (elem #>> '{}') ~ '^[0-9]+$' THEN (elem #>> '{}')::int
-              ELSE NULL
-            END
-            FROM sites s
-            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(s.assigned_machine_ids, '[]'::jsonb)) AS elem
-            WHERE s.id = $1
-          )
-        )
+        AND m.current_site_id = $1
       ORDER BY m.name
     `, [siteId])
     return r.rows

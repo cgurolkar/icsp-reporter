@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getSessionFromRequest, canManageIdariCentral } from "@/lib/auth"
-import { initializeDatabase, updateMachine, upsertMachineOperators } from "@/lib/database"
+import { initializeDatabase, updateMachine, upsertMachineOperators, syncMachineSiteMembership } from "@/lib/database"
 import pool from "@/lib/database"
 
 const UpdateSchema = z.object({
@@ -33,9 +33,20 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   await initializeDatabase()
   try {
     const { operator_personel_ids, ...machineData } = parsed.data
+    const prevSite = await pool.query(
+      `SELECT current_site_id FROM machines WHERE id = $1`,
+      [id],
+    )
+    const prevSiteId = prevSite.rows[0]?.current_site_id ?? null
     await updateMachine(id, machineData)
     if (operator_personel_ids !== undefined) {
       await upsertMachineOperators(id, operator_personel_ids)
+    }
+    if ("current_site_id" in machineData) {
+      const nextSiteId = machineData.current_site_id ?? null
+      if (nextSiteId !== prevSiteId) {
+        await syncMachineSiteMembership(id, nextSiteId)
+      }
     }
     return NextResponse.json({ ok: true })
   } catch (err) {

@@ -107,7 +107,7 @@ export default function MakineDefteri() {
       status: m.status,
       current_site_id: m.current_site_id != null ? String(m.current_site_id) : "",
       notlar: m.notlar ?? "",
-      operator_personel_ids: m.operators.map((o) => o.personel_id),
+      operator_personel_ids: [...new Set(m.operators.map((o) => o.personel_id))],
     })
     setDialogOpen(true)
   }
@@ -196,7 +196,7 @@ export default function MakineDefteri() {
                   <Typography variant="caption" color="text.secondary">Atanmamış</Typography>
                 ) : (
                   <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                    {m.operators.map((op) => (
+                    {[...new Map(m.operators.map((op) => [op.personel_id, op])).values()].map((op) => (
                       <Chip
                         key={op.personel_id}
                         size="small" icon={<Person sx={{ fontSize: "14px !important" }} />}
