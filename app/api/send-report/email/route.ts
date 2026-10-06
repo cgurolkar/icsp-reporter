@@ -20,6 +20,7 @@ import { canAccessSite, canDoDataEntry, getSessionFromRequest } from "@/lib/auth
 import { buildReportNotificationEmail, buildOperatorReportEmail } from "@/lib/email-templates"
 import { detectReportAnomalies } from "@/lib/anomaly-detection"
 import { formDataFromDbReport } from "@/lib/report-db-formdata"
+import { sumMachineWorkPileCounts } from "@/lib/machine-work-stats"
 
 export const dynamic = "force-dynamic"
 
@@ -89,8 +90,6 @@ export async function POST(request: NextRequest) {
             ) + 1,
           )
         : null
-    const pileCounts =
-      siteIdForDb && reportDateStr ? await getCumulativePileCounts(siteIdForDb, reportDateStr) : null
 
     const prodRows = productionSummary as unknown as { concretePoured?: string; dailyDrilledPiles?: string; dailyPileCount?: string }[]
     const concretePoured = parseInt(String(rawReport.concrete_poured ?? ""), 10) || 0
@@ -122,13 +121,18 @@ export async function POST(request: NextRequest) {
     }
 
     const totalPiles = site?.total_piles != null ? Number(site.total_piles) : null
+    const machineWorkCumulative =
+      siteIdForDb && reportDateStr ? await getMachineWorkStats({ siteId: siteIdForDb, asOfDate: reportDateStr }) : []
+    const pileCounts =
+      siteIdForDb && reportDateStr
+        ? machineWorkCumulative.length > 0
+          ? sumMachineWorkPileCounts(machineWorkCumulative)
+          : await getCumulativePileCounts(siteIdForDb, reportDateStr)
+        : null
     const remainingComputed =
       totalPiles != null && pileCounts != null
         ? String(Math.max(0, totalPiles - (Number(pileCounts.concrete) || 0)))
         : String(rawReport.remaining_piles ?? curPs?.remainingPiles ?? "")
-
-    const machineWorkCumulative =
-      siteIdForDb && reportDateStr ? await getMachineWorkStats({ siteId: siteIdForDb, asOfDate: reportDateStr }) : []
     const mainReportContent = generatePDFMainReport(formData, {
       computedRemainingPiles: remainingComputed,
       computedDailyPileCount: dailyPileForDb,

@@ -130,6 +130,16 @@ export function machineRowCumulativeBeton(r: Pick<MachineWorkStatRow, "cumulativ
 }
 
 /** Makine satırlarından şantiye delgi / beton kümülatifi (üst kartlarla aynı kaynak). */
+export function filterMachineStatsByAssignedIds(
+  rows: MachineWorkStatRow[],
+  assignedIds: number[],
+): MachineWorkStatRow[] {
+  if (!assignedIds.length) return rows
+  const idSet = new Set(assignedIds)
+  const filtered = rows.filter((r) => r.machineId != null && idSet.has(r.machineId))
+  return filtered.length > 0 ? filtered : rows
+}
+
 export function sumMachineWorkPileCounts(rows: MachineWorkStatRow[]): { drilled: number; concrete: number } {
   let drilled = 0
   let concrete = 0

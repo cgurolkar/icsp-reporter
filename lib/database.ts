@@ -6,6 +6,7 @@ import {
   consolidateMachineWorkAgg,
   machineWorkAggKey,
   normMachineName,
+  filterMachineStatsByAssignedIds,
   parseAssignedMachineIds,
   resolveMachineIdFromSlice,
   slicesFromProductionSummaryJson,
@@ -5352,6 +5353,10 @@ export async function getMachineWorkStats(options: {
       })
     }
     result.sort((a, b) => a.siteName.localeCompare(b.siteName, "tr") || a.machineName.localeCompare(b.machineName, "tr"))
+    if (options.siteId != null && initSites.rows.length > 0) {
+      const assigned = parseAssignedMachineIds(initSites.rows[0].assigned_machine_ids)
+      return filterMachineStatsByAssignedIds(result, assigned)
+    }
     return result
   } finally {
     client.release()

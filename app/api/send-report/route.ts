@@ -3,6 +3,7 @@ import { randomUUID } from "crypto"
 import fs from "fs"
 import path from "path"
 import { saveWorkReport, initializeDatabase, getMergedNotificationEmails, getSiteById, getLastReportRemainingBySite, getConcretePouredBeforeDate, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativePileCounts, getMachineWorkStats } from "@/lib/database"
+import { sumMachineWorkPileCounts } from "@/lib/machine-work-stats"
 import { formatMeters, sumConcretePouredDrilledMeters } from "@/lib/concrete-meters"
 import { fullReportHtmlAttachment, isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
@@ -283,17 +284,20 @@ export async function POST(request: NextRequest) {
     // E-posta: SMTP_USER + global admin listesi (Postgres) + şantiye email_list
     const reportRecipients = await getMergedNotificationEmails({ siteId: siteIdForDb })
 
-    // Kayıt sonrası kümülatif delgi/beton
+    const machineWorkCumulative =
+      siteIdForDb && reportDateStr ? await getMachineWorkStats({ siteId: siteIdForDb, asOfDate: reportDateStr }) : []
     const pileCountsAfterSave =
-      siteIdForDb && reportDateStr ? await getCumulativePileCounts(siteIdForDb, reportDateStr) : null
+      siteIdForDb && reportDateStr
+        ? machineWorkCumulative.length > 0
+          ? sumMachineWorkPileCounts(machineWorkCumulative)
+          : await getCumulativePileCounts(siteIdForDb, reportDateStr)
+        : null
     const remainingAfterSave =
       site?.total_piles != null && pileCountsAfterSave != null
         ? String(Math.max(0, Number(site.total_piles) - (Number(pileCountsAfterSave.concrete) || 0)))
         : remainingPilesForDb
 
     // Rapor HTML içeriği (e-posta gövdesi / yazdırma için) — hesaplanan kalan/günlük kazık kullanılsın
-    const machineWorkCumulative =
-      siteIdForDb && reportDateStr ? await getMachineWorkStats({ siteId: siteIdForDb, asOfDate: reportDateStr }) : []
     const mainReportContent = generatePDFMainReport(formData, {
       computedRemainingPiles: remainingAfterSave,
       computedDailyPileCount: dailyPileForDb,

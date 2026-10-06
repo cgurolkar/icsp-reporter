@@ -9,6 +9,7 @@ import {
   getCumulativeHakedisBreakdown,
   getMachineWorkStats,
 } from "@/lib/database"
+import { sumMachineWorkPileCounts } from "@/lib/machine-work-stats"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
 import { canAccessSite, canViewReports, getSessionFromRequest } from "@/lib/auth"
 import { formDataFromDbReport } from "@/lib/report-db-formdata"
@@ -55,7 +56,14 @@ export async function GET(
       showHakedis && siteId && reportDate ? await getCumulativeTotalProduction(siteId, reportDate) : null
     const hakedisBreakdown =
       showHakedis && siteId && reportDate ? await getCumulativeHakedisBreakdown(siteId, reportDate) : null
-    const pileCounts = siteId && reportDate ? await getCumulativePileCounts(siteId, reportDate) : null
+    const machineWorkCumulative =
+      siteId && reportDate ? await getMachineWorkStats({ siteId, asOfDate: reportDate }) : []
+    const pileCounts =
+      siteId && reportDate
+        ? machineWorkCumulative.length > 0
+          ? sumMachineWorkPileCounts(machineWorkCumulative)
+          : await getCumulativePileCounts(siteId, reportDate)
+        : null
     const totalPiles = site?.total_piles != null ? Number(site.total_piles) : null
     const remainingComputed =
       totalPiles != null && pileCounts != null
@@ -63,8 +71,6 @@ export async function GET(
         : r.remaining_piles != null && String(r.remaining_piles).trim() !== ""
           ? String(r.remaining_piles)
           : undefined
-    const machineWorkCumulative =
-      siteId && reportDate ? await getMachineWorkStats({ siteId, asOfDate: reportDate }) : []
     const html = generatePDFMainReport(formData, {
       computedRemainingPiles: remainingComputed,
       computedDailyPileCount: r.daily_pile_count != null && String(r.daily_pile_count).trim() !== "" ? String(r.daily_pile_count) : (concretePoured > 0 ? String(concretePoured) : undefined),
