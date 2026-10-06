@@ -51,6 +51,9 @@ export type MachineCumulativeRow = {
   machineName: string
   pileCount: number
   totalMeters: number
+  preReportEmptyBorehole?: number
+  preReportBetonPiles?: number
+  preReportMeters?: number
   earnedAmount?: number | null
   costPerMeter?: number | null
   billingCurrency?: string | null
@@ -330,6 +333,8 @@ export default function ProductionSummaryStep({
                   <TableCell><strong>Makine</strong></TableCell>
                   <TableCell align="right"><strong>Kazık (Ad.)</strong></TableCell>
                   <TableCell align="right"><strong>Toplam boy (m)</strong></TableCell>
+                  <TableCell align="right"><strong>Rapor önc. boş foraj</strong></TableCell>
+                  <TableCell align="right"><strong>Rapor önc. beton (Ad.)</strong></TableCell>
                   <TableCell align="right"><strong>Metre birim</strong></TableCell>
                   <TableCell align="right"><strong>Hakediş</strong></TableCell>
                   <TableCell align="right"><strong>Makine harcaması</strong></TableCell>
@@ -343,13 +348,19 @@ export default function ProductionSummaryStep({
                       <TableCell>{row.machineName}</TableCell>
                       <TableCell align="right">{row.pileCount}</TableCell>
                       <TableCell align="right">{row.totalMeters.toFixed(2)}</TableCell>
+                      <TableCell align="right">{row.preReportEmptyBorehole ?? "—"}</TableCell>
+                      <TableCell align="right">{row.preReportBetonPiles ?? "—"}</TableCell>
                       <TableCell align="right">
                         {row.costPerMeter != null && row.costPerMeter > 0
                           ? `${row.costPerMeter.toLocaleString("tr-TR")} ${pricePerMeterLabel(cur)}`
                           : "—"}
                       </TableCell>
                       <TableCell align="right">
-                        {row.earnedAmount != null && row.earnedAmount > 0 ? formatMoney(row.earnedAmount, cur) : "—"}
+                        {row.earnedAmount != null && row.earnedAmount > 0
+                          ? formatMoney(row.earnedAmount, cur)
+                          : row.totalMeters > 0 && !(row.costPerMeter != null && row.costPerMeter > 0)
+                            ? "— (birim fiyat yok)"
+                            : "—"}
                       </TableCell>
                       <TableCell align="right">
                         {(row.expenseTotalUsd ?? 0) > 0
@@ -364,6 +375,9 @@ export default function ProductionSummaryStep({
               </TableBody>
             </Table>
           </Box>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+            Hakediş = toplam imalat metrajı × şantiye kartındaki makine «Metre başı maliyet». Rapor öncesi beton metrajı toplam boya eklenir.
+          </Typography>
         </Paper>
       )}
 

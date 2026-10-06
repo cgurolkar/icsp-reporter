@@ -256,6 +256,8 @@ export default function MakineDefteri() {
                         <TableCell><strong>Şantiye</strong></TableCell>
                         <TableCell align="right"><strong>Kazık (Ad.)</strong></TableCell>
                         <TableCell align="right"><strong>Toplam boy (m)</strong></TableCell>
+                        <TableCell align="right"><strong>Rapor önc. boş foraj</strong></TableCell>
+                        <TableCell align="right"><strong>Rapor önc. beton</strong></TableCell>
                         <TableCell align="right"><strong>Hakediş</strong></TableCell>
                         <TableCell align="right"><strong>Makine harcaması</strong></TableCell>
                       </TableRow>
@@ -268,11 +270,13 @@ export default function MakineDefteri() {
                             <TableCell>{j.siteName} ({j.siteCode})</TableCell>
                             <TableCell align="right">{j.pileCount}</TableCell>
                             <TableCell align="right">{j.totalMeters.toFixed(2)}</TableCell>
+                            <TableCell align="right">{j.preReportEmptyBorehole ?? "—"}</TableCell>
+                            <TableCell align="right">{j.preReportBetonPiles ?? "—"}</TableCell>
                             <TableCell align="right">
                               {j.earnedAmount != null && j.earnedAmount > 0
                                 ? formatMoney(j.earnedAmount, cur)
-                                : j.costPerMeter != null && j.costPerMeter > 0
-                                  ? `— (${j.costPerMeter.toLocaleString("tr-TR")} ${pricePerMeterLabel(cur)}/m)`
+                                : j.totalMeters > 0 && !(j.costPerMeter != null && j.costPerMeter > 0)
+                                  ? "— (metre birim girin)"
                                   : "—"}
                             </TableCell>
                             <TableCell align="right">
@@ -288,7 +292,8 @@ export default function MakineDefteri() {
                     </TableBody>
                   </Table>
                   <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
-                    Makine harcaması: Harcamalar listesinde masraf yeri makine adıyla eşleşen kayıtlar.
+                    Rapor öncesi değerler Admin → Şantiye kartından gelir. Hakediş için aynı kartta «Metre başı maliyet» girilmeli.
+                    Makine harcaması: masraf yeri makine adıyla eşleşen kayıtlar.
                   </Typography>
                 </TableCell>
               </TableRow>

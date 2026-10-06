@@ -5163,58 +5163,60 @@ export async function getMachineWorkStats(options: {
       idByName.set(normMachineName(m.name), m.id)
     }
 
-    type Agg = {
-      machineId: number | null
-      machineName: string
-      siteId: number
-      siteName: string
-      siteCode: string
-      pileCount: number
-      totalMeters: number
-      unitPrices: Record<string, number>
-      billingCurrency: string | null
+    const { parseInitialMachineWorkStored } = await import("@/lib/initial-machine-work")
+    const {
+      consolidateMachineWorkAgg,
+      resolveMachineIdFromSlice,
+      type MachineWorkAggBucket,
+    } = await import("@/lib/machine-work-stats")
+    const agg = new Map<string, MachineWorkAggBucket>()
+
+    const upsertBucket = (
+      key: string,
+      init: Omit<MachineWorkAggBucket, "pileCount" | "totalMeters" | "preReportEmptyBorehole" | "preReportBetonPiles" | "preReportMeters">,
+    ) => {
+      let bucket = agg.get(key)
+      if (!bucket) {
+        bucket = {
+          ...init,
+          pileCount: 0,
+          totalMeters: 0,
+          preReportEmptyBorehole: 0,
+          preReportBetonPiles: 0,
+          preReportMeters: 0,
+        }
+        agg.set(key, bucket)
+      }
+      return bucket
     }
-    const agg = new Map<string, Agg>()
 
     for (const row of reports.rows) {
       const siteId = Number(row.site_id)
       const unitPrices = parseAssignedMachineUnitPrices(row.assigned_machine_unit_prices)
       const slices = slicesFromProductionSummaryJson(row.production_summary_json)
       for (const sl of slices) {
-        let mid: number | null = null
-        if (/^\d+$/.test(sl.machineId)) mid = parseInt(sl.machineId, 10)
-        if (mid == null || Number.isNaN(mid)) {
-          const byName = idByName.get(normMachineName(sl.machineName))
-          if (byName != null) mid = byName
-        }
+        const mid = resolveMachineIdFromSlice(sl.machineId, sl.machineName, idByName)
         if (options.machineId != null && mid !== options.machineId) {
           const nameMatch = normMachineName(nameById.get(options.machineId) ?? "") === normMachineName(sl.machineName)
           if (!nameMatch) continue
         }
         const displayName = mid != null && nameById.get(mid) ? nameById.get(mid)! : sl.machineName
         const key = machineWorkAggKey(siteId, mid, displayName)
-        let bucket = agg.get(key)
-        if (!bucket) {
-          bucket = {
-            machineId: mid,
-            machineName: displayName,
-            siteId,
-            siteName: String(row.site_name ?? ""),
-            siteCode: String(row.site_code ?? ""),
-            pileCount: 0,
-            totalMeters: 0,
-            unitPrices,
-            billingCurrency: row.billing_currency != null ? String(row.billing_currency) : null,
-          }
-          agg.set(key, bucket)
-        }
+        const bucket = upsertBucket(key, {
+          machineId: mid,
+          machineName: displayName,
+          siteId,
+          siteName: String(row.site_name ?? ""),
+          siteCode: String(row.site_code ?? ""),
+          unitPrices,
+          billingCurrency: row.billing_currency != null ? String(row.billing_currency) : null,
+        })
         bucket.pileCount += sl.piles
         bucket.totalMeters += sl.meters
         bucket.unitPrices = { ...bucket.unitPrices, ...unitPrices }
       }
     }
 
-    const { parseInitialMachineWorkStored } = await import("@/lib/initial-machine-work")
     let initSiteQ = `SELECT id, name, code, assigned_machine_unit_prices, billing_currency, initial_machine_work FROM sites`
     const initSiteParams: unknown[] = []
     if (options.siteId != null) {
@@ -5228,32 +5230,35 @@ export async function getMachineWorkStats(options: {
       const map = parseInitialMachineWorkStored(siteRow.initial_machine_work)
       for (const [midStr, entry] of Object.entries(map)) {
         const mid = /^\d+$/.test(midStr) ? parseInt(midStr, 10) : null
-        if (options.machineId != null && mid !== options.machineId) continue
         const displayName = mid != null && nameById.get(mid) ? nameById.get(mid)! : midStr
-        const piles = Math.max(0, Number(entry.emptyBorehole) || 0)
-        const meters = Math.max(0, Number(entry.concreteMeters) || 0)
-        if (piles === 0 && meters === 0) continue
-        const key = machineWorkAggKey(siteId, mid, displayName)
-        let bucket = agg.get(key)
-        if (!bucket) {
-          bucket = {
-            machineId: mid,
-            machineName: displayName,
-            siteId,
-            siteName: String(siteRow.name ?? ""),
-            siteCode: String(siteRow.code ?? ""),
-            pileCount: 0,
-            totalMeters: 0,
-            unitPrices,
-            billingCurrency: siteRow.billing_currency != null ? String(siteRow.billing_currency) : null,
-          }
-          agg.set(key, bucket)
+        if (options.machineId != null && mid !== options.machineId) {
+          const nameMatch = normMachineName(nameById.get(options.machineId) ?? "") === normMachineName(displayName)
+          if (!nameMatch) continue
         }
-        bucket.pileCount += piles
+        const empty = Math.max(0, Number(entry.emptyBorehole) || 0)
+        const betonPiles = Math.max(0, Number(entry.pilesDone) || 0)
+        const meters = Math.max(0, Number(entry.concreteMeters) || 0)
+        if (empty === 0 && betonPiles === 0 && meters === 0) continue
+        const key = machineWorkAggKey(siteId, mid, displayName)
+        const bucket = upsertBucket(key, {
+          machineId: mid,
+          machineName: displayName,
+          siteId,
+          siteName: String(siteRow.name ?? ""),
+          siteCode: String(siteRow.code ?? ""),
+          unitPrices,
+          billingCurrency: siteRow.billing_currency != null ? String(siteRow.billing_currency) : null,
+        })
+        bucket.preReportEmptyBorehole += empty
+        bucket.preReportBetonPiles += betonPiles
+        bucket.preReportMeters += meters
+        bucket.pileCount += empty
         bucket.totalMeters += meters
         bucket.unitPrices = { ...bucket.unitPrices, ...unitPrices }
       }
     }
+
+    const mergedAgg = consolidateMachineWorkAgg(agg)
 
     let expenseQ = `
       SELECT i.site_id, my.ad AS masraf_yeri_adi,
@@ -5285,12 +5290,14 @@ export async function getMachineWorkStats(options: {
     }
 
     const result: MachineWorkStatRow[] = []
-    for (const b of agg.values()) {
+    for (const b of mergedAgg.values()) {
       const priceKey = b.machineId != null ? String(b.machineId) : ""
-      const costPerMeter =
-        priceKey && b.unitPrices[priceKey] != null
-          ? b.unitPrices[priceKey]
-          : null
+      let costPerMeter =
+        priceKey && b.unitPrices[priceKey] != null ? b.unitPrices[priceKey] : null
+      if (costPerMeter == null && priceKey) {
+        const alt = b.unitPrices[priceKey.trim()]
+        if (alt != null) costPerMeter = alt
+      }
       const earnedAmount =
         costPerMeter != null && costPerMeter > 0 && b.totalMeters > 0
           ? Math.round(b.totalMeters * costPerMeter * 100) / 100
@@ -5304,6 +5311,9 @@ export async function getMachineWorkStats(options: {
         siteCode: b.siteCode,
         pileCount: b.pileCount,
         totalMeters: Math.round(b.totalMeters * 100) / 100,
+        preReportEmptyBorehole: b.preReportEmptyBorehole > 0 ? b.preReportEmptyBorehole : undefined,
+        preReportBetonPiles: b.preReportBetonPiles > 0 ? b.preReportBetonPiles : undefined,
+        preReportMeters: b.preReportMeters > 0 ? Math.round(b.preReportMeters * 100) / 100 : undefined,
         costPerMeter,
         billingCurrency: b.billingCurrency,
         earnedAmount,

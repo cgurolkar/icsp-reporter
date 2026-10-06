@@ -58,11 +58,70 @@ export interface MachineWorkStatRow {
   siteId: number
   siteName: string
   siteCode: string
+  /** Günlük raporlardan delgi (Ad.) + rapor öncesi boş foraj */
   pileCount: number
   totalMeters: number
+  /** Rapor öncesi (şantiye kartı) — makine bazında */
+  preReportEmptyBorehole?: number
+  preReportBetonPiles?: number
+  preReportMeters?: number
   costPerMeter: number | null
   billingCurrency: string | null
   earnedAmount: number | null
   expenseTotalUsd: number
   expenseTotalIqd: number
+}
+
+export type MachineWorkAggBucket = {
+  machineId: number | null
+  machineName: string
+  siteId: number
+  siteName: string
+  siteCode: string
+  pileCount: number
+  totalMeters: number
+  preReportEmptyBorehole: number
+  preReportBetonPiles: number
+  preReportMeters: number
+  unitPrices: Record<string, number>
+  billingCurrency: string | null
+}
+
+/** Aynı makine için id / isim anahtarı çiftlerini birleştirir. */
+export function consolidateMachineWorkAgg(agg: Map<string, MachineWorkAggBucket>): Map<string, MachineWorkAggBucket> {
+  const out = new Map<string, MachineWorkAggBucket>()
+  for (const bucket of agg.values()) {
+    const mid = bucket.machineId
+    const canonKey =
+      mid != null && mid > 0
+        ? machineWorkAggKey(bucket.siteId, mid, bucket.machineName)
+        : machineWorkAggKey(bucket.siteId, null, bucket.machineName)
+    const prev = out.get(canonKey)
+    if (!prev) {
+      out.set(canonKey, { ...bucket })
+      continue
+    }
+    prev.pileCount += bucket.pileCount
+    prev.totalMeters += bucket.totalMeters
+    prev.preReportEmptyBorehole += bucket.preReportEmptyBorehole
+    prev.preReportBetonPiles += bucket.preReportBetonPiles
+    prev.preReportMeters += bucket.preReportMeters
+    prev.unitPrices = { ...prev.unitPrices, ...bucket.unitPrices }
+    if (prev.machineId == null && bucket.machineId != null) prev.machineId = bucket.machineId
+    if (prev.machineName.length < bucket.machineName.length) prev.machineName = bucket.machineName
+  }
+  return out
+}
+
+export function resolveMachineIdFromSlice(
+  machineId: string,
+  machineName: string,
+  idByName: Map<string, number>,
+): number | null {
+  if (/^\d+$/.test(machineId)) {
+    const id = parseInt(machineId, 10)
+    if (!Number.isNaN(id) && id > 0) return id
+  }
+  const byName = idByName.get(normMachineName(machineName))
+  return byName ?? null
 }

@@ -95,7 +95,7 @@ function buildSiteInitialPayload(
       initialMachineWork: stored,
       initialPilesDone: sums.pilesDone > 0 ? sums.pilesDone : null,
       initialEmptyBorehole: sums.emptyBorehole > 0 ? sums.emptyBorehole : null,
-      initialConcreteMeters: singleTariff && sums.concreteMeters > 0 ? sums.concreteMeters : null,
+      initialConcreteMeters: sums.concreteMeters > 0 ? sums.concreteMeters : null,
     }
   }
   return {
@@ -3107,12 +3107,12 @@ function AdminPanel() {
                               }
                               inputProps={{ min: 0 }}
                             />
-                            {isSuperAdmin && singleTariff && (
+                            {isSuperAdmin && (
                               <TextField
                                 size="small"
                                 fullWidth
                                 type="number"
-                                label="Beton metrajı (m)"
+                                label="Beton metrajı (m) — makine hakedişi"
                                 value={row.concreteMeters}
                                 onChange={(e) =>
                                   setSiteDialogData((prev) => ({
@@ -3145,7 +3145,7 @@ function AdminPanel() {
                           value={sumsPreview.pilesDone || "0"}
                           InputProps={{ readOnly: true }}
                         />
-                        {isSuperAdmin && singleTariff && (
+                        {isSuperAdmin && (
                           <TextField
                             size="small"
                             label="Şantiye toplamı — beton metraj (m)"
