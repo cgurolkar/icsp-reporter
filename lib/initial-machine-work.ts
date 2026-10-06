@@ -31,9 +31,17 @@ function parseMetersNonNeg(s: string | undefined): number | null {
 }
 
 export function parseInitialMachineWorkStored(raw: unknown): InitialMachineWorkMap {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}
+  let data: unknown = raw
+  if (typeof data === "string" && data.trim()) {
+    try {
+      data = JSON.parse(data)
+    } catch {
+      return {}
+    }
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) return {}
   const out: InitialMachineWorkMap = {}
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
     const id = String(k).trim()
     if (!id || !v || typeof v !== "object" || Array.isArray(v)) continue
     const rec = v as Record<string, unknown>
@@ -78,8 +86,10 @@ export function initialMachineWorkFormFromSite(
   legacy?: { emptyBorehole?: string; pilesDone?: string; concreteMeters?: string },
 ): Record<string, InitialMachineWorkFormRow> {
   const stored = parseInitialMachineWorkStored(raw)
+  const ids = new Set(machineIds.map(String))
+  for (const k of Object.keys(stored)) ids.add(String(k))
   const out: Record<string, InitialMachineWorkFormRow> = {}
-  for (const mid of machineIds) {
+  for (const mid of ids) {
     const e = stored[mid]
     out[mid] = {
       emptyBorehole: e?.emptyBorehole != null ? String(e.emptyBorehole) : "",

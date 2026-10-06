@@ -68,6 +68,21 @@ import {
   type InitialMachineWorkFormRow,
 } from "@/lib/initial-machine-work"
 
+/** Şantiye ataması; makine listesi henüz yüklenmediyse id'yi yine de kabul et. */
+function isKazikMachineId(
+  machineId: string,
+  options: { id: number; machine_type: string }[],
+): boolean {
+  const m = options.find((x) => String(x.id) === machineId)
+  if (!m) return true
+  return m.machine_type === "Kazık Makinesi"
+}
+
+function kazikMachineIds(assignedIds: string[], options: { id: number; machine_type: string }[]): string[] {
+  const filtered = assignedIds.filter((id) => isKazikMachineId(id, options))
+  return filtered.length > 0 ? filtered : assignedIds
+}
+
 function buildSiteInitialPayload(
   siteDialogData: {
     isOngoing: boolean
@@ -2057,10 +2072,12 @@ function AdminPanel() {
                       }
                     } catch { /* ignore */ }
                     let pileRates: { diameterMm: string; label: string; pricePrimary: string; priceSecondary: string }[] = []
+                    let siteRow: Record<string, unknown> = site as Record<string, unknown>
                     try {
                       const sr = await fetch(`/api/sites/${site.id}`)
                       if (sr.ok) {
                         const full = await sr.json()
+                        siteRow = full as Record<string, unknown>
                         const rawRates = Array.isArray(full.pile_rates) ? full.pile_rates : []
                         pileRates = rawRates.map((row: Record<string, unknown>) => ({
                           diameterMm: String(row.diameter_mm ?? row.diameterMm ?? ""),
@@ -2073,36 +2090,35 @@ function AdminPanel() {
                         }))
                       }
                     } catch { /* ignore */ }
+                    const kazikIdsForForm = kazikMachineIds(assignedIds, idariMachineOptions)
                     setSiteDialogData({
                       id: site.id,
                       name: site.name,
                       code: site.code,
-                      country: (site as any).country != null ? String((site as any).country) : "",
-                      timezone: (site as any).timezone != null ? String((site as any).timezone) : "",
+                      country: siteRow.country != null ? String(siteRow.country) : "",
+                      timezone: siteRow.timezone != null ? String(siteRow.timezone) : "",
                       emailList: site.email_list || [],
                       totalPiles: site.total_piles != null ? String(site.total_piles) : "",
-                      iqdPerUsd: (site as any).iqd_per_usd != null ? String((site as any).iqd_per_usd) : "1320",
-                      billingCurrency: normalizeSiteCurrency((site as any).billing_currency),
-                      contractUnitPrice: (site as any).contract_unit_price != null ? String((site as any).contract_unit_price) : "",
+                      iqdPerUsd: siteRow.iqd_per_usd != null ? String(siteRow.iqd_per_usd) : "1320",
+                      billingCurrency: normalizeSiteCurrency(siteRow.billing_currency),
+                      contractUnitPrice: siteRow.contract_unit_price != null ? String(siteRow.contract_unit_price) : "",
                       pileRates,
-                      authorizedPerson: (site as any).authorized_person != null ? String((site as any).authorized_person) : "",
-                      employer: (site as any).employer != null ? String((site as any).employer) : "",
-                      projectStartDate: (site as any).project_start_date ? String((site as any).project_start_date).slice(0, 10) : "",
-                      isOngoing: (site as any).is_ongoing === true,
-                      initialPilesDone: (site as any).initial_piles_done != null ? String((site as any).initial_piles_done) : "",
-                      initialEmptyBorehole: (site as any).initial_empty_borehole != null ? String((site as any).initial_empty_borehole) : "",
-                      initialConcreteMeters: (site as any).initial_concrete_meters != null ? String((site as any).initial_concrete_meters) : "",
+                      authorizedPerson: siteRow.authorized_person != null ? String(siteRow.authorized_person) : "",
+                      employer: siteRow.employer != null ? String(siteRow.employer) : "",
+                      projectStartDate: siteRow.project_start_date ? String(siteRow.project_start_date).slice(0, 10) : "",
+                      isOngoing: siteRow.is_ongoing === true,
+                      initialPilesDone: siteRow.initial_piles_done != null ? String(siteRow.initial_piles_done) : "",
+                      initialEmptyBorehole: siteRow.initial_empty_borehole != null ? String(siteRow.initial_empty_borehole) : "",
+                      initialConcreteMeters: siteRow.initial_concrete_meters != null ? String(siteRow.initial_concrete_meters) : "",
                       initialMachineWork: initialMachineWorkFormFromSite(
-                        (site as { initial_machine_work?: unknown }).initial_machine_work,
-                        assignedIds.filter((id) =>
-                          idariMachineOptions.some((m) => String(m.id) === id && m.machine_type === "Kazık Makinesi"),
-                        ),
+                        siteRow.initial_machine_work,
+                        kazikIdsForForm,
                         {
                           emptyBorehole:
-                            (site as any).initial_empty_borehole != null ? String((site as any).initial_empty_borehole) : "",
-                          pilesDone: (site as any).initial_piles_done != null ? String((site as any).initial_piles_done) : "",
+                            siteRow.initial_empty_borehole != null ? String(siteRow.initial_empty_borehole) : "",
+                          pilesDone: siteRow.initial_piles_done != null ? String(siteRow.initial_piles_done) : "",
                           concreteMeters:
-                            (site as any).initial_concrete_meters != null ? String((site as any).initial_concrete_meters) : "",
+                            siteRow.initial_concrete_meters != null ? String(siteRow.initial_concrete_meters) : "",
                         },
                       ),
                       assignedMachineIds: assignedIds,
@@ -3046,9 +3062,7 @@ function AdminPanel() {
               label="Devam Eden (rapor başlamadan önce yapılan kazık sayıları girilecek)"
             />
             {siteDialogData.isOngoing && (() => {
-              const kazikIdsOngoing = siteDialogData.assignedMachineIds.filter((id) =>
-                idariMachineOptions.some((m) => String(m.id) === id && m.machine_type === "Kazık Makinesi"),
-              )
+              const kazikIdsOngoing = kazikMachineIds(siteDialogData.assignedMachineIds, idariMachineOptions)
               const storedPreview =
                 kazikIdsOngoing.length > 0
                   ? formRowsToStored(siteDialogData.initialMachineWork, kazikIdsOngoing)
@@ -3256,9 +3270,7 @@ function AdminPanel() {
                   }
                   setSiteRemainingRecalcLoading(true)
                   try {
-                    const kazikIds = siteDialogData.assignedMachineIds.filter((id) =>
-                      idariMachineOptions.some((m) => String(m.id) === id && m.machine_type === "Kazık Makinesi"),
-                    )
+                    const kazikIds = kazikMachineIds(siteDialogData.assignedMachineIds, idariMachineOptions)
                     const savePayload = {
                       name: siteDialogData.name.trim(),
                       code: siteDialogData.code.trim(),
@@ -3358,9 +3370,7 @@ function AdminPanel() {
                   alert("Şantiye adı ve kod zorunludur.")
                   return
                 }
-                const kazikIds = siteDialogData.assignedMachineIds.filter((id) =>
-                  idariMachineOptions.some((m) => String(m.id) === id && m.machine_type === "Kazık Makinesi"),
-                )
+                const kazikIds = kazikMachineIds(siteDialogData.assignedMachineIds, idariMachineOptions)
                 if (kazikIds.length === 0 && siteDialogData.isActive) {
                   alert("Açık şantiye için en az bir kazık makinesi seçmelisiniz (İdari → Makineler’de tanımlı olmalı).")
                   return

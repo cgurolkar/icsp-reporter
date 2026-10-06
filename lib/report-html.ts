@@ -170,6 +170,9 @@ export function generatePDFMainReport(
       machineName: string
       pileCount: number
       totalMeters: number
+      preReportEmptyBorehole?: number
+      preReportBetonPiles?: number
+      preReportMeters?: number
       earnedAmount?: number | null
       costPerMeter?: number | null
       billingCurrency?: string | null
@@ -602,6 +605,7 @@ export function generatePDFMainReport(
               <table>
                 <thead><tr>
                   <th>Makine</th><th>Kazık (Ad.)</th><th>Toplam boy (m)</th>
+                  <th>Rapor önc. boş foraj</th><th>Rapor önc. beton (Ad.)</th>
                   <th>Metre birim</th><th>Hakediş</th><th>Makine harcaması (USD)</th>
                 </tr></thead>
                 <tbody>
@@ -609,12 +613,15 @@ export function generatePDFMainReport(
                     <td style="font-weight:600;">${r.machineName ?? ""}</td>
                     <td class="td-center">${r.pileCount ?? 0}</td>
                     <td class="td-center">${Number(r.totalMeters ?? 0).toFixed(2)}</td>
+                    <td class="td-center">${r.preReportEmptyBorehole != null && r.preReportEmptyBorehole > 0 ? r.preReportEmptyBorehole : "—"}</td>
+                    <td class="td-center">${r.preReportBetonPiles != null && r.preReportBetonPiles > 0 ? r.preReportBetonPiles : "—"}</td>
                     <td class="td-center">${r.costPerMeter != null && r.costPerMeter > 0 ? `${Number(r.costPerMeter).toLocaleString("tr-TR")} ${pricePerMeterLabel(cur)}` : "—"}</td>
-                    <td class="td-center">${r.earnedAmount != null && r.earnedAmount > 0 ? formatMoney(r.earnedAmount, cur) : "—"}</td>
+                    <td class="td-center">${r.earnedAmount != null && r.earnedAmount > 0 ? formatMoney(r.earnedAmount, cur) : (Number(r.totalMeters ?? 0) > 0 && !(r.costPerMeter != null && r.costPerMeter > 0) ? "— (birim fiyat yok)" : "—")}</td>
                     <td class="td-center">${r.expenseTotalUsd != null && r.expenseTotalUsd > 0 ? formatMoney(r.expenseTotalUsd, "USD") : "—"}</td>
                   </tr>`).join("")}
                 </tbody>
-              </table>`
+              </table>
+              <p style="font-size:9px;color:#64748b;margin:4px 0 0;">Hakediş = imalat metrajı × şantiye kartındaki makine «Metre başı maliyet».</p>`
           })()}
         </div>
       </div>
