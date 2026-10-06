@@ -6,7 +6,6 @@ import {
   formatMoney,
   currencyLabel,
 } from "@/lib/site-currency"
-import { machineRowCumulativeBeton, sumMachineWorkPileCounts } from "@/lib/machine-work-stats"
 
 function normName(s: unknown): string {
   return String(s ?? "").trim().toLocaleLowerCase("tr-TR")
@@ -238,21 +237,12 @@ export function generatePDFMainReport(
 
   const remainingFromReport = parseInt(String(remainingPilesRaw), 10)
   const remainingFromReportNum = Number.isFinite(remainingFromReport) ? remainingFromReport : 0
-  const machCumRows = opts?.machineWorkCumulative ?? []
-  const pilesFromMachineTable =
-    machCumRows.length > 0 ? sumMachineWorkPileCounts(machCumRows) : null
   const drilledCompleted =
-    pilesFromMachineTable != null
-      ? pilesFromMachineTable.drilled
-      : opts?.cumulativeDrilledPiles != null && Number.isFinite(Number(opts.cumulativeDrilledPiles))
-        ? Number(opts.cumulativeDrilledPiles)
-        : null
+    opts?.cumulativeDrilledPiles != null && Number.isFinite(Number(opts.cumulativeDrilledPiles))
+      ? Number(opts.cumulativeDrilledPiles)
+      : null
   let concreteCompleted =
-    pilesFromMachineTable != null
-      ? pilesFromMachineTable.concrete
-      : opts?.cumulativeConcretePiles != null
-        ? Number(opts.cumulativeConcretePiles)
-        : null
+    opts?.cumulativeConcretePiles != null ? Number(opts.cumulativeConcretePiles) : null
   if (concreteCompleted == null || !Number.isFinite(concreteCompleted)) {
     const fromForm = isArray
       ? productionSummary.reduce((sum: number, m: any) => sum + (parseInt(m.totalCompletedPiles) || 0), 0)
@@ -607,15 +597,7 @@ export function generatePDFMainReport(
           ${(() => {
             const rows = opts?.machineWorkCumulative ?? []
             if (!rows.length) return ""
-            const machineBetonSum = rows.reduce(
-              (s, r) => s + (Number(r.cumulativeBetonPiles ?? 0) || 0),
-              0,
-            )
-            const siteBetonKum = concreteCompleted != null && concreteCompleted > 0 ? concreteCompleted : null
-            const betonNote =
-              siteBetonKum != null && machineBetonSum > 0 && siteBetonKum !== machineBetonSum
-                ? `<p style="font-size:9px;color:#b45309;margin:4px 0 0;">Üst kart (${siteBetonKum}) ile makine beton toplamı (${machineBetonSum}) farklı — şantiye kartındaki rapor öncesi / eski rapor betonlarını makine bazında güncelleyin.</p>`
-                : `<p style="font-size:9px;color:#64748b;margin:4px 0 0;">Üst kümülatif kartlar bu tablodaki makine toplamlarıyla aynı kaynaktan hesaplanır. Makine maliyet hakedişi yalnızca İdari → Makineler.</p>`
+            const betonNote = `<p style="font-size:9px;color:#64748b;margin:4px 0 0;">Üst kartlar şantiye hesabıdır: rapor öncesi atılan beton + sonraki raporlardaki beton (firma ilerlemesi). Bu tablo makine dağılımıdır. Makine hakedişi yalnızca delgi metrajı × metre başı maliyet (İdari → Makineler).</p>`
             return `<div style="margin-top:10px;font-size:10px;font-weight:700;color:#475569;">Bu tarihe kadar makine iş özeti (kümülatif)</div>
               <table>
                 <thead><tr>

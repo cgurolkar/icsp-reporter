@@ -294,7 +294,7 @@ export default function MakineDefteri() {
                     </TableBody>
                   </Table>
                   <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
-                    Rapor öncesi değerler Admin → Şantiye kartından gelir. Hakediş için aynı kartta «Metre başı maliyet» girilmeli.
+                    Rapor öncesi beton adedi şantiye ilerlemesine eklenir. Makine hakedişi yalnızca raporlardaki delgi metrajı × «Metre başı maliyet».
                     Makine harcaması: masraf yeri makine adıyla eşleşen kayıtlar.
                   </Typography>
                 </TableCell>

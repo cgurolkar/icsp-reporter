@@ -355,8 +355,7 @@ export default function ProductionSummaryStep({
             </Table>
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-            Kümülatif delgi ve beton, rapor öncesi makine girişleri + kayıtlı raporlar + bugünkü form satırlarından toplanır (üst kartlarla aynı mantık).
-            Makine maliyet hakedişi yalnızca İdari → Makineler sayfasında gösterilir.
+            Kümülatif şantiye betonu = rapor öncesi atılan + kayıtlı raporlar. Makine satırları dağılımdır; makine hakedişi yalnızca delgi metrajındandır.
           </Typography>
         </Paper>
       )}

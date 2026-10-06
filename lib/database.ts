@@ -4,13 +4,12 @@ import { getAppStatsSinceSqlDate } from './app-stats'
 import type { MachineWorkAggBucket, MachineWorkStatRow } from "./machine-work-stats"
 import {
   consolidateMachineWorkAgg,
+  filterMachineStatsByAssignedIds,
   machineWorkAggKey,
   normMachineName,
-  filterMachineStatsByAssignedIds,
   parseAssignedMachineIds,
   resolveMachineIdFromSlice,
   slicesFromProductionSummaryJson,
-  sumMachineWorkPileCounts,
 } from "./machine-work-stats"
 import { parseInitialMachineWorkStored } from "./initial-machine-work"
 
@@ -2216,7 +2215,7 @@ export async function getLastReportRemainingBySite(siteId: number | null, before
   }
 }
 
-/** Rapor tarihinden önceki kümülatif beton (Ad.) — makine özeti ile uyumlu. */
+/** Rapor tarihinden önceki kümülatif beton (Ad.): rapor öncesi + o tarihten önceki raporlar. */
 export async function getConcretePouredBeforeDate(siteId: number, beforeDate: string): Promise<number> {
   const d = (beforeDate || "").slice(0, 10)
   if (!d) return 0
@@ -2958,11 +2957,6 @@ export async function getCumulativePileCounts(
   date: string,
 ): Promise<{ drilled: number; concrete: number }> {
   const d = (date || "").slice(0, 10)
-  const machineStats = await getMachineWorkStats({ siteId, asOfDate: d })
-  if (machineStats.length > 0) {
-    return sumMachineWorkPileCounts(machineStats)
-  }
-
   const client = await pool.connect()
   try {
     const site = await client.query(
@@ -5243,7 +5237,6 @@ export async function getMachineWorkStats(options: {
         bucket.preReportBetonPiles += betonPiles
         bucket.preReportMeters += meters
         bucket.pileCount += empty
-        bucket.totalMeters += meters
         bucket.unitPrices = { ...bucket.unitPrices, ...unitPrices }
       }
     }

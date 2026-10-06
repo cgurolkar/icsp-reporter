@@ -618,16 +618,12 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
   const projectTotalPiles = siteSummary?.totalPiles ?? undefined
   const remainingValid = siteSummary?.remainingPiles != null && String(siteSummary.remainingPiles).trim() !== ""
   const totalCompletedBeforeToday = useMemo(() => {
-    if (machineCumulativeBeforeToday.length > 0) {
-      return machineCumulativeBeforeToday.reduce((s, r) => s + machineRowCumulativeBeton(r), 0)
-    }
-    if (siteSummary?.concreteCompletedToDate != null) {
-      return siteSummary.concreteCompletedToDate
-    }
+    if (siteSummary?.concreteCompletedToDate != null) return siteSummary.concreteCompletedToDate
     if (siteSummary?.totalPiles != null && remainingValid) {
       return siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles!, 10) || 0)
     }
-    return siteSummary?.initialPilesDone != null ? siteSummary.initialPilesDone : 0
+    if (siteSummary?.initialPilesDone != null) return siteSummary.initialPilesDone
+    return machineCumulativeBeforeToday.reduce((s, r) => s + machineRowCumulativeBeton(r), 0)
   }, [machineCumulativeBeforeToday, siteSummary, remainingValid])
 
   const renderStepContent = (step: number) => {
