@@ -60,6 +60,54 @@ import { LanguageProvider, useLanguage } from "@/contexts/language-context"
 import LanguageSelector from "@/components/language-selector"
 import { useAuth } from "@/contexts/auth-context"
 import { SITE_CURRENCIES, normalizeSiteCurrency, pricePerMeterLabel, formatMoney } from "@/lib/site-currency"
+import {
+  emptyInitialMachineWorkFormRow,
+  formRowsToStored,
+  initialMachineWorkFormFromSite,
+  sumInitialMachineWork,
+  type InitialMachineWorkFormRow,
+} from "@/lib/initial-machine-work"
+
+function buildSiteInitialPayload(
+  siteDialogData: {
+    isOngoing: boolean
+    initialPilesDone: string
+    initialEmptyBorehole: string
+    initialConcreteMeters: string
+    initialMachineWork: Record<string, InitialMachineWorkFormRow>
+    pileRates: { diameterMm: string }[]
+  },
+  kazikIds: string[],
+) {
+  if (!siteDialogData.isOngoing) {
+    return {
+      initialPilesDone: null as number | null,
+      initialEmptyBorehole: null as number | null,
+      initialConcreteMeters: null as number | null,
+      initialMachineWork: {} as ReturnType<typeof formRowsToStored>,
+    }
+  }
+  const singleTariff = (siteDialogData.pileRates || []).filter((r) => r.diameterMm.trim()).length <= 1
+  if (kazikIds.length > 0) {
+    const stored = formRowsToStored(siteDialogData.initialMachineWork, kazikIds)
+    const sums = sumInitialMachineWork(stored, kazikIds)
+    return {
+      initialMachineWork: stored,
+      initialPilesDone: sums.pilesDone > 0 ? sums.pilesDone : null,
+      initialEmptyBorehole: sums.emptyBorehole > 0 ? sums.emptyBorehole : null,
+      initialConcreteMeters: singleTariff && sums.concreteMeters > 0 ? sums.concreteMeters : null,
+    }
+  }
+  return {
+    initialMachineWork: {},
+    initialPilesDone: siteDialogData.initialPilesDone.trim() ? parseInt(siteDialogData.initialPilesDone, 10) || null : null,
+    initialEmptyBorehole: siteDialogData.initialEmptyBorehole.trim()
+      ? parseInt(siteDialogData.initialEmptyBorehole, 10) || null
+      : null,
+    initialConcreteMeters:
+      singleTariff && siteDialogData.initialConcreteMeters.trim() ? Number(siteDialogData.initialConcreteMeters) : null,
+  }
+}
 
 interface TabPanelProps {
   children?: React.ReactNode
@@ -273,6 +321,7 @@ function AdminPanel() {
     initialPilesDone: string
     initialEmptyBorehole: string
     initialConcreteMeters: string
+    initialMachineWork: Record<string, InitialMachineWorkFormRow>
     assignedMachineIds: string[]
     assignedOperatorIds: number[]
     assignedMachineOperators: { machineId: string; personelId: number }[]
@@ -297,6 +346,7 @@ function AdminPanel() {
     initialPilesDone: "",
     initialEmptyBorehole: "",
     initialConcreteMeters: "",
+    initialMachineWork: {},
     assignedMachineIds: [],
     assignedOperatorIds: [],
     assignedMachineOperators: [],
@@ -1923,7 +1973,7 @@ function AdminPanel() {
               variant="contained"
               startIcon={<Add />}
               onClick={() => {
-                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", iqdPerUsd: "1320", billingCurrency: "USD", contractUnitPrice: "", pileRates: [], authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", initialEmptyBorehole: "", initialConcreteMeters: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [], assignedMachineUnitPrices: {}, isActive: true, releaseMachinesWhenClosed: true })
+                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", iqdPerUsd: "1320", billingCurrency: "USD", contractUnitPrice: "", pileRates: [], authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", initialEmptyBorehole: "", initialConcreteMeters: "", initialMachineWork: {}, assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [], assignedMachineUnitPrices: {}, isActive: true, releaseMachinesWhenClosed: true })
                 if (personelList.length === 0) fetch("/api/idari/personel?limit=500").then((r) => (r.ok ? r.json() : { data: [] })).then((res: any) => setPersonelList(Array.isArray(res) ? res : (res.data ?? []))).catch(() => {})
                 setSiteDialogOpen(true)
               }}
@@ -2042,6 +2092,19 @@ function AdminPanel() {
                       initialPilesDone: (site as any).initial_piles_done != null ? String((site as any).initial_piles_done) : "",
                       initialEmptyBorehole: (site as any).initial_empty_borehole != null ? String((site as any).initial_empty_borehole) : "",
                       initialConcreteMeters: (site as any).initial_concrete_meters != null ? String((site as any).initial_concrete_meters) : "",
+                      initialMachineWork: initialMachineWorkFormFromSite(
+                        (site as { initial_machine_work?: unknown }).initial_machine_work,
+                        assignedIds.filter((id) =>
+                          idariMachineOptions.some((m) => String(m.id) === id && m.machine_type === "Kazık Makinesi"),
+                        ),
+                        {
+                          emptyBorehole:
+                            (site as any).initial_empty_borehole != null ? String((site as any).initial_empty_borehole) : "",
+                          pilesDone: (site as any).initial_piles_done != null ? String((site as any).initial_piles_done) : "",
+                          concreteMeters:
+                            (site as any).initial_concrete_meters != null ? String((site as any).initial_concrete_meters) : "",
+                        },
+                      ),
                       assignedMachineIds: assignedIds,
                       assignedOperatorIds: Array.isArray((site as any).assigned_operator_ids) ? (site as any).assigned_operator_ids.map((x: unknown) => Number(x)).filter((n: number) => !Number.isNaN(n)) : [],
                       assignedMachineOperators: ops.map((o: any) => ({ machineId: String(o.machineId ?? o.machine_id ?? ""), personelId: Number(o.personelId ?? o.personel_id ?? 0) })).filter((o: { machineId: string; personelId: number }) => o.machineId && o.personelId > 0),
@@ -2982,30 +3045,153 @@ function AdminPanel() {
               }
               label="Devam Eden (rapor başlamadan önce yapılan kazık sayıları girilecek)"
             />
-            {siteDialogData.isOngoing && (
+            {siteDialogData.isOngoing && (() => {
+              const kazikIdsOngoing = siteDialogData.assignedMachineIds.filter((id) =>
+                idariMachineOptions.some((m) => String(m.id) === id && m.machine_type === "Kazık Makinesi"),
+              )
+              const storedPreview =
+                kazikIdsOngoing.length > 0
+                  ? formRowsToStored(siteDialogData.initialMachineWork, kazikIdsOngoing)
+                  : {}
+              const sumsPreview =
+                kazikIdsOngoing.length > 0 ? sumInitialMachineWork(storedPreview, kazikIdsOngoing) : null
+              const showPerMachine = kazikIdsOngoing.length > 0
+              const singleTariff = (siteDialogData.pileRates || []).filter((r) => r.diameterMm.trim()).length <= 1
+              return (
               <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, mt: 0.5 }}>
-                <TextField
-                  margin="dense"
-                  fullWidth
-                  type="number"
-                  label="Rapor öncesi boş foraj (Ad.) — sadece delgi"
-                  value={siteDialogData.initialEmptyBorehole}
-                  onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialEmptyBorehole: e.target.value }))}
-                  placeholder="Beton dökülmemiş, yalnızca delinmiş kazık"
-                  inputProps={{ min: 0 }}
-                  helperText="Yalnızca delgi kümülasyonuna eklenir."
-                />
-                <TextField
-                  margin="dense"
-                  fullWidth
-                  type="number"
-                  label="Rapor öncesi beton dökülen kazık (Ad.)"
-                  value={siteDialogData.initialPilesDone}
-                  onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialPilesDone: e.target.value }))}
-                  placeholder="Rapor öncesi beton dökülmüş kazık adedi"
-                  inputProps={{ min: 0 }}
-                  helperText="Yalnızca beton kümülasyonuna eklenir (delgiye karışmaz)."
-                />
+                {showPerMachine ? (
+                  <>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      Rapor öncesi — makine bazında ({kazikIdsOngoing.length} makine)
+                    </Typography>
+                    {kazikIdsOngoing.map((machineId) => {
+                      const row = siteDialogData.initialMachineWork[machineId] ?? emptyInitialMachineWorkFormRow()
+                      const machineName = idariMachineOptions.find((m) => String(m.id) === machineId)?.name ?? machineId
+                      return (
+                        <Paper key={machineId} variant="outlined" sx={{ p: 1.5, bgcolor: "#f8fafc" }}>
+                          <Typography variant="body2" fontWeight={700} sx={{ mb: 1 }}>
+                            {machineName}
+                          </Typography>
+                          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.5 }}>
+                            <TextField
+                              size="small"
+                              fullWidth
+                              type="number"
+                              label="Boş foraj (Ad.) — delgi"
+                              value={row.emptyBorehole}
+                              onChange={(e) =>
+                                setSiteDialogData((prev) => ({
+                                  ...prev,
+                                  initialMachineWork: {
+                                    ...prev.initialMachineWork,
+                                    [machineId]: { ...row, emptyBorehole: e.target.value },
+                                  },
+                                }))
+                              }
+                              inputProps={{ min: 0 }}
+                            />
+                            <TextField
+                              size="small"
+                              fullWidth
+                              type="number"
+                              label="Beton dökülen kazık (Ad.)"
+                              value={row.pilesDone}
+                              onChange={(e) =>
+                                setSiteDialogData((prev) => ({
+                                  ...prev,
+                                  initialMachineWork: {
+                                    ...prev.initialMachineWork,
+                                    [machineId]: { ...row, pilesDone: e.target.value },
+                                  },
+                                }))
+                              }
+                              inputProps={{ min: 0 }}
+                            />
+                            {isSuperAdmin && singleTariff && (
+                              <TextField
+                                size="small"
+                                fullWidth
+                                type="number"
+                                label="Beton metrajı (m)"
+                                value={row.concreteMeters}
+                                onChange={(e) =>
+                                  setSiteDialogData((prev) => ({
+                                    ...prev,
+                                    initialMachineWork: {
+                                      ...prev.initialMachineWork,
+                                      [machineId]: { ...row, concreteMeters: e.target.value },
+                                    },
+                                  }))
+                                }
+                                inputProps={{ min: 0, step: "0.01" }}
+                                sx={{ gridColumn: { sm: "1 / -1" } }}
+                              />
+                            )}
+                          </Box>
+                        </Paper>
+                      )
+                    })}
+                    {sumsPreview && (
+                      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" }, gap: 1 }}>
+                        <TextField
+                          size="small"
+                          label="Şantiye toplamı — boş foraj"
+                          value={sumsPreview.emptyBorehole || "0"}
+                          InputProps={{ readOnly: true }}
+                        />
+                        <TextField
+                          size="small"
+                          label="Şantiye toplamı — beton kazık"
+                          value={sumsPreview.pilesDone || "0"}
+                          InputProps={{ readOnly: true }}
+                        />
+                        {isSuperAdmin && singleTariff && (
+                          <TextField
+                            size="small"
+                            label="Şantiye toplamı — beton metraj (m)"
+                            value={sumsPreview.concreteMeters > 0 ? sumsPreview.concreteMeters.toFixed(2) : "0"}
+                            InputProps={{ readOnly: true }}
+                          />
+                        )}
+                      </Box>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <TextField
+                      margin="dense"
+                      fullWidth
+                      type="number"
+                      label="Rapor öncesi boş foraj (Ad.) — sadece delgi"
+                      value={siteDialogData.initialEmptyBorehole}
+                      onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialEmptyBorehole: e.target.value }))}
+                      placeholder="Beton dökülmemiş, yalnızca delinmiş kazık"
+                      inputProps={{ min: 0 }}
+                      helperText="Makine atanmadığında şantiye geneli. Makine seçince makine kartları açılır."
+                    />
+                    <TextField
+                      margin="dense"
+                      fullWidth
+                      type="number"
+                      label="Rapor öncesi beton dökülen kazık (Ad.)"
+                      value={siteDialogData.initialPilesDone}
+                      onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialPilesDone: e.target.value }))}
+                      inputProps={{ min: 0 }}
+                    />
+                    {isSuperAdmin && singleTariff && (
+                      <TextField
+                        margin="dense"
+                        fullWidth
+                        type="number"
+                        label="Rapor öncesi beton metrajı (m)"
+                        value={siteDialogData.initialConcreteMeters}
+                        onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialConcreteMeters: e.target.value }))}
+                        inputProps={{ min: 0, step: "0.01" }}
+                        helperText={`Tek çap/fiyatlı şantiyelerde hakedişe eklenir (${pricePerMeterLabel(siteDialogData.billingCurrency)}).`}
+                      />
+                    )}
+                  </>
+                )}
                 <Box
                   sx={{
                     p: 1.5,
@@ -3018,33 +3204,18 @@ function AdminPanel() {
                     İki ayrı kalan hesabı (Kaydet sonrası raporlarda)
                   </Typography>
                   <Typography variant="caption" sx={{ display: "block", color: "#475569", mb: 0.5 }}>
-                    <strong>Kalan delinmemiş</strong> (Delgisi yapılmayan) = Proje toplamı − rapor öncesi boş foraj − o güne
-                    kadar günlük rapor delgi toplamları
+                    <strong>Kalan delinmemiş</strong> = Proje toplamı − rapor öncesi boş foraj (toplam) − günlük delgi
                   </Typography>
                   <Typography variant="caption" sx={{ display: "block", color: "#475569", mb: 0.5 }}>
-                    <strong>Kalan beton dökülmemiş</strong> (Beton dökülecek / listedeki kalan) = Toplam − beton dökülen
-                    (öncesi) − rapor betonları
+                    <strong>Kalan beton dökülmemiş</strong> = Toplam − rapor öncesi beton kazık (toplam) − rapor betonları
                   </Typography>
                   <Typography variant="caption" sx={{ display: "block", color: "#64748b" }}>
-                    «Kalan kazıkları yeniden hesapla» yalnızca beton kalanını DB’de günceller. Delgi kalanı Kaydet ile anında
-                    değişir.
+                    Makine kümülatif özette rapor öncesi boş foraj delgi adedine, beton metrajı ise metraj toplamına eklenir.
                   </Typography>
                 </Box>
-                {isSuperAdmin && (siteDialogData.pileRates || []).filter((r) => r.diameterMm.trim()).length <= 1 && (
-                  <TextField
-                    margin="dense"
-                    fullWidth
-                    type="number"
-                    label="Rapor öncesi beton metrajı (m)"
-                    value={siteDialogData.initialConcreteMeters}
-                    onChange={(e) => setSiteDialogData((prev) => ({ ...prev, initialConcreteMeters: e.target.value }))}
-                    placeholder="Örn: 1250.5"
-                    inputProps={{ min: 0, step: "0.01" }}
-                    helperText={`Tek çap/fiyatlı şantiyelerde hakedişe eklenir (${pricePerMeterLabel(siteDialogData.billingCurrency)}).`}
-                  />
-                )}
               </Box>
-            )}
+              )
+            })()}
             <Typography variant="body2" sx={{ mt: 2, mb: 1 }} color="text.secondary">
               Rapor PDF’inin gideceği e-posta adresleri (her satıra bir adres)
             </Typography>
@@ -3100,20 +3271,7 @@ function AdminPanel() {
                       employer: siteDialogData.employer.trim() || null,
                       projectStartDate: siteDialogData.projectStartDate.trim() || null,
                       isOngoing: siteDialogData.isOngoing,
-                      initialPilesDone:
-                        siteDialogData.isOngoing && siteDialogData.initialPilesDone.trim()
-                          ? parseInt(siteDialogData.initialPilesDone, 10) || null
-                          : null,
-                      initialEmptyBorehole:
-                        siteDialogData.isOngoing && siteDialogData.initialEmptyBorehole.trim()
-                          ? parseInt(siteDialogData.initialEmptyBorehole, 10) || null
-                          : null,
-                      initialConcreteMeters:
-                        siteDialogData.isOngoing &&
-                        (siteDialogData.pileRates || []).filter((r) => r.diameterMm.trim()).length <= 1 &&
-                        siteDialogData.initialConcreteMeters.trim()
-                          ? Number(siteDialogData.initialConcreteMeters)
-                          : null,
+                      ...buildSiteInitialPayload(siteDialogData, kazikIds),
                       ...(isSuperAdmin
                         ? {
                             billingCurrency: normalizeSiteCurrency(siteDialogData.billingCurrency),
@@ -3219,14 +3377,7 @@ function AdminPanel() {
                   employer: siteDialogData.employer.trim() || null,
                   projectStartDate: siteDialogData.projectStartDate.trim() || null,
                   isOngoing: siteDialogData.isOngoing,
-                  initialPilesDone: siteDialogData.isOngoing && siteDialogData.initialPilesDone.trim() ? parseInt(siteDialogData.initialPilesDone, 10) || null : null,
-                  initialEmptyBorehole: siteDialogData.isOngoing && siteDialogData.initialEmptyBorehole.trim() ? parseInt(siteDialogData.initialEmptyBorehole, 10) || null : null,
-                  initialConcreteMeters:
-                    siteDialogData.isOngoing &&
-                    (siteDialogData.pileRates || []).filter((r) => r.diameterMm.trim()).length <= 1 &&
-                    siteDialogData.initialConcreteMeters.trim()
-                      ? Number(siteDialogData.initialConcreteMeters)
-                      : null,
+                  ...buildSiteInitialPayload(siteDialogData, kazikIds),
                   ...(isSuperAdmin
                     ? {
                         billingCurrency: normalizeSiteCurrency(siteDialogData.billingCurrency),

@@ -86,7 +86,7 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid site id" }, { status: 400 })
     }
     const body = await request.json()
-    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, initialEmptyBorehole, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, assignedMachineUnitPrices, budget, timezone, contractUnitPrice, iqdPerUsd, billingCurrency, initialConcreteMeters, releaseMachinesFromSite: releaseMachinesFlag } = body
+    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, initialEmptyBorehole, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, assignedMachineUnitPrices, budget, timezone, contractUnitPrice, iqdPerUsd, billingCurrency, initialConcreteMeters, initialMachineWork, releaseMachinesFromSite: releaseMachinesFlag } = body
     const unitPricesParsed: Record<string, number> | undefined =
       assignedMachineUnitPrices && typeof assignedMachineUnitPrices === "object" && !Array.isArray(assignedMachineUnitPrices)
         ? Object.fromEntries(
@@ -98,6 +98,32 @@ export async function PUT(
               .filter(([k, n]) => k !== "" && Number.isFinite(n) && n >= 0),
           )
         : undefined
+    const kazikIdsForInitial = Array.isArray(assignedMachineIds)
+      ? assignedMachineIds.filter((x: unknown) => typeof x === "string")
+      : []
+    const { resolveSiteInitialWorkForSave } = await import("@/lib/initial-machine-work")
+    const initialResolved =
+      isOngoing !== undefined || initialMachineWork !== undefined || initialPilesDone !== undefined || initialEmptyBorehole !== undefined || initialConcreteMeters !== undefined
+        ? resolveSiteInitialWorkForSave(isOngoing === true, kazikIdsForInitial, {
+            initialMachineWork,
+            initialPilesDone:
+              initialPilesDone != null
+                ? typeof initialPilesDone === "number"
+                  ? initialPilesDone
+                  : parseInt(String(initialPilesDone), 10) || null
+                : null,
+            initialEmptyBorehole:
+              initialEmptyBorehole != null
+                ? typeof initialEmptyBorehole === "number"
+                  ? initialEmptyBorehole
+                  : parseInt(String(initialEmptyBorehole), 10) || null
+                : null,
+            initialConcreteMeters:
+              initialConcreteMeters != null && String(initialConcreteMeters).trim() !== "" && !Number.isNaN(Number(initialConcreteMeters))
+                ? Number(initialConcreteMeters)
+                : null,
+          })
+        : null
     const site = await updateSite(siteId, {
       ...(name !== undefined && { name }),
       ...(code !== undefined && { code }),
@@ -111,13 +137,11 @@ export async function PUT(
       ...(employer !== undefined && { employer: employer != null ? String(employer).trim() || null : undefined }),
       ...(projectStartDate !== undefined && { projectStartDate: projectStartDate != null ? String(projectStartDate).trim() || null : undefined }),
       ...(isOngoing !== undefined && { isOngoing: isOngoing === true }),
-      ...(initialPilesDone !== undefined && { initialPilesDone: initialPilesDone != null ? (typeof initialPilesDone === "number" ? initialPilesDone : parseInt(String(initialPilesDone), 10) || null) : null }),
-      ...(initialEmptyBorehole !== undefined && { initialEmptyBorehole: initialEmptyBorehole != null ? (typeof initialEmptyBorehole === "number" ? initialEmptyBorehole : parseInt(String(initialEmptyBorehole), 10) || null) : null }),
-      ...(initialConcreteMeters !== undefined && {
-        initialConcreteMeters:
-          initialConcreteMeters != null && String(initialConcreteMeters).trim() !== "" && !Number.isNaN(Number(initialConcreteMeters))
-            ? Number(initialConcreteMeters)
-            : null,
+      ...(initialResolved != null && {
+        initialPilesDone: initialResolved.initialPilesDone,
+        initialEmptyBorehole: initialResolved.initialEmptyBorehole,
+        initialConcreteMeters: initialResolved.initialConcreteMeters,
+        initialMachineWork: initialResolved.initialMachineWork,
       }),
       ...(assignedMachineIds !== undefined && { assignedMachineIds: Array.isArray(assignedMachineIds) ? assignedMachineIds.filter((x: unknown) => typeof x === "string") : [] }),
       ...(assignedOperatorIds !== undefined && { assignedOperatorIds: Array.isArray(assignedOperatorIds) ? assignedOperatorIds.map((x: unknown) => typeof x === "number" ? x : parseInt(String(x), 10)).filter((n: number) => !Number.isNaN(n)) : [] }),

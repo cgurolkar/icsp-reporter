@@ -84,6 +84,13 @@ export async function POST(request: NextRequest) {
       body.initialConcreteMeters != null && String(body.initialConcreteMeters).trim() !== "" && !Number.isNaN(Number(body.initialConcreteMeters))
         ? Number(body.initialConcreteMeters)
         : null
+    const { resolveSiteInitialWorkForSave } = await import("@/lib/initial-machine-work")
+    const initialResolved = resolveSiteInitialWorkForSave(isOngoing, assignedMachineIds, {
+      initialMachineWork: body.initialMachineWork,
+      initialPilesDone,
+      initialEmptyBorehole,
+      initialConcreteMeters,
+    })
     if (!name || !code) {
       return NextResponse.json({ error: "Şantiye adı ve kod zorunludur." }, { status: 400 })
     }
@@ -100,15 +107,16 @@ export async function POST(request: NextRequest) {
       employer,
       projectStartDate,
       isOngoing,
-      initialPilesDone,
-      initialEmptyBorehole,
+      initialPilesDone: initialResolved.initialPilesDone,
+      initialEmptyBorehole: initialResolved.initialEmptyBorehole,
+      initialConcreteMeters: initialResolved.initialConcreteMeters,
+      initialMachineWork: initialResolved.initialMachineWork,
       assignedMachineIds,
       assignedOperatorIds,
       assignedMachineOperators,
       contractUnitPrice,
       iqdPerUsd,
       billingCurrency,
-      initialConcreteMeters,
     })
     let pile_rates: Awaited<ReturnType<typeof getSitePileRates>> = []
     if (session.role === "super_admin" && Array.isArray(body.pileRates) && site?.id) {

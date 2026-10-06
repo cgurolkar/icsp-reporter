@@ -363,6 +363,9 @@ async function _doInitializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'initial_concrete_meters') THEN
           ALTER TABLE sites ADD COLUMN initial_concrete_meters DECIMAL(14,2) DEFAULT NULL;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'initial_machine_work') THEN
+          ALTER TABLE sites ADD COLUMN initial_machine_work JSONB DEFAULT '{}'::jsonb;
+        END IF;
       EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'sites project columns: %', SQLERRM;
       END $$
     `)
@@ -2581,11 +2584,13 @@ export async function createSite(data: {
   billingCurrency?: string | null
   /** Rapor öncesi beton metrajı (m) — tek tarife + devam eden */
   initialConcreteMeters?: number | null
+  initialMachineWork?: Record<string, { emptyBorehole?: number | null; pilesDone?: number | null; concreteMeters?: number | null }>
 }) {
   const client = await pool.connect()
   try {
     const ops = data.assignedMachineOperators || []
     const unitPricesJson = JSON.stringify(data.assignedMachineUnitPrices ?? {})
+    const initialMachineWorkJson = JSON.stringify(data.initialMachineWork ?? {})
     const iqdUsd = data.iqdPerUsd != null && !Number.isNaN(Number(data.iqdPerUsd)) && Number(data.iqdPerUsd) > 0 ? Number(data.iqdPerUsd) : 1320
     const { normalizeSiteCurrency } = await import("@/lib/site-currency")
     const billingCurrency = normalizeSiteCurrency(data.billingCurrency)
@@ -2594,8 +2599,8 @@ export async function createSite(data: {
         ? Number(data.initialConcreteMeters)
         : null
     const result = await client.query(
-      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, initial_empty_borehole, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators, assigned_machine_unit_prices, timezone, contract_unit_price, iqd_per_usd, billing_currency, initial_concrete_meters)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18, $19, $20, $21, $22) RETURNING *`,
+      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, initial_empty_borehole, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators, assigned_machine_unit_prices, timezone, contract_unit_price, iqd_per_usd, billing_currency, initial_concrete_meters, initial_machine_work)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18, $19, $20, $21, $22, $23::jsonb) RETURNING *`,
       [
         data.name,
         data.code,
@@ -2619,6 +2624,7 @@ export async function createSite(data: {
         iqdUsd,
         billingCurrency,
         initialMeters,
+        initialMachineWorkJson,
       ]
     )
     const newSite = result.rows[0]
@@ -2666,6 +2672,7 @@ export async function updateSite(id: number, data: {
   iqdPerUsd?: number | null
   billingCurrency?: string | null
   initialConcreteMeters?: number | null
+  initialMachineWork?: Record<string, { emptyBorehole?: number | null; pilesDone?: number | null; concreteMeters?: number | null }>
 }) {
   const client = await pool.connect()
   try {
@@ -2703,6 +2710,10 @@ export async function updateSite(id: number, data: {
     if (data.isOngoing !== undefined) { updates.push(`is_ongoing = $${i++}`); values.push(data.isOngoing) }
     if (data.initialPilesDone !== undefined) { updates.push(`initial_piles_done = $${i++}`); values.push(data.initialPilesDone) }
     if (data.initialEmptyBorehole !== undefined) { updates.push(`initial_empty_borehole = $${i++}`); values.push(data.initialEmptyBorehole) }
+    if (data.initialMachineWork !== undefined) {
+      updates.push(`initial_machine_work = $${i++}::jsonb`)
+      values.push(JSON.stringify(data.initialMachineWork ?? {}))
+    }
     if (data.assignedMachineIds !== undefined) { updates.push(`assigned_machine_ids = $${i++}`); values.push(JSON.stringify(data.assignedMachineIds)) }
     if (data.assignedOperatorIds !== undefined) { updates.push(`assigned_operator_ids = $${i++}`); values.push(JSON.stringify(data.assignedOperatorIds)) }
     if (data.assignedMachineOperators !== undefined) { updates.push(`assigned_machine_operators = $${i++}`); values.push(JSON.stringify(data.assignedMachineOperators)) }
@@ -5199,6 +5210,47 @@ export async function getMachineWorkStats(options: {
         }
         bucket.pileCount += sl.piles
         bucket.totalMeters += sl.meters
+        bucket.unitPrices = { ...bucket.unitPrices, ...unitPrices }
+      }
+    }
+
+    const { parseInitialMachineWorkStored } = await import("@/lib/initial-machine-work")
+    let initSiteQ = `SELECT id, name, code, assigned_machine_unit_prices, billing_currency, initial_machine_work FROM sites`
+    const initSiteParams: unknown[] = []
+    if (options.siteId != null) {
+      initSiteQ += ` WHERE id = $1`
+      initSiteParams.push(options.siteId)
+    }
+    const initSites = await client.query(initSiteQ, initSiteParams)
+    for (const siteRow of initSites.rows) {
+      const siteId = Number(siteRow.id)
+      const unitPrices = parseAssignedMachineUnitPrices(siteRow.assigned_machine_unit_prices)
+      const map = parseInitialMachineWorkStored(siteRow.initial_machine_work)
+      for (const [midStr, entry] of Object.entries(map)) {
+        const mid = /^\d+$/.test(midStr) ? parseInt(midStr, 10) : null
+        if (options.machineId != null && mid !== options.machineId) continue
+        const displayName = mid != null && nameById.get(mid) ? nameById.get(mid)! : midStr
+        const piles = Math.max(0, Number(entry.emptyBorehole) || 0)
+        const meters = Math.max(0, Number(entry.concreteMeters) || 0)
+        if (piles === 0 && meters === 0) continue
+        const key = machineWorkAggKey(siteId, mid, displayName)
+        let bucket = agg.get(key)
+        if (!bucket) {
+          bucket = {
+            machineId: mid,
+            machineName: displayName,
+            siteId,
+            siteName: String(siteRow.name ?? ""),
+            siteCode: String(siteRow.code ?? ""),
+            pileCount: 0,
+            totalMeters: 0,
+            unitPrices,
+            billingCurrency: siteRow.billing_currency != null ? String(siteRow.billing_currency) : null,
+          }
+          agg.set(key, bucket)
+        }
+        bucket.pileCount += piles
+        bucket.totalMeters += meters
         bucket.unitPrices = { ...bucket.unitPrices, ...unitPrices }
       }
     }
