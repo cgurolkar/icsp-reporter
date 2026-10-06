@@ -2216,32 +2216,15 @@ export async function getLastReportRemainingBySite(siteId: number | null, before
   }
 }
 
-/** Verilen tarihten önce (date < beforeDate) dökülen beton adedi + devam eden projede rapor öncesi. */
+/** Rapor tarihinden önceki kümülatif beton (Ad.) — makine özeti ile uyumlu. */
 export async function getConcretePouredBeforeDate(siteId: number, beforeDate: string): Promise<number> {
-  const client = await pool.connect()
-  try {
-    const d = (beforeDate || "").slice(0, 10)
-    const site = await client.query(
-      `SELECT is_ongoing, initial_piles_done FROM sites WHERE id = $1`,
-      [siteId],
-    )
-    const siteRow = site.rows[0]
-    const initial =
-      siteRow?.is_ongoing === true && siteRow?.initial_piles_done != null
-        ? Number(siteRow.initial_piles_done) || 0
-        : 0
-    const r = await client.query(
-      `SELECT COALESCE(SUM(
-         CASE WHEN COALESCE(concrete_poured, '') ~ '^[0-9]+$' THEN concrete_poured::int ELSE 0 END
-       ), 0) AS concrete
-       FROM work_reports
-       WHERE site_id = $1 AND date < $2::date`,
-      [siteId, d],
-    )
-    return (parseInt(String(r.rows[0]?.concrete ?? "0"), 10) || 0) + initial
-  } finally {
-    client.release()
-  }
+  const d = (beforeDate || "").slice(0, 10)
+  if (!d) return 0
+  const prev = new Date(`${d}T12:00:00Z`)
+  prev.setUTCDate(prev.getUTCDate() - 1)
+  const asOf = prev.toISOString().slice(0, 10)
+  const counts = await getCumulativePileCounts(siteId, asOf)
+  return counts.concrete
 }
 
 export type RecalculateRemainingPilesRow = {
@@ -2269,12 +2252,6 @@ export async function recalculateRemainingPilesForSite(siteId: number): Promise<
   if (totalPiles == null || Number.isNaN(totalPiles)) {
     return { skippedReason: "NO_TOTAL_PILES", updatedCount: 0, rows: [] }
   }
-  const isOngoing = site.is_ongoing === true
-  const initialPilesDone =
-    site.initial_piles_done != null && !Number.isNaN(Number(site.initial_piles_done))
-      ? Number(site.initial_piles_done)
-      : null
-
   const client = await pool.connect()
   const rows: RecalculateRemainingPilesRow[] = []
   try {
@@ -2282,29 +2259,17 @@ export async function recalculateRemainingPilesForSite(siteId: number): Promise<
     const result = await client.query<{
       id: number
       date: string
-      daily_pile_count: string | null
-      concrete_poured: string | null
       remaining_piles: string | null
     }>(
-      `SELECT id, date::text AS date, daily_pile_count, concrete_poured, remaining_piles
+      `SELECT id, date::text AS date, remaining_piles
        FROM work_reports WHERE site_id = $1 ORDER BY date ASC, id ASC`,
       [siteId]
     )
-    let prevRemaining: number | null = null
     for (const row of result.rows) {
-      let cumulativeDoneBeforeToday = 0
-      if (prevRemaining != null) {
-        cumulativeDoneBeforeToday = totalPiles - prevRemaining
-      } else if (isOngoing && initialPilesDone != null) {
-        cumulativeDoneBeforeToday = initialPilesDone
-      }
-      let todayPiles = 0
-      const concRaw = row.concrete_poured != null ? String(row.concrete_poured).trim() : ""
-      const concParsed = concRaw ? parseInt(concRaw, 10) : NaN
-      if (!Number.isNaN(concParsed)) todayPiles = Math.max(0, concParsed)
-      const newRemaining = Math.max(0, totalPiles - cumulativeDoneBeforeToday - todayPiles)
-      const newRemainingStr = String(newRemaining)
       const dateStr = (row.date || "").slice(0, 10)
+      const cumulative = (await getCumulativePileCounts(siteId, dateStr)).concrete
+      const newRemaining = Math.max(0, totalPiles - cumulative)
+      const newRemainingStr = String(newRemaining)
       const oldStr = row.remaining_piles != null ? String(row.remaining_piles) : null
       if (oldStr !== newRemainingStr) {
         await client.query(
@@ -2313,7 +2278,6 @@ export async function recalculateRemainingPilesForSite(siteId: number): Promise<
         )
         rows.push({ id: row.id, date: dateStr, oldRemaining: oldStr, newRemaining: newRemainingStr })
       }
-      prevRemaining = newRemaining
     }
     await client.query("COMMIT")
     return { updatedCount: rows.length, rows }

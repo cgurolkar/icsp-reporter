@@ -620,7 +620,7 @@ export function generatePDFMainReport(
               <table>
                 <thead><tr>
                   <th>Makine</th><th>Delgi (Ad.)</th><th>Toplam boy (m)</th>
-                  <th>Rapor önc. boş foraj</th><th>Rapor önc. beton</th><th>Küm. beton (Ad.)</th>
+                  <th>Rapor önc. boş foraj</th><th>Rapor önc. beton</th><th>Raporlardan beton</th><th>Küm. beton (Ad.)</th>
                 </tr></thead>
                 <tbody>
                   ${rows.map((r) => `<tr>
@@ -629,6 +629,7 @@ export function generatePDFMainReport(
                     <td class="td-center">${Number(r.totalMeters ?? 0).toFixed(2)}</td>
                     <td class="td-center">${r.preReportEmptyBorehole != null && r.preReportEmptyBorehole > 0 ? r.preReportEmptyBorehole : "—"}</td>
                     <td class="td-center">${r.preReportBetonPiles != null && r.preReportBetonPiles > 0 ? r.preReportBetonPiles : "—"}</td>
+                    <td class="td-center">${r.reportBetonPiles != null && r.reportBetonPiles > 0 ? r.reportBetonPiles : "—"}</td>
                     <td class="td-center">${r.cumulativeBetonPiles != null && r.cumulativeBetonPiles > 0 ? r.cumulativeBetonPiles : "—"}</td>
                   </tr>`).join("")}
                 </tbody>

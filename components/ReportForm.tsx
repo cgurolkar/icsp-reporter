@@ -621,6 +621,9 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     if (machineCumulativeBeforeToday.length > 0) {
       return machineCumulativeBeforeToday.reduce((s, r) => s + machineRowCumulativeBeton(r), 0)
     }
+    if (siteSummary?.concreteCompletedToDate != null) {
+      return siteSummary.concreteCompletedToDate
+    }
     if (siteSummary?.totalPiles != null && remainingValid) {
       return siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles!, 10) || 0)
     }

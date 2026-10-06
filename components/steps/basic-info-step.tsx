@@ -19,6 +19,8 @@ export interface SiteSummaryForForm {
   projectStartDate?: string | null
   isOngoing?: boolean
   initialPilesDone?: number | null
+  /** Son rapor tarihine kadar makine + rapor öncesi beton (Ad.) */
+  concreteCompletedToDate?: number | null
   initialEmptyBorehole?: number | null
   /** 1 USD = kaç IQD (şantiye kuru) */
   iqdPerUsd?: number | null
@@ -71,7 +73,7 @@ export default function BasicInfoStep({
     }
     fetch(`/api/sites/${data.siteId}/last-report`)
       .then((res) => (res.ok ? res.json() : {}))
-      .then((d: { totalPiles?: number | null; lastDate?: string | null; remainingPiles?: string | null; projectStartDate?: string | null; isOngoing?: boolean; initialPilesDone?: number | null; initialEmptyBorehole?: number | null; iqd_per_usd?: number | null; pileRates?: { id: number; diameterMm: number; label: string }[] }) => {
+      .then((d: { totalPiles?: number | null; lastDate?: string | null; remainingPiles?: string | null; projectStartDate?: string | null; isOngoing?: boolean; initialPilesDone?: number | null; concreteCompletedToDate?: number | null; initialEmptyBorehole?: number | null; iqd_per_usd?: number | null; pileRates?: { id: number; diameterMm: number; label: string }[] }) => {
         const next: SiteSummaryForForm = {
           totalPiles: d.totalPiles ?? null,
           lastDate: d.lastDate ?? null,
@@ -79,6 +81,7 @@ export default function BasicInfoStep({
           projectStartDate: d.projectStartDate ?? null,
           isOngoing: d.isOngoing === true,
           initialPilesDone: d.initialPilesDone ?? null,
+          concreteCompletedToDate: d.concreteCompletedToDate ?? null,
           initialEmptyBorehole: d.initialEmptyBorehole ?? null,
           iqdPerUsd: d.iqd_per_usd != null && Number(d.iqd_per_usd) > 0 ? Number(d.iqd_per_usd) : 1320,
           pileRates: Array.isArray(d.pileRates) ? d.pileRates : [],
@@ -229,15 +232,26 @@ export default function BasicInfoStep({
                   value={siteSummary.initialPilesDone}
                   InputProps={{ readOnly: true }}
                   size="small"
+                  helperText={
+                    siteSummary.concreteCompletedToDate != null &&
+                    siteSummary.concreteCompletedToDate !== siteSummary.initialPilesDone
+                      ? "Kart toplamı; güncel kümülatif beton makine dağılımından hesaplanır (aşağıdaki alan)."
+                      : undefined
+                  }
                   sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "#e3f2fd" } }}
                 />
               )}
               {siteSummary.totalPiles != null && (() => {
                 const remainingValid = siteSummary.remainingPiles != null && String(siteSummary.remainingPiles).trim() !== ""
                 const initialDone = siteSummary.initialPilesDone != null
-                const buguneKadar = remainingValid
-                  ? siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles!, 10) || 0)
-                  : (initialDone ? siteSummary.initialPilesDone! : null)
+                const buguneKadar =
+                  siteSummary.concreteCompletedToDate != null
+                    ? siteSummary.concreteCompletedToDate
+                    : remainingValid
+                      ? siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles!, 10) || 0)
+                      : initialDone
+                        ? siteSummary.initialPilesDone!
+                        : null
                 const kalan = remainingValid
                   ? siteSummary.remainingPiles
                   : (initialDone ? String(siteSummary.totalPiles - siteSummary.initialPilesDone!) : null)

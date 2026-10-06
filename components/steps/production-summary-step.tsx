@@ -335,6 +335,7 @@ export default function ProductionSummaryStep({
                   <TableCell align="right"><strong>Toplam boy (m)</strong></TableCell>
                   <TableCell align="right"><strong>Rapor önc. boş foraj</strong></TableCell>
                   <TableCell align="right"><strong>Rapor önc. beton (Ad.)</strong></TableCell>
+                  <TableCell align="right"><strong>Raporlardan beton</strong></TableCell>
                   <TableCell align="right"><strong>Küm. beton (Ad.)</strong></TableCell>
                 </TableRow>
               </TableHead>
@@ -346,6 +347,7 @@ export default function ProductionSummaryStep({
                       <TableCell align="right">{row.totalMeters.toFixed(2)}</TableCell>
                       <TableCell align="right">{row.preReportEmptyBorehole ?? "—"}</TableCell>
                       <TableCell align="right">{row.preReportBetonPiles ?? "—"}</TableCell>
+                      <TableCell align="right">{row.reportBetonPiles ?? "—"}</TableCell>
                       <TableCell align="right">{row.cumulativeBetonPiles ?? "—"}</TableCell>
                     </TableRow>
                 ))}
