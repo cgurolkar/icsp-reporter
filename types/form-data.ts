@@ -34,6 +34,8 @@ export interface MachineProductionSummary {
   emptyBorehole: string // yeni
   preBorehole: string // yeni
   concretePoured: string
+  /** Makine bazında beton dökülen toplam boy (m) */
+  concreteTotalLength?: string
   /** O gün makinenin yaptığı delgi / yapılan kazık adedi (operatörden bağımsız) */
   dailyDrilledPiles?: string
 }
@@ -236,6 +238,7 @@ export const initialFormData: FormData = {
     emptyBorehole: "",
     preBorehole: "",
     concretePoured: "",
+    concreteTotalLength: "",
     dailyDrilledPiles: "",
   }],
   siteConcretePouredPiles: "",

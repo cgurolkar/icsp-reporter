@@ -37,6 +37,7 @@ function enrichProductionSummary(formData: any, operatorEntries: any[]): any[] {
         emptyBorehole: "",
         preBorehole: "",
         concretePoured: "",
+        concreteTotalLength: "",
         dailyDrilledPiles: "",
       }
       byKey.set(k, row)
@@ -64,6 +65,7 @@ function enrichProductionSummary(formData: any, operatorEntries: any[]): any[] {
         emptyBorehole: "",
         preBorehole: "",
         concretePoured: "",
+        concreteTotalLength: "",
         dailyDrilledPiles: "",
       }
       base.push(row)
@@ -542,7 +544,7 @@ export function generatePDFMainReport(
             let html = ""
             if (hasPs && ps.length > 0) {
               html += `<table>
-                <thead><tr><th>Makine</th><th>Delgi (Ad.)</th><th>İmalat (m)</th><th>Boş Foraj</th><th>Ön Foraj</th></tr></thead>
+                <thead><tr><th>Makine</th><th>Delgi (Ad.)</th><th>İmalat (m)</th><th>Boş Foraj</th><th>Ön Foraj</th><th>Beton (Ad.)</th><th>Beton boy (m)</th></tr></thead>
                 <tbody>
                   ${ps.map((m: any) => `<tr>
                     <td style="font-weight:600;">${m.machineName ?? ""}</td>
@@ -550,6 +552,8 @@ export function generatePDFMainReport(
                     <td class="td-center" style="font-weight:700;color:#1a237e;">${v(m.totalProduction)}</td>
                     <td class="td-center">${v(m.emptyBorehole, "0")}</td>
                     <td class="td-center">${v(m.preBorehole, "0")}</td>
+                    <td class="td-center" style="font-weight:700;">${v(m.concretePoured, "0")}</td>
+                    <td class="td-center">${v(m.concreteTotalLength, "0")}</td>
                   </tr>`).join("")}
                   ${ps.length > 1 ? `<tr style="background:#e8eaf6;">
                     <td style="font-weight:700;">TOPLAM</td>
@@ -557,6 +561,8 @@ export function generatePDFMainReport(
                     <td class="td-total">${ps.reduce((s: number, m: any) => s + parseMeters(m.totalProduction), 0).toFixed(2)} m</td>
                     <td class="td-total">${ps.reduce((s: number, m: any) => s + (parseInt(m.emptyBorehole) || 0), 0)} Ad.</td>
                     <td class="td-total">${ps.reduce((s: number, m: any) => s + (parseInt(m.preBorehole) || 0), 0)} Ad.</td>
+                    <td class="td-total">${ps.reduce((s: number, m: any) => s + (parseInt(String(m.concretePoured ?? "0"), 10) || 0), 0)} Ad.</td>
+                    <td class="td-total">${ps.reduce((s: number, m: any) => s + parseMeters(m.concreteTotalLength), 0).toFixed(2)} m</td>
                   </tr>` : ""}
                 </tbody>
               </table>`

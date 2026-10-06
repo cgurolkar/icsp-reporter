@@ -97,6 +97,8 @@ function reportProductionErrorsBase(fd: FormData): string[] {
     if (!numFieldOk(m.totalProduction)) e.push(`${label}: Kazık imalatı (m) — çalışma yoksa 0 yazın.`)
     if (!numFieldOk(m.preBorehole)) e.push(`${label}: Ön foraj (Ad.) — çalışma yoksa 0 yazın.`)
     if (!numFieldOk(m.emptyBorehole)) e.push(`${label}: Boş foraj (Ad.) — çalışma yoksa 0 yazın.`)
+    if (!numFieldOk(m.concretePoured)) e.push(`${label}: Beton dökülen kazık (Ad.) — çalışma yoksa 0 yazın.`)
+    if (!numFieldOk(m.concreteTotalLength)) e.push(`${label}: Toplam boy — beton dökülen (m) — yoksa 0 yazın.`)
   }
   if (!numFieldOk(fd.siteConcretePouredPiles)) e.push("Beton dökülen kazık (şantiye toplamı, Ad.) — yoksa 0 yazın.")
   if (!numFieldOk(fd.siteConcreteTotalLength)) e.push("Toplam boy (m) — beton dökülen — yoksa 0 yazın.")
@@ -117,6 +119,17 @@ function reportProductionErrorsBase(fd: FormData): string[] {
   if (machineIds.length > 1) {
     const bad = fd.pileDetails.some((p) => p.concretePoured === true && (!(p.machineIds && p.machineIds.length)))
     if (bad) e.push("Kazık detayları: Beton döküldü işaretli satırlarda hangi makineye ait olduğunu işaretleyin.")
+    const sumMachinePiles = fd.productionSummary.reduce(
+      (s, m) => s + (parseInt(String(m.concretePoured ?? "").trim(), 10) || 0),
+      0,
+    )
+    if (sumMachinePiles !== beton) {
+      e.push("Beton dökülen kazık: makine toplamları ile şantiye toplamı uyuşmuyor.")
+    }
+    const sumMachineLen = fd.productionSummary.reduce((s, m) => s + parseMeters(m.concreteTotalLength), 0)
+    if (Math.abs(sumMachineLen - toplamBoy) > 0.01) {
+      e.push("Toplam boy: makine bazında girilen metrelerin toplamı şantiye toplamına eşit olmalıdır.")
+    }
   }
   return e
 }
@@ -293,6 +306,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
                   machineId: m.id,
                   machineName: m.name,
                   dailyDrilledPiles: old.dailyDrilledPiles ?? "",
+                  concreteTotalLength: old.concreteTotalLength ?? "",
                 }
               : {
                   machineId: m.id,
@@ -301,6 +315,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
                   emptyBorehole: "",
                   preBorehole: "",
                   concretePoured: "",
+                  concreteTotalLength: "",
                   dailyDrilledPiles: "",
                 }
           }
@@ -318,7 +333,16 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
                 }
           }
           // Şantiye makineleri her zaman tam liste; eski taslak tek makineye düşürmesin
-          const productionSummary = options.map(mapProduction)
+          let productionSummary = options.map(mapProduction)
+          if (productionSummary.length === 1 && !siteChanged) {
+            const siteP = String(prev.siteConcretePouredPiles ?? "").trim()
+            const siteL = String(prev.siteConcreteTotalLength ?? "").trim()
+            productionSummary = productionSummary.map((m) => ({
+              ...m,
+              concretePoured: numFieldOk(m.concretePoured) ? m.concretePoured : siteP,
+              concreteTotalLength: numFieldOk(m.concreteTotalLength) ? m.concreteTotalLength : siteL,
+            }))
+          }
           const machines = options.map(mapBasic)
           const validIds = new Set(options.map((m) => String(m.id)))
           const pileDetails = (prev.pileDetails || []).map((p) => {
@@ -382,7 +406,14 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     if (!hasMarked) return
     const next = formatMeters(sumConcretePouredDrilledMeters(formData.pileDetails))
     if (String(formData.siteConcreteTotalLength ?? "").trim() === next) return
-    setFormData((prev) => ({ ...prev, siteConcreteTotalLength: next }))
+    setFormData((prev) => ({
+      ...prev,
+      siteConcreteTotalLength: next,
+      productionSummary:
+        prev.productionSummary.length === 1
+          ? prev.productionSummary.map((m, i) => (i === 0 ? { ...m, concreteTotalLength: next } : m))
+          : prev.productionSummary,
+    }))
   }, [formData.pileDetails])
 
   // Kullanıcı/Personel: atanmış operatör isimleri ve dünkü planlanan işler pop-up
@@ -657,6 +688,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
               emptyBorehole: "",
               preBorehole: "",
               concretePoured: "",
+              concreteTotalLength: "",
               dailyDrilledPiles: "",
             }
             const newBasicInfoMachine: MachineBasicInfo = {
@@ -787,6 +819,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
                 emptyBorehole: "",
                 preBorehole: "",
                 concretePoured: "",
+                concreteTotalLength: "",
                 dailyDrilledPiles: "",
               }
               const newBasicInfoMachine: MachineBasicInfo = {

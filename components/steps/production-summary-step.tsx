@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { Fragment, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 import {
   TextField,
   Typography,
@@ -68,6 +68,13 @@ function parseIntSafe(s: string | undefined): number {
   return Number.isFinite(n) ? n : NaN
 }
 
+function numFieldOk(s: string | undefined): boolean {
+  const t = String(s ?? "").trim()
+  if (t === "") return false
+  const n = Number(t.replace(",", "."))
+  return Number.isFinite(n)
+}
+
 export default function ProductionSummaryStep({
   data,
   onChange,
@@ -102,6 +109,46 @@ export default function ProductionSummaryStep({
     () => data.reduce((s, m) => s + (parseIntSafe(m.preBorehole) || 0), 0),
     [data],
   )
+  const totalBetonPiles = useMemo(
+    () => data.reduce((s, m) => s + (parseIntSafe(m.concretePoured) || 0), 0),
+    [data],
+  )
+  const totalBetonLen = useMemo(
+    () =>
+      data.reduce((s, m) => {
+        const n = parseNum(m.concreteTotalLength)
+        return s + (Number.isFinite(n) ? n : 0)
+      }, 0),
+    [data],
+  )
+
+  const multiMachine = data.length > 1
+  const pileLengthDrivesSite =
+    pileDetailsConcreteMeters != null &&
+    (pileDetailsConcreteMeters > 0 || (parseIntSafe(siteConcretePouredPiles) || 0) > 0)
+
+  useEffect(() => {
+    const pilesStr = String(totalBetonPiles)
+    if (String(siteConcretePouredPiles ?? "").trim() !== pilesStr) {
+      onSiteConcreteChange(pilesStr)
+    }
+    if (pileLengthDrivesSite || !onSiteConcreteTotalLengthChange) return
+    const allLenOk = data.every((m) => numFieldOk(m.concreteTotalLength))
+    if (!allLenOk) return
+    const lenStr = totalBetonLen.toFixed(2)
+    if (String(siteConcreteTotalLength ?? "").trim() !== lenStr) {
+      onSiteConcreteTotalLengthChange(lenStr)
+    }
+  }, [
+    totalBetonPiles,
+    totalBetonLen,
+    data,
+    pileLengthDrivesSite,
+    siteConcretePouredPiles,
+    siteConcreteTotalLength,
+    onSiteConcreteChange,
+    onSiteConcreteTotalLengthChange,
+  ])
 
   const betonBugun = parseIntSafe(siteConcretePouredPiles) || 0
   const toplamBoyNum = parseNum(siteConcreteTotalLength) || 0
@@ -176,6 +223,20 @@ export default function ProductionSummaryStep({
     }
   }
 
+  const handleSitePilesChange = (v: string) => {
+    onSiteConcreteChange(v)
+    if (data.length === 1) {
+      onChange(data.map((row, i) => (i === 0 ? { ...row, concretePoured: v } : row)))
+    }
+  }
+
+  const handleSiteLenChange = (v: string) => {
+    onSiteConcreteTotalLengthChange?.(v)
+    if (data.length === 1 && !pileLengthDrivesSite) {
+      onChange(data.map((row, i) => (i === 0 ? { ...row, concreteTotalLength: v } : row)))
+    }
+  }
+
   const machineTitle = data.map((m) => m.machineName).filter(Boolean).join(" · ") || t("no_machine_selected")
 
   if (data.length === 0) {
@@ -186,11 +247,13 @@ export default function ProductionSummaryStep({
     )
   }
 
-  const rowDefs: { key: keyof MachineProductionSummary; label: string; helper?: string }[] = [
+  const rowDefs: { key: keyof MachineProductionSummary; label: string; decimal?: boolean }[] = [
     { key: "dailyDrilledPiles", label: "O gün yapılan kazık sayısı (delgi, Ad.)" },
-    { key: "totalProduction", label: t("total_production") },
+    { key: "totalProduction", label: t("total_production"), decimal: true },
     { key: "preBorehole", label: t("pre_borehole") },
     { key: "emptyBorehole", label: t("empty_borehole") },
+    { key: "concretePoured", label: t("total_concrete_piles") },
+    { key: "concreteTotalLength", label: "Toplam boy — beton dökülen (m)", decimal: true },
   ]
 
   return (
@@ -244,8 +307,8 @@ export default function ProductionSummaryStep({
                     fullWidth
                     value={String(m[row.key] ?? "")}
                     onChange={handleField(colIdx, row.key)}
-                    type={row.key === "totalProduction" ? "text" : "number"}
-                    inputProps={row.key === "totalProduction" ? { inputMode: "decimal" } : { min: 0 }}
+                    type={row.decimal ? "text" : "number"}
+                    inputProps={row.decimal ? { inputMode: "decimal" } : { min: 0 }}
                     sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "white" } }}
                   />
                 </Fragment>
@@ -318,8 +381,13 @@ export default function ProductionSummaryStep({
             label="Beton dökülen kazık (Ad.) — şantiye toplamı"
             type="number"
             value={siteConcretePouredPiles}
-            onChange={(e) => onSiteConcreteChange(e.target.value)}
-            helperText="Tüm makinelerin o gün döktüğü betonlu kazık adedinin toplamıdır."
+            onChange={(e) => handleSitePilesChange(e.target.value)}
+            InputProps={{ readOnly: multiMachine }}
+            helperText={
+              multiMachine
+                ? "Makine kartlarından otomatik toplanır."
+                : "Tek makinede karttaki değerle aynıdır; gerekirse buradan da düzenleyebilirsiniz."
+            }
             sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "white" } }}
           />
           <TextField
@@ -328,8 +396,15 @@ export default function ProductionSummaryStep({
             type="text"
             inputProps={{ inputMode: "decimal" }}
             value={siteConcreteTotalLength}
-            onChange={(e) => onSiteConcreteTotalLengthChange?.(e.target.value)}
-            helperText="Kazık detayında «Beton döküldü» işaretli satırların Delinen (m) toplamı ile aynı olmalıdır."
+            onChange={(e) => handleSiteLenChange(e.target.value)}
+            InputProps={{ readOnly: multiMachine || pileLengthDrivesSite }}
+            helperText={
+              pileLengthDrivesSite
+                ? "Kazık detayındaki beton dökülen delinen toplamından gelir."
+                : multiMachine
+                  ? "Makine kartlarındaki boy toplamı (kazık detayı işaretliyse oradan gelir)."
+                  : "Kazık detayında «Beton döküldü» işaretli satırların Delinen (m) toplamı ile aynı olmalıdır."
+            }
             error={boyMismatch}
             sx={{ "& .MuiOutlinedInput-root": { backgroundColor: "white" } }}
           />
@@ -410,22 +485,26 @@ export default function ProductionSummaryStep({
                 <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
                   {t("total_concrete_piles")}
                 </TableCell>
-                <TableCell
-                  colSpan={Math.max(1, data.length + 1)}
-                  sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}
-                >
-                  {siteConcretePouredPiles || "—"}
+                {data.map((m) => (
+                  <TableCell key={`beton-${m.machineId}`} sx={{ border: "1px solid #000", textAlign: "center" }}>
+                    {m.concretePoured ?? ""}
+                  </TableCell>
+                ))}
+                <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
+                  {totalBetonPiles}
                 </TableCell>
               </TableRow>
               <TableRow>
                 <TableCell sx={{ border: "1px solid #000", fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
                   Toplam boy — beton dökülen (m)
                 </TableCell>
-                <TableCell
-                  colSpan={Math.max(1, data.length + 1)}
-                  sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}
-                >
-                  {siteConcreteTotalLength || "—"}
+                {data.map((m) => (
+                  <TableCell key={`beton-len-${m.machineId}`} sx={{ border: "1px solid #000", textAlign: "center" }}>
+                    {m.concreteTotalLength ?? ""}
+                  </TableCell>
+                ))}
+                <TableCell sx={{ border: "1px solid #000", textAlign: "center", fontWeight: "bold" }}>
+                  {siteConcreteTotalLength || (totalBetonLen > 0 ? totalBetonLen.toFixed(2) : "—")}
                 </TableCell>
               </TableRow>
             </TableBody>
