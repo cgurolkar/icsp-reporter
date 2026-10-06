@@ -9,6 +9,8 @@ export type ProductionMachineSlice = {
   machineName: string
   piles: number
   meters: number
+  /** Günlük rapordaki beton dökülen kazık (Ad.) */
+  betonPiles: number
 }
 
 export function slicesFromProductionSummaryJson(raw: unknown): ProductionMachineSlice[] {
@@ -34,12 +36,15 @@ export function slicesFromProductionSummaryJson(raw: unknown): ProductionMachine
     const piles = pilesRaw !== "" && /^\d+$/.test(pilesRaw) ? Math.max(0, parseInt(pilesRaw, 10) || 0) : 0
     const metersRaw = String(rec.totalProduction ?? rec.total_production ?? "").trim().replace(",", ".")
     const meters = metersRaw !== "" && Number.isFinite(Number(metersRaw)) ? Math.max(0, Number(metersRaw)) : 0
-    if (piles === 0 && meters === 0) continue
+    const betonRaw = String(rec.concretePoured ?? rec.concrete_poured ?? "").trim()
+    const betonPiles = betonRaw !== "" && /^\d+$/.test(betonRaw) ? Math.max(0, parseInt(betonRaw, 10) || 0) : 0
+    if (piles === 0 && meters === 0 && betonPiles === 0) continue
     out.push({
       machineId,
       machineName: machineName || machineId,
       piles,
       meters,
+      betonPiles,
     })
   }
   return out
@@ -65,6 +70,10 @@ export interface MachineWorkStatRow {
   preReportEmptyBorehole?: number
   preReportBetonPiles?: number
   preReportMeters?: number
+  /** Raporlardan makine bazında beton dökülen (Ad.) */
+  reportBetonPiles?: number
+  /** Rapor öncesi + raporlardan makine bazında beton (Ad.) */
+  cumulativeBetonPiles?: number
   costPerMeter: number | null
   billingCurrency: string | null
   earnedAmount: number | null
@@ -83,6 +92,7 @@ export type MachineWorkAggBucket = {
   preReportEmptyBorehole: number
   preReportBetonPiles: number
   preReportMeters: number
+  reportBetonPiles: number
   unitPrices: Record<string, number>
   billingCurrency: string | null
 }
@@ -106,6 +116,7 @@ export function consolidateMachineWorkAgg(agg: Map<string, MachineWorkAggBucket>
     prev.preReportEmptyBorehole += bucket.preReportEmptyBorehole
     prev.preReportBetonPiles += bucket.preReportBetonPiles
     prev.preReportMeters += bucket.preReportMeters
+    prev.reportBetonPiles += bucket.reportBetonPiles
     prev.unitPrices = { ...prev.unitPrices, ...bucket.unitPrices }
     if (prev.machineId == null && bucket.machineId != null) prev.machineId = bucket.machineId
     if (prev.machineName.length < bucket.machineName.length) prev.machineName = bucket.machineName

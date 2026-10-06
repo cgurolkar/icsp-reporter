@@ -25,7 +25,6 @@ import {
 } from "@mui/material"
 import { Add } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
-import { formatMoney, pricePerMeterLabel, normalizeSiteCurrency } from "@/lib/site-currency"
 import type { MachineProductionSummary, Machine } from "@/types/form-data"
 
 interface ProductionSummaryStepProps {
@@ -54,6 +53,8 @@ export type MachineCumulativeRow = {
   preReportEmptyBorehole?: number
   preReportBetonPiles?: number
   preReportMeters?: number
+  cumulativeBetonPiles?: number
+  reportBetonPiles?: number
   earnedAmount?: number | null
   costPerMeter?: number | null
   billingCurrency?: string | null
@@ -188,19 +189,19 @@ export default function ProductionSummaryStep({
       }
       const piles = parseIntSafe(m.dailyDrilledPiles) || 0
       const meters = parseNum(m.totalProduction) || 0
+      const todayBeton = parseIntSafe(m.concretePoured) || 0
       const totalMeters = Math.round((prev.totalMeters + (Number.isFinite(meters) ? meters : 0)) * 100) / 100
       const pileCount = prev.pileCount + piles
-      const costPerMeter = prev.costPerMeter
-      const earnedAmount =
-        costPerMeter != null && costPerMeter > 0 && totalMeters > 0
-          ? Math.round(totalMeters * costPerMeter * 100) / 100
-          : prev.earnedAmount
+      const baseBeton =
+        prev.cumulativeBetonPiles ??
+        (prev.preReportBetonPiles ?? 0) + (prev.reportBetonPiles ?? 0)
+      const cumulativeBetonPiles = baseBeton + todayBeton
       map.set(key, {
         ...prev,
         machineName: name,
         pileCount,
         totalMeters,
-        earnedAmount,
+        cumulativeBetonPiles,
       })
     }
     return Array.from(map.values()).sort((a, b) => a.machineName.localeCompare(b.machineName, "tr"))
@@ -335,48 +336,26 @@ export default function ProductionSummaryStep({
                   <TableCell align="right"><strong>Toplam boy (m)</strong></TableCell>
                   <TableCell align="right"><strong>Rapor önc. boş foraj</strong></TableCell>
                   <TableCell align="right"><strong>Rapor önc. beton (Ad.)</strong></TableCell>
-                  <TableCell align="right"><strong>Metre birim</strong></TableCell>
-                  <TableCell align="right"><strong>Hakediş</strong></TableCell>
-                  <TableCell align="right"><strong>Makine harcaması</strong></TableCell>
+                  <TableCell align="right"><strong>Küm. beton (Ad.)</strong></TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {machineCumulativeWithToday.map((row) => {
-                  const cur = normalizeSiteCurrency(row.billingCurrency)
-                  return (
+                {machineCumulativeWithToday.map((row) => (
                     <TableRow key={row.machineName}>
                       <TableCell>{row.machineName}</TableCell>
                       <TableCell align="right">{row.pileCount}</TableCell>
                       <TableCell align="right">{row.totalMeters.toFixed(2)}</TableCell>
                       <TableCell align="right">{row.preReportEmptyBorehole ?? "—"}</TableCell>
                       <TableCell align="right">{row.preReportBetonPiles ?? "—"}</TableCell>
-                      <TableCell align="right">
-                        {row.costPerMeter != null && row.costPerMeter > 0
-                          ? `${row.costPerMeter.toLocaleString("tr-TR")} ${pricePerMeterLabel(cur)}`
-                          : "—"}
-                      </TableCell>
-                      <TableCell align="right">
-                        {row.earnedAmount != null && row.earnedAmount > 0
-                          ? formatMoney(row.earnedAmount, cur)
-                          : row.totalMeters > 0 && !(row.costPerMeter != null && row.costPerMeter > 0)
-                            ? "— (birim fiyat yok)"
-                            : "—"}
-                      </TableCell>
-                      <TableCell align="right">
-                        {(row.expenseTotalUsd ?? 0) > 0
-                          ? formatMoney(row.expenseTotalUsd!, "USD")
-                          : (row.expenseTotalIqd ?? 0) > 0
-                            ? `${row.expenseTotalIqd!.toLocaleString("tr-TR")} IQD`
-                            : "—"}
-                      </TableCell>
+                      <TableCell align="right">{row.cumulativeBetonPiles ?? "—"}</TableCell>
                     </TableRow>
-                  )
-                })}
+                ))}
               </TableBody>
             </Table>
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-            Hakediş = toplam imalat metrajı × şantiye kartındaki makine «Metre başı maliyet». Rapor öncesi beton metrajı toplam boya eklenir.
+            Delgi ve imalat makine bazında; üst özet kartlarındaki beton kümülatifi şantiye genelidir (tüm makineler + rapor öncesi toplamı).
+            Makine maliyet hakedişi yalnızca İdari → Makineler sayfasında gösterilir.
           </Typography>
         </Paper>
       )}

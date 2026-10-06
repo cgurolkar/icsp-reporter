@@ -173,11 +173,8 @@ export function generatePDFMainReport(
       preReportEmptyBorehole?: number
       preReportBetonPiles?: number
       preReportMeters?: number
-      earnedAmount?: number | null
-      costPerMeter?: number | null
-      billingCurrency?: string | null
-      expenseTotalUsd?: number
-      expenseTotalIqd?: number
+      cumulativeBetonPiles?: number
+      reportBetonPiles?: number
     }>
     operatorEntries?: Array<{
       machine_name?: string; machine_hours?: string; used_fuel?: string; work_done?: string; note?: string; username?: string;
@@ -471,14 +468,14 @@ export function generatePDFMainReport(
       <div class="stat-unit">metre</div>
     </div>
     <div class="stat-card green">
-      <div class="stat-label">Delgisi Tamamlanan</div>
+      <div class="stat-label">Delgi (küm., şantiye)</div>
       <div class="stat-value">${v(drilledCompleted != null && drilledCompleted > 0 ? drilledCompleted : "")}</div>
-      <div class="stat-unit">kazık (küm.)</div>
+      <div class="stat-unit">adet (önc.+rapor)</div>
     </div>
     <div class="stat-card green">
-      <div class="stat-label">Beton Dökülen</div>
+      <div class="stat-label">Beton dökülen (küm., şantiye)</div>
       <div class="stat-value">${v(concreteCompleted != null && concreteCompleted > 0 ? concreteCompleted : "")}</div>
-      <div class="stat-unit">kazık (küm.)</div>
+      <div class="stat-unit">adet (önc.+rapor)</div>
     </div>
     <div class="stat-card orange">
       <div class="stat-label">Beton Dökülecek</div>
@@ -600,13 +597,16 @@ export function generatePDFMainReport(
           ${(() => {
             const rows = opts?.machineWorkCumulative ?? []
             if (!rows.length) return ""
-            const cur = normalizeSiteCurrency(rows[0]?.billingCurrency)
+            const machineBetonSum = rows.reduce(
+              (s, r) => s + (Number(r.cumulativeBetonPiles ?? 0) || 0),
+              0,
+            )
+            const siteBetonKum = concreteCompleted != null && concreteCompleted > 0 ? concreteCompleted : null
             return `<div style="margin-top:10px;font-size:10px;font-weight:700;color:#475569;">Bu tarihe kadar makine iş özeti (kümülatif)</div>
               <table>
                 <thead><tr>
-                  <th>Makine</th><th>Kazık (Ad.)</th><th>Toplam boy (m)</th>
-                  <th>Rapor önc. boş foraj</th><th>Rapor önc. beton (Ad.)</th>
-                  <th>Metre birim</th><th>Hakediş</th><th>Makine harcaması (USD)</th>
+                  <th>Makine</th><th>Delgi (Ad.)</th><th>Toplam boy (m)</th>
+                  <th>Rapor önc. boş foraj</th><th>Rapor önc. beton</th><th>Küm. beton (Ad.)</th>
                 </tr></thead>
                 <tbody>
                   ${rows.map((r) => `<tr>
@@ -615,13 +615,11 @@ export function generatePDFMainReport(
                     <td class="td-center">${Number(r.totalMeters ?? 0).toFixed(2)}</td>
                     <td class="td-center">${r.preReportEmptyBorehole != null && r.preReportEmptyBorehole > 0 ? r.preReportEmptyBorehole : "—"}</td>
                     <td class="td-center">${r.preReportBetonPiles != null && r.preReportBetonPiles > 0 ? r.preReportBetonPiles : "—"}</td>
-                    <td class="td-center">${r.costPerMeter != null && r.costPerMeter > 0 ? `${Number(r.costPerMeter).toLocaleString("tr-TR")} ${pricePerMeterLabel(cur)}` : "—"}</td>
-                    <td class="td-center">${r.earnedAmount != null && r.earnedAmount > 0 ? formatMoney(r.earnedAmount, cur) : (Number(r.totalMeters ?? 0) > 0 && !(r.costPerMeter != null && r.costPerMeter > 0) ? "— (birim fiyat yok)" : "—")}</td>
-                    <td class="td-center">${r.expenseTotalUsd != null && r.expenseTotalUsd > 0 ? formatMoney(r.expenseTotalUsd, "USD") : "—"}</td>
+                    <td class="td-center">${r.cumulativeBetonPiles != null && r.cumulativeBetonPiles > 0 ? r.cumulativeBetonPiles : "—"}</td>
                   </tr>`).join("")}
                 </tbody>
               </table>
-              <p style="font-size:9px;color:#64748b;margin:4px 0 0;">Hakediş = imalat metrajı × şantiye kartındaki makine «Metre başı maliyet».</p>`
+              <p style="font-size:9px;color:#64748b;margin:4px 0 0;">Üst kart «Beton dökülen (küm., şantiye)» = ${siteBetonKum != null ? siteBetonKum : "—"} adet. Makine küm. beton toplamı (rapor+öncesi, atanmış makineler): ${machineBetonSum > 0 ? machineBetonSum : "—"}. Makine maliyet hakedişi yalnızca İdari → Makineler.</p>`
           })()}
         </div>
       </div>

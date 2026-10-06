@@ -5170,7 +5170,10 @@ export async function getMachineWorkStats(options: {
 
     const upsertBucket = (
       key: string,
-      init: Omit<MachineWorkAggBucket, "pileCount" | "totalMeters" | "preReportEmptyBorehole" | "preReportBetonPiles" | "preReportMeters">,
+      init: Omit<
+        MachineWorkAggBucket,
+        "pileCount" | "totalMeters" | "preReportEmptyBorehole" | "preReportBetonPiles" | "preReportMeters" | "reportBetonPiles"
+      >,
     ) => {
       let bucket = agg.get(key)
       if (!bucket) {
@@ -5181,6 +5184,7 @@ export async function getMachineWorkStats(options: {
           preReportEmptyBorehole: 0,
           preReportBetonPiles: 0,
           preReportMeters: 0,
+          reportBetonPiles: 0,
         }
         agg.set(key, bucket)
       }
@@ -5210,6 +5214,7 @@ export async function getMachineWorkStats(options: {
         })
         bucket.pileCount += sl.piles
         bucket.totalMeters += sl.meters
+        bucket.reportBetonPiles += sl.betonPiles
         bucket.unitPrices = { ...bucket.unitPrices, ...unitPrices }
       }
     }
@@ -5311,6 +5316,11 @@ export async function getMachineWorkStats(options: {
         preReportEmptyBorehole: b.preReportEmptyBorehole > 0 ? b.preReportEmptyBorehole : undefined,
         preReportBetonPiles: b.preReportBetonPiles > 0 ? b.preReportBetonPiles : undefined,
         preReportMeters: b.preReportMeters > 0 ? Math.round(b.preReportMeters * 100) / 100 : undefined,
+        reportBetonPiles: b.reportBetonPiles > 0 ? b.reportBetonPiles : undefined,
+        cumulativeBetonPiles:
+          b.preReportBetonPiles + b.reportBetonPiles > 0
+            ? b.preReportBetonPiles + b.reportBetonPiles
+            : undefined,
         costPerMeter,
         billingCurrency: b.billingCurrency,
         earnedAmount,

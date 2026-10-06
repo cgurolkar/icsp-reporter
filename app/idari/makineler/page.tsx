@@ -258,6 +258,7 @@ export default function MakineDefteri() {
                         <TableCell align="right"><strong>Toplam boy (m)</strong></TableCell>
                         <TableCell align="right"><strong>Rapor önc. boş foraj</strong></TableCell>
                         <TableCell align="right"><strong>Rapor önc. beton</strong></TableCell>
+                        <TableCell align="right"><strong>Küm. beton (Ad.)</strong></TableCell>
                         <TableCell align="right"><strong>Hakediş</strong></TableCell>
                         <TableCell align="right"><strong>Makine harcaması</strong></TableCell>
                       </TableRow>
@@ -272,6 +273,7 @@ export default function MakineDefteri() {
                             <TableCell align="right">{j.totalMeters.toFixed(2)}</TableCell>
                             <TableCell align="right">{j.preReportEmptyBorehole ?? "—"}</TableCell>
                             <TableCell align="right">{j.preReportBetonPiles ?? "—"}</TableCell>
+                            <TableCell align="right">{j.cumulativeBetonPiles ?? "—"}</TableCell>
                             <TableCell align="right">
                               {j.earnedAmount != null && j.earnedAmount > 0
                                 ? formatMoney(j.earnedAmount, cur)
