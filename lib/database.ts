@@ -1,12 +1,15 @@
 import { Pool, type PoolClient } from 'pg'
 import { expenseAmountsToUsdIqd, type ExpenseCurrency } from './expense-fx'
 import { getAppStatsSinceSqlDate } from './app-stats'
-import type { MachineWorkStatRow } from "./machine-work-stats"
+import type { MachineWorkAggBucket, MachineWorkStatRow } from "./machine-work-stats"
 import {
+  consolidateMachineWorkAgg,
   machineWorkAggKey,
   normMachineName,
+  resolveMachineIdFromSlice,
   slicesFromProductionSummaryJson,
 } from "./machine-work-stats"
+import { parseInitialMachineWorkStored } from "./initial-machine-work"
 
 const pool = new Pool({
   user: process.env.POSTGRES_USER || 'postgres',
@@ -5163,12 +5166,6 @@ export async function getMachineWorkStats(options: {
       idByName.set(normMachineName(m.name), m.id)
     }
 
-    const { parseInitialMachineWorkStored } = await import("@/lib/initial-machine-work")
-    const {
-      consolidateMachineWorkAgg,
-      resolveMachineIdFromSlice,
-      type MachineWorkAggBucket,
-    } = await import("@/lib/machine-work-stats")
     const agg = new Map<string, MachineWorkAggBucket>()
 
     const upsertBucket = (
