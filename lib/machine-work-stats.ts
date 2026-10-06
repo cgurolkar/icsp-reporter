@@ -124,6 +124,43 @@ export function consolidateMachineWorkAgg(agg: Map<string, MachineWorkAggBucket>
   return out
 }
 
+export function machineRowCumulativeBeton(r: Pick<MachineWorkStatRow, "cumulativeBetonPiles" | "preReportBetonPiles" | "reportBetonPiles">): number {
+  if (r.cumulativeBetonPiles != null && Number.isFinite(r.cumulativeBetonPiles)) return r.cumulativeBetonPiles
+  return (r.preReportBetonPiles ?? 0) + (r.reportBetonPiles ?? 0)
+}
+
+/** Makine satırlarından şantiye delgi / beton kümülatifi (üst kartlarla aynı kaynak). */
+export function sumMachineWorkPileCounts(rows: MachineWorkStatRow[]): { drilled: number; concrete: number } {
+  let drilled = 0
+  let concrete = 0
+  for (const r of rows) {
+    drilled += Number(r.pileCount) || 0
+    concrete += machineRowCumulativeBeton(r)
+  }
+  return { drilled, concrete }
+}
+
+export function parseAssignedMachineIds(raw: unknown): number[] {
+  if (!raw) return []
+  let arr: unknown[] | null = null
+  if (Array.isArray(raw)) arr = raw
+  else if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) arr = parsed
+    } catch {
+      arr = null
+    }
+  }
+  if (!arr) return []
+  const out: number[] = []
+  for (const x of arr) {
+    const n = typeof x === "number" ? x : parseInt(String(x), 10)
+    if (Number.isFinite(n) && n > 0) out.push(n)
+  }
+  return out
+}
+
 export function resolveMachineIdFromSlice(
   machineId: string,
   machineName: string,

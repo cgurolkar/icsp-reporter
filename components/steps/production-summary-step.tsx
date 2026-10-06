@@ -26,6 +26,7 @@ import {
 import { Add } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
 import type { MachineProductionSummary, Machine } from "@/types/form-data"
+import { machineRowCumulativeBeton } from "@/lib/machine-work-stats"
 
 interface ProductionSummaryStepProps {
   data: MachineProductionSummary[]
@@ -192,9 +193,7 @@ export default function ProductionSummaryStep({
       const todayBeton = parseIntSafe(m.concretePoured) || 0
       const totalMeters = Math.round((prev.totalMeters + (Number.isFinite(meters) ? meters : 0)) * 100) / 100
       const pileCount = prev.pileCount + piles
-      const baseBeton =
-        prev.cumulativeBetonPiles ??
-        (prev.preReportBetonPiles ?? 0) + (prev.reportBetonPiles ?? 0)
+      const baseBeton = machineRowCumulativeBeton(prev)
       const cumulativeBetonPiles = baseBeton + todayBeton
       map.set(key, {
         ...prev,
@@ -354,7 +353,7 @@ export default function ProductionSummaryStep({
             </Table>
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-            Delgi ve imalat makine bazında; üst özet kartlarındaki beton kümülatifi şantiye genelidir (tüm makineler + rapor öncesi toplamı).
+            Kümülatif delgi ve beton, rapor öncesi makine girişleri + kayıtlı raporlar + bugünkü form satırlarından toplanır (üst kartlarla aynı mantık).
             Makine maliyet hakedişi yalnızca İdari → Makineler sayfasında gösterilir.
           </Typography>
         </Paper>

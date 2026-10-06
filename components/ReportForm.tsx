@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Container, Paper, Stepper, Step, StepLabel, Box, Button, Typography, Grid, Table, TableBody, TableCell, TableHead, TableRow, Alert, Snackbar } from "@mui/material"
 import { useLanguage } from "@/contexts/language-context"
 import LanguageSelector from "@/components/language-selector"
@@ -18,6 +18,7 @@ import { type FormData, type Machine, type MachineBasicInfo, type MachineProduct
 import { shrinkDailyInfoImagesForSubmit } from "@/lib/image-webp-client"
 import { estimateJsonPayloadBytes, readResponseJsonSafe, buildReportSubmitUserMessage } from "@/lib/report-submit-client"
 import { formatMeters, parseMeters, sumConcretePouredDrilledMeters } from "@/lib/concrete-meters"
+import { machineRowCumulativeBeton } from "@/lib/machine-work-stats"
 import Dialog from "@mui/material/Dialog"
 import DialogTitle from "@mui/material/DialogTitle"
 import DialogContent from "@mui/material/DialogContent"
@@ -616,10 +617,15 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
 
   const projectTotalPiles = siteSummary?.totalPiles ?? undefined
   const remainingValid = siteSummary?.remainingPiles != null && String(siteSummary.remainingPiles).trim() !== ""
-  const totalCompletedBeforeToday =
-    siteSummary?.totalPiles != null && remainingValid
-      ? siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles!, 10) || 0)
-      : (siteSummary?.initialPilesDone != null ? siteSummary.initialPilesDone : 0)
+  const totalCompletedBeforeToday = useMemo(() => {
+    if (machineCumulativeBeforeToday.length > 0) {
+      return machineCumulativeBeforeToday.reduce((s, r) => s + machineRowCumulativeBeton(r), 0)
+    }
+    if (siteSummary?.totalPiles != null && remainingValid) {
+      return siteSummary.totalPiles - (parseInt(siteSummary.remainingPiles!, 10) || 0)
+    }
+    return siteSummary?.initialPilesDone != null ? siteSummary.initialPilesDone : 0
+  }, [machineCumulativeBeforeToday, siteSummary, remainingValid])
 
   const renderStepContent = (step: number) => {
     const machineNamesHeader = formData.basicInfo.machines.map((m) => m.machineName).filter(Boolean).join(", ") || "—"

@@ -602,6 +602,10 @@ export function generatePDFMainReport(
               0,
             )
             const siteBetonKum = concreteCompleted != null && concreteCompleted > 0 ? concreteCompleted : null
+            const betonNote =
+              siteBetonKum != null && machineBetonSum > 0 && siteBetonKum !== machineBetonSum
+                ? `<p style="font-size:9px;color:#b45309;margin:4px 0 0;">Üst kart (${siteBetonKum}) ile makine beton toplamı (${machineBetonSum}) farklı — şantiye kartındaki rapor öncesi / eski rapor betonlarını makine bazında güncelleyin.</p>`
+                : `<p style="font-size:9px;color:#64748b;margin:4px 0 0;">Üst kümülatif kartlar bu tablodaki makine toplamlarıyla aynı kaynaktan hesaplanır. Makine maliyet hakedişi yalnızca İdari → Makineler.</p>`
             return `<div style="margin-top:10px;font-size:10px;font-weight:700;color:#475569;">Bu tarihe kadar makine iş özeti (kümülatif)</div>
               <table>
                 <thead><tr>
@@ -619,7 +623,7 @@ export function generatePDFMainReport(
                   </tr>`).join("")}
                 </tbody>
               </table>
-              <p style="font-size:9px;color:#64748b;margin:4px 0 0;">Üst kart «Beton dökülen (küm., şantiye)» = ${siteBetonKum != null ? siteBetonKum : "—"} adet. Makine küm. beton toplamı (rapor+öncesi, atanmış makineler): ${machineBetonSum > 0 ? machineBetonSum : "—"}. Makine maliyet hakedişi yalnızca İdari → Makineler.</p>`
+              ${betonNote}`
           })()}
         </div>
       </div>

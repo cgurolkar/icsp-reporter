@@ -6,8 +6,10 @@ import {
   consolidateMachineWorkAgg,
   machineWorkAggKey,
   normMachineName,
+  parseAssignedMachineIds,
   resolveMachineIdFromSlice,
   slicesFromProductionSummaryJson,
+  sumMachineWorkPileCounts,
 } from "./machine-work-stats"
 import { parseInitialMachineWorkStored } from "./initial-machine-work"
 
@@ -2990,9 +2992,14 @@ export async function getCumulativePileCounts(
   siteId: number,
   date: string,
 ): Promise<{ drilled: number; concrete: number }> {
+  const d = (date || "").slice(0, 10)
+  const machineStats = await getMachineWorkStats({ siteId, asOfDate: d })
+  if (machineStats.length > 0) {
+    return sumMachineWorkPileCounts(machineStats)
+  }
+
   const client = await pool.connect()
   try {
-    const d = (date || "").slice(0, 10)
     const site = await client.query(
       `SELECT total_piles, is_ongoing, initial_piles_done, initial_empty_borehole FROM sites WHERE id = $1`,
       [siteId],
@@ -3003,7 +3010,6 @@ export async function getCumulativePileCounts(
       isOngoing && siteRow?.initial_piles_done != null
         ? Number(siteRow.initial_piles_done) || 0
         : 0
-    // Rapor öncesi boş foraj → delgi kümülasyonu (değer varsa)
     const initialEmptyBorehole =
       siteRow?.initial_empty_borehole != null
         ? Number(siteRow.initial_empty_borehole) || 0
@@ -5219,7 +5225,8 @@ export async function getMachineWorkStats(options: {
       }
     }
 
-    let initSiteQ = `SELECT id, name, code, assigned_machine_unit_prices, billing_currency, initial_machine_work FROM sites`
+    let initSiteQ = `SELECT id, name, code, assigned_machine_unit_prices, billing_currency, initial_machine_work,
+      initial_piles_done, initial_empty_borehole, initial_concrete_meters, assigned_machine_ids FROM sites`
     const initSiteParams: unknown[] = []
     if (options.siteId != null) {
       initSiteQ += ` WHERE id = $1`
@@ -5229,7 +5236,23 @@ export async function getMachineWorkStats(options: {
     for (const siteRow of initSites.rows) {
       const siteId = Number(siteRow.id)
       const unitPrices = parseAssignedMachineUnitPrices(siteRow.assigned_machine_unit_prices)
-      const map = parseInitialMachineWorkStored(siteRow.initial_machine_work)
+      let map = parseInitialMachineWorkStored(siteRow.initial_machine_work)
+      const assignedIds = parseAssignedMachineIds(siteRow.assigned_machine_ids)
+      if (Object.keys(map).length === 0 && assignedIds.length === 1) {
+        const empty = siteRow.initial_empty_borehole != null ? Math.max(0, Number(siteRow.initial_empty_borehole) || 0) : 0
+        const beton = siteRow.initial_piles_done != null ? Math.max(0, Number(siteRow.initial_piles_done) || 0) : 0
+        const meters =
+          siteRow.initial_concrete_meters != null ? Math.max(0, Number(siteRow.initial_concrete_meters) || 0) : 0
+        if (empty > 0 || beton > 0 || meters > 0) {
+          map = {
+            [String(assignedIds[0])]: {
+              emptyBorehole: empty > 0 ? empty : undefined,
+              pilesDone: beton > 0 ? beton : undefined,
+              concreteMeters: meters > 0 ? meters : undefined,
+            },
+          }
+        }
+      }
       for (const [midStr, entry] of Object.entries(map)) {
         const mid = /^\d+$/.test(midStr) ? parseInt(midStr, 10) : null
         const displayName = mid != null && nameById.get(mid) ? nameById.get(mid)! : midStr
