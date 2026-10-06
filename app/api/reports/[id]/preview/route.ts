@@ -7,6 +7,7 @@ import {
   getCumulativeTotalProduction,
   getCumulativePileCounts,
   getCumulativeHakedisBreakdown,
+  getMachineWorkStats,
 } from "@/lib/database"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
 import { canAccessSite, canViewReports, getSessionFromRequest } from "@/lib/auth"
@@ -62,6 +63,8 @@ export async function GET(
         : r.remaining_piles != null && String(r.remaining_piles).trim() !== ""
           ? String(r.remaining_piles)
           : undefined
+    const machineWorkCumulative =
+      siteId && reportDate ? await getMachineWorkStats({ siteId, asOfDate: reportDate }) : []
     const html = generatePDFMainReport(formData, {
       computedRemainingPiles: remainingComputed,
       computedDailyPileCount: r.daily_pile_count != null && String(r.daily_pile_count).trim() !== "" ? String(r.daily_pile_count) : (concretePoured > 0 ? String(concretePoured) : undefined),
@@ -77,6 +80,7 @@ export async function GET(
       cumulativeConcretePiles: pileCounts?.concrete ?? null,
       projectTotalPiles: totalPiles,
       operatorEntries,
+      machineWorkCumulative,
     }) + generatePDFExpensesPage(formData)
     return new NextResponse(html, {
       headers: { "Content-Type": "text/html; charset=utf-8" },

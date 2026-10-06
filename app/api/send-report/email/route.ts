@@ -12,6 +12,7 @@ import {
   getSuperAdminEmails,
   getWorkReportById,
   initializeDatabase,
+  getMachineWorkStats,
 } from "@/lib/database"
 import { fullReportHtmlAttachment, isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
@@ -126,6 +127,8 @@ export async function POST(request: NextRequest) {
         ? String(Math.max(0, totalPiles - (Number(pileCounts.concrete) || 0)))
         : String(rawReport.remaining_piles ?? curPs?.remainingPiles ?? "")
 
+    const machineWorkCumulative =
+      siteIdForDb && reportDateStr ? await getMachineWorkStats({ siteId: siteIdForDb, asOfDate: reportDateStr }) : []
     const mainReportContent = generatePDFMainReport(formData, {
       computedRemainingPiles: remainingComputed,
       computedDailyPileCount: dailyPileForDb,
@@ -137,6 +140,7 @@ export async function POST(request: NextRequest) {
       cumulativeConcretePiles: pileCounts?.concrete ?? null,
       projectTotalPiles: totalPiles,
       operatorEntries,
+      machineWorkCumulative,
     })
     const expensesPageContent = generatePDFExpensesPage(formData)
     const fullHtml = mainReportContent + expensesPageContent

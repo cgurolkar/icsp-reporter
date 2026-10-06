@@ -1,6 +1,12 @@
 import { Pool, type PoolClient } from 'pg'
 import { expenseAmountsToUsdIqd, type ExpenseCurrency } from './expense-fx'
 import { getAppStatsSinceSqlDate } from './app-stats'
+import type { MachineWorkStatRow } from "./machine-work-stats"
+import {
+  machineWorkAggKey,
+  normMachineName,
+  slicesFromProductionSummaryJson,
+} from "./machine-work-stats"
 
 const pool = new Pool({
   user: process.env.POSTGRES_USER || 'postgres',
@@ -341,6 +347,9 @@ async function _doInitializeDatabase() {
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'assigned_machine_operators') THEN
           ALTER TABLE sites ADD COLUMN assigned_machine_operators JSONB DEFAULT '[]';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'assigned_machine_unit_prices') THEN
+          ALTER TABLE sites ADD COLUMN assigned_machine_unit_prices JSONB DEFAULT '{}'::jsonb;
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sites' AND column_name = 'timezone') THEN
           ALTER TABLE sites ADD COLUMN timezone VARCHAR(64) DEFAULT NULL;
@@ -2563,6 +2572,7 @@ export async function createSite(data: {
   assignedMachineIds?: string[]
   assignedOperatorIds?: number[]
   assignedMachineOperators?: { machineId: string; personelId: number }[]
+  assignedMachineUnitPrices?: Record<string, number>
   timezone?: string | null
   contractUnitPrice?: number | null
   /** 1 USD = kaç IQD */
@@ -2575,6 +2585,7 @@ export async function createSite(data: {
   const client = await pool.connect()
   try {
     const ops = data.assignedMachineOperators || []
+    const unitPricesJson = JSON.stringify(data.assignedMachineUnitPrices ?? {})
     const iqdUsd = data.iqdPerUsd != null && !Number.isNaN(Number(data.iqdPerUsd)) && Number(data.iqdPerUsd) > 0 ? Number(data.iqdPerUsd) : 1320
     const { normalizeSiteCurrency } = await import("@/lib/site-currency")
     const billingCurrency = normalizeSiteCurrency(data.billingCurrency)
@@ -2583,8 +2594,8 @@ export async function createSite(data: {
         ? Number(data.initialConcreteMeters)
         : null
     const result = await client.query(
-      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, initial_empty_borehole, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators, timezone, contract_unit_price, iqd_per_usd, billing_currency, initial_concrete_meters)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING *`,
+      `INSERT INTO sites (name, code, email_list, total_piles, region, city, country, authorized_person, employer, project_start_date, is_ongoing, initial_piles_done, initial_empty_borehole, assigned_machine_ids, assigned_operator_ids, assigned_machine_operators, assigned_machine_unit_prices, timezone, contract_unit_price, iqd_per_usd, billing_currency, initial_concrete_meters)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18, $19, $20, $21, $22) RETURNING *`,
       [
         data.name,
         data.code,
@@ -2602,6 +2613,7 @@ export async function createSite(data: {
         JSON.stringify(data.assignedMachineIds || []),
         JSON.stringify(data.assignedOperatorIds || []),
         JSON.stringify(ops),
+        unitPricesJson,
         data.timezone ?? null,
         data.contractUnitPrice ?? null,
         iqdUsd,
@@ -2647,6 +2659,7 @@ export async function updateSite(id: number, data: {
   assignedMachineIds?: string[]
   assignedOperatorIds?: number[]
   assignedMachineOperators?: { machineId: string; personelId: number }[]
+  assignedMachineUnitPrices?: Record<string, number>
   budget?: number | null
   timezone?: string | null
   contractUnitPrice?: number | null
@@ -2693,6 +2706,10 @@ export async function updateSite(id: number, data: {
     if (data.assignedMachineIds !== undefined) { updates.push(`assigned_machine_ids = $${i++}`); values.push(JSON.stringify(data.assignedMachineIds)) }
     if (data.assignedOperatorIds !== undefined) { updates.push(`assigned_operator_ids = $${i++}`); values.push(JSON.stringify(data.assignedOperatorIds)) }
     if (data.assignedMachineOperators !== undefined) { updates.push(`assigned_machine_operators = $${i++}`); values.push(JSON.stringify(data.assignedMachineOperators)) }
+    if (data.assignedMachineUnitPrices !== undefined) {
+      updates.push(`assigned_machine_unit_prices = $${i++}::jsonb`)
+      values.push(JSON.stringify(data.assignedMachineUnitPrices ?? {}))
+    }
     if (updates.length === 0) return await getSiteById(id)
     updates.push(`updated_at = CURRENT_TIMESTAMP`)
     values.push(id)
@@ -4961,7 +4978,14 @@ export async function createMachine(data: {
       [data.name, data.machine_type, data.marka ?? null, data.model ?? null, data.plaka_no ?? null,
        data.seri_no ?? null, data.status ?? 'aktif', data.current_site_id ?? null, data.notlar ?? null]
     )
-    return r.rows[0].id
+    const newId = r.rows[0].id as number
+    if (data.name?.trim()) {
+      await client.query(
+        `INSERT INTO masraf_yerleri (ad, tip) VALUES ($1, 'Makine') ON CONFLICT (ad) DO NOTHING`,
+        [data.name.trim()],
+      )
+    }
+    return newId
   } finally {
     client.release()
   }
@@ -5082,6 +5106,166 @@ export async function getOperatorMachinesForSite(userId: number, siteId: number)
 }
 
 /** Şantiyedeki makineleri döner (current_site_id). Hurda hariç — bilgi girişi için. */
+function parseAssignedMachineUnitPrices(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}
+  const out: Record<string, number> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const n = typeof v === "number" ? v : Number(v)
+    if (String(k).trim() && Number.isFinite(n) && n >= 0) out[String(k).trim()] = n
+  }
+  return out
+}
+
+/** Günlük raporlardan makine × şantiye iş özeti (kümülatif). */
+export async function getMachineWorkStats(options: {
+  siteId?: number
+  asOfDate?: string
+  machineId?: number
+} = {}): Promise<MachineWorkStatRow[]> {
+  const client = await pool.connect()
+  try {
+    const asOf = options.asOfDate?.slice(0, 10)
+    const params: unknown[] = []
+    let q = `SELECT wr.site_id, wr.date, wr.production_summary_json,
+      s.name AS site_name, s.code AS site_code,
+      s.assigned_machine_unit_prices, s.billing_currency
+      FROM work_reports wr
+      INNER JOIN sites s ON s.id = wr.site_id
+      WHERE wr.site_id IS NOT NULL`
+    let pi = 1
+    if (options.siteId != null) {
+      q += ` AND wr.site_id = $${pi++}`
+      params.push(options.siteId)
+    }
+    if (asOf) {
+      q += ` AND wr.date::text <= $${pi++}`
+      params.push(asOf)
+    }
+    q += ` ORDER BY wr.site_id, wr.date`
+    const reports = await client.query(q, params)
+
+    const machinesRes = await client.query(`SELECT id, name FROM machines`)
+    const idByName = new Map<string, number>()
+    const nameById = new Map<number, string>()
+    for (const m of machinesRes.rows as { id: number; name: string }[]) {
+      nameById.set(m.id, m.name)
+      idByName.set(normMachineName(m.name), m.id)
+    }
+
+    type Agg = {
+      machineId: number | null
+      machineName: string
+      siteId: number
+      siteName: string
+      siteCode: string
+      pileCount: number
+      totalMeters: number
+      unitPrices: Record<string, number>
+      billingCurrency: string | null
+    }
+    const agg = new Map<string, Agg>()
+
+    for (const row of reports.rows) {
+      const siteId = Number(row.site_id)
+      const unitPrices = parseAssignedMachineUnitPrices(row.assigned_machine_unit_prices)
+      const slices = slicesFromProductionSummaryJson(row.production_summary_json)
+      for (const sl of slices) {
+        let mid: number | null = null
+        if (/^\d+$/.test(sl.machineId)) mid = parseInt(sl.machineId, 10)
+        if (mid == null || Number.isNaN(mid)) {
+          const byName = idByName.get(normMachineName(sl.machineName))
+          if (byName != null) mid = byName
+        }
+        if (options.machineId != null && mid !== options.machineId) {
+          const nameMatch = normMachineName(nameById.get(options.machineId) ?? "") === normMachineName(sl.machineName)
+          if (!nameMatch) continue
+        }
+        const displayName = mid != null && nameById.get(mid) ? nameById.get(mid)! : sl.machineName
+        const key = machineWorkAggKey(siteId, mid, displayName)
+        let bucket = agg.get(key)
+        if (!bucket) {
+          bucket = {
+            machineId: mid,
+            machineName: displayName,
+            siteId,
+            siteName: String(row.site_name ?? ""),
+            siteCode: String(row.site_code ?? ""),
+            pileCount: 0,
+            totalMeters: 0,
+            unitPrices,
+            billingCurrency: row.billing_currency != null ? String(row.billing_currency) : null,
+          }
+          agg.set(key, bucket)
+        }
+        bucket.pileCount += sl.piles
+        bucket.totalMeters += sl.meters
+        bucket.unitPrices = { ...bucket.unitPrices, ...unitPrices }
+      }
+    }
+
+    let expenseQ = `
+      SELECT i.site_id, my.ad AS masraf_yeri_adi,
+        COALESCE(SUM(COALESCE(i.tutar_usd, 0)), 0) AS sum_usd,
+        COALESCE(SUM(COALESCE(i.tutar_iqd, i.tutar, 0)), 0) AS sum_iqd
+      FROM islemler i
+      LEFT JOIN masraf_yerleri my ON my.id = i.masraf_yeri_id
+      WHERE my.ad IS NOT NULL`
+    const expParams: unknown[] = []
+    let ei = 1
+    if (options.siteId != null) {
+      expenseQ += ` AND i.site_id = $${ei++}`
+      expParams.push(options.siteId)
+    }
+    if (asOf) {
+      expenseQ += ` AND i.islem_tarihi::text <= $${ei++}`
+      expParams.push(asOf)
+    }
+    expenseQ += ` GROUP BY i.site_id, my.ad`
+    const expRows = await client.query(expenseQ, expParams)
+
+    const expenseBySiteName = new Map<string, { usd: number; iqd: number }>()
+    for (const er of expRows.rows) {
+      const k = `${er.site_id}:${normMachineName(er.masraf_yeri_adi)}`
+      expenseBySiteName.set(k, {
+        usd: parseFloat(String(er.sum_usd ?? 0)) || 0,
+        iqd: parseFloat(String(er.sum_iqd ?? 0)) || 0,
+      })
+    }
+
+    const result: MachineWorkStatRow[] = []
+    for (const b of agg.values()) {
+      const priceKey = b.machineId != null ? String(b.machineId) : ""
+      const costPerMeter =
+        priceKey && b.unitPrices[priceKey] != null
+          ? b.unitPrices[priceKey]
+          : null
+      const earnedAmount =
+        costPerMeter != null && costPerMeter > 0 && b.totalMeters > 0
+          ? Math.round(b.totalMeters * costPerMeter * 100) / 100
+          : null
+      const exp = expenseBySiteName.get(`${b.siteId}:${normMachineName(b.machineName)}`) ?? { usd: 0, iqd: 0 }
+      result.push({
+        machineId: b.machineId,
+        machineName: b.machineName,
+        siteId: b.siteId,
+        siteName: b.siteName,
+        siteCode: b.siteCode,
+        pileCount: b.pileCount,
+        totalMeters: Math.round(b.totalMeters * 100) / 100,
+        costPerMeter,
+        billingCurrency: b.billingCurrency,
+        earnedAmount,
+        expenseTotalUsd: exp.usd,
+        expenseTotalIqd: exp.iqd,
+      })
+    }
+    result.sort((a, b) => a.siteName.localeCompare(b.siteName, "tr") || a.machineName.localeCompare(b.machineName, "tr"))
+    return result
+  } finally {
+    client.release()
+  }
+}
+
 export async function getMachinesForSite(siteId: number): Promise<{ id: number; name: string; machine_type: string; marka: string | null; model: string | null; status?: string; operators: { personel_id: number; ad: string; soyad: string }[] }[]> {
   const client = await pool.connect()
   try {

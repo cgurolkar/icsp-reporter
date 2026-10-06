@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { randomUUID } from "crypto"
 import fs from "fs"
 import path from "path"
-import { saveWorkReport, initializeDatabase, getMergedNotificationEmails, getSiteById, getLastReportRemainingBySite, getConcretePouredBeforeDate, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativePileCounts } from "@/lib/database"
+import { saveWorkReport, initializeDatabase, getMergedNotificationEmails, getSiteById, getLastReportRemainingBySite, getConcretePouredBeforeDate, getOperatorEntriesBySiteAndDate, syncExpensesToIslemler, getSuperAdminEmails, getCumulativePileCounts, getMachineWorkStats } from "@/lib/database"
 import { formatMeters, sumConcretePouredDrilledMeters } from "@/lib/concrete-meters"
 import { fullReportHtmlAttachment, isEmailSendEnabled, sendReportEmail } from "@/lib/email"
 import { generatePDFMainReport, generatePDFExpensesPage } from "@/lib/report-html"
@@ -292,6 +292,8 @@ export async function POST(request: NextRequest) {
         : remainingPilesForDb
 
     // Rapor HTML içeriği (e-posta gövdesi / yazdırma için) — hesaplanan kalan/günlük kazık kullanılsın
+    const machineWorkCumulative =
+      siteIdForDb && reportDateStr ? await getMachineWorkStats({ siteId: siteIdForDb, asOfDate: reportDateStr }) : []
     const mainReportContent = generatePDFMainReport(formData, {
       computedRemainingPiles: remainingAfterSave,
       computedDailyPileCount: dailyPileForDb,
@@ -303,6 +305,7 @@ export async function POST(request: NextRequest) {
       cumulativeConcretePiles: pileCountsAfterSave?.concrete ?? null,
       projectTotalPiles: site?.total_piles != null ? Number(site.total_piles) : null,
       operatorEntries,
+      machineWorkCumulative,
     })
     const expensesPageContent = generatePDFExpensesPage(formData)
     const fullHtml = mainReportContent + expensesPageContent

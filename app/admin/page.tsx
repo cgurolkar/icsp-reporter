@@ -276,6 +276,7 @@ function AdminPanel() {
     assignedMachineIds: string[]
     assignedOperatorIds: number[]
     assignedMachineOperators: { machineId: string; personelId: number }[]
+    assignedMachineUnitPrices: Record<string, string>
     isActive: boolean
     releaseMachinesWhenClosed: boolean
   }>({
@@ -299,6 +300,7 @@ function AdminPanel() {
     assignedMachineIds: [],
     assignedOperatorIds: [],
     assignedMachineOperators: [],
+    assignedMachineUnitPrices: {},
     isActive: true,
     releaseMachinesWhenClosed: true,
   })
@@ -1921,7 +1923,7 @@ function AdminPanel() {
               variant="contained"
               startIcon={<Add />}
               onClick={() => {
-                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", iqdPerUsd: "1320", billingCurrency: "USD", contractUnitPrice: "", pileRates: [], authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", initialEmptyBorehole: "", initialConcreteMeters: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [], isActive: true, releaseMachinesWhenClosed: true })
+                setSiteDialogData({ name: "", code: "", country: "", timezone: "", emailList: [], totalPiles: "", iqdPerUsd: "1320", billingCurrency: "USD", contractUnitPrice: "", pileRates: [], authorizedPerson: "", employer: "", projectStartDate: "", isOngoing: false, initialPilesDone: "", initialEmptyBorehole: "", initialConcreteMeters: "", assignedMachineIds: [], assignedOperatorIds: [], assignedMachineOperators: [], assignedMachineUnitPrices: {}, isActive: true, releaseMachinesWhenClosed: true })
                 if (personelList.length === 0) fetch("/api/idari/personel?limit=500").then((r) => (r.ok ? r.json() : { data: [] })).then((res: any) => setPersonelList(Array.isArray(res) ? res : (res.data ?? []))).catch(() => {})
                 setSiteDialogOpen(true)
               }}
@@ -2043,6 +2045,15 @@ function AdminPanel() {
                       assignedMachineIds: assignedIds,
                       assignedOperatorIds: Array.isArray((site as any).assigned_operator_ids) ? (site as any).assigned_operator_ids.map((x: unknown) => Number(x)).filter((n: number) => !Number.isNaN(n)) : [],
                       assignedMachineOperators: ops.map((o: any) => ({ machineId: String(o.machineId ?? o.machine_id ?? ""), personelId: Number(o.personelId ?? o.personel_id ?? 0) })).filter((o: { machineId: string; personelId: number }) => o.machineId && o.personelId > 0),
+                      assignedMachineUnitPrices: (() => {
+                        const raw = (site as { assigned_machine_unit_prices?: Record<string, unknown> }).assigned_machine_unit_prices
+                        if (!raw || typeof raw !== "object") return {}
+                        const out: Record<string, string> = {}
+                        for (const [k, v] of Object.entries(raw)) {
+                          if (v != null && String(v).trim() !== "") out[String(k)] = String(v)
+                        }
+                        return out
+                      })(),
                       isActive: (site as { is_active?: boolean }).is_active !== false,
                       releaseMachinesWhenClosed: true,
                     })
@@ -2771,6 +2782,22 @@ function AdminPanel() {
                         </Typography>
                       )}
                     </FormControl>
+                    <TextField
+                      size="small"
+                      label={`Metre başı maliyet (${pricePerMeterLabel(siteDialogData.billingCurrency)})`}
+                      value={siteDialogData.assignedMachineUnitPrices[machineId] ?? ""}
+                      onChange={(e) =>
+                        setSiteDialogData((prev) => ({
+                          ...prev,
+                          assignedMachineUnitPrices: {
+                            ...prev.assignedMachineUnitPrices,
+                            [machineId]: e.target.value,
+                          },
+                        }))
+                      }
+                      sx={{ minWidth: 200 }}
+                      helperText="Makine hakedişi = toplam metraj × bu birim"
+                    />
                   </Box>
                   )
                 })}
@@ -3114,6 +3141,16 @@ function AdminPanel() {
                       assignedMachineOperators: (siteDialogData.assignedMachineOperators || []).filter(
                         (o) => o.personelId > 0 && kazikIds.includes(o.machineId),
                       ),
+                      assignedMachineUnitPrices: Object.fromEntries(
+                        kazikIds
+                          .map((mid) => {
+                            const raw = siteDialogData.assignedMachineUnitPrices[mid]
+                            if (raw == null || String(raw).trim() === "") return null
+                            const n = Number(String(raw).replace(",", "."))
+                            return Number.isFinite(n) && n >= 0 ? ([mid, n] as const) : null
+                          })
+                          .filter(Boolean) as [string, number][],
+                      ),
                       isActive: siteDialogData.isActive,
                       releaseMachinesFromSite: !siteDialogData.isActive && siteDialogData.releaseMachinesWhenClosed,
                     }
@@ -3209,6 +3246,16 @@ function AdminPanel() {
                   assignedMachineIds: kazikIds,
                   assignedOperatorIds: siteDialogData.assignedOperatorIds || [],
                   assignedMachineOperators: (siteDialogData.assignedMachineOperators || []).filter((o) => o.personelId > 0 && kazikIds.includes(o.machineId)),
+                  assignedMachineUnitPrices: Object.fromEntries(
+                    kazikIds
+                      .map((mid) => {
+                        const raw = siteDialogData.assignedMachineUnitPrices[mid]
+                        if (raw == null || String(raw).trim() === "") return null
+                        const n = Number(String(raw).replace(",", "."))
+                        return Number.isFinite(n) && n >= 0 ? ([mid, n] as const) : null
+                      })
+                      .filter(Boolean) as [string, number][],
+                  ),
                   isActive: siteDialogData.isActive,
                   releaseMachinesFromSite: !siteDialogData.isActive && siteDialogData.releaseMachinesWhenClosed,
                 }

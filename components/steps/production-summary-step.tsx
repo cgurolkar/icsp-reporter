@@ -25,6 +25,7 @@ import {
 } from "@mui/material"
 import { Add } from "@mui/icons-material"
 import { useLanguage } from "@/contexts/language-context"
+import { formatMoney, pricePerMeterLabel, normalizeSiteCurrency } from "@/lib/site-currency"
 import type { MachineProductionSummary, Machine } from "@/types/form-data"
 
 interface ProductionSummaryStepProps {
@@ -42,6 +43,19 @@ interface ProductionSummaryStepProps {
   onAddMachine?: (machine: Machine) => void
   projectTotalPiles?: number
   totalCompletedBeforeToday?: number
+  /** Rapor tarihinden önce kayıtlı kümülatif makine özeti */
+  machineCumulativeBeforeToday?: MachineCumulativeRow[]
+}
+
+export type MachineCumulativeRow = {
+  machineName: string
+  pileCount: number
+  totalMeters: number
+  earnedAmount?: number | null
+  costPerMeter?: number | null
+  billingCurrency?: string | null
+  expenseTotalUsd?: number
+  expenseTotalIqd?: number
 }
 
 function parseNum(s: string | undefined): number {
@@ -66,6 +80,7 @@ export default function ProductionSummaryStep({
   onAddMachine,
   projectTotalPiles,
   totalCompletedBeforeToday = 0,
+  machineCumulativeBeforeToday = [],
 }: ProductionSummaryStepProps) {
   const { t } = useLanguage()
   const [showAddMachineDialog, setShowAddMachineDialog] = useState(false)
@@ -99,6 +114,47 @@ export default function ProductionSummaryStep({
     projectTotalPiles != null && Number.isFinite(projectTotalPiles)
       ? Math.max(0, projectTotalPiles - totalCompletedBeforeToday - betonBugun)
       : null
+
+  const normName = (s: string) => s.trim().toLocaleLowerCase("tr-TR")
+
+  const machineCumulativeWithToday = useMemo(() => {
+    const map = new Map<string, MachineCumulativeRow>()
+    for (const row of machineCumulativeBeforeToday) {
+      map.set(normName(row.machineName), { ...row })
+    }
+    for (const m of data) {
+      const name = m.machineName?.trim()
+      if (!name) continue
+      const key = normName(name)
+      const prev = map.get(key) ?? {
+        machineName: name,
+        pileCount: 0,
+        totalMeters: 0,
+        earnedAmount: null,
+        costPerMeter: null,
+        billingCurrency: null,
+        expenseTotalUsd: 0,
+        expenseTotalIqd: 0,
+      }
+      const piles = parseIntSafe(m.dailyDrilledPiles) || 0
+      const meters = parseNum(m.totalProduction) || 0
+      const totalMeters = Math.round((prev.totalMeters + (Number.isFinite(meters) ? meters : 0)) * 100) / 100
+      const pileCount = prev.pileCount + piles
+      const costPerMeter = prev.costPerMeter
+      const earnedAmount =
+        costPerMeter != null && costPerMeter > 0 && totalMeters > 0
+          ? Math.round(totalMeters * costPerMeter * 100) / 100
+          : prev.earnedAmount
+      map.set(key, {
+        ...prev,
+        machineName: name,
+        pileCount,
+        totalMeters,
+        earnedAmount,
+      })
+    }
+    return Array.from(map.values()).sort((a, b) => a.machineName.localeCompare(b.machineName, "tr"))
+  }, [machineCumulativeBeforeToday, data])
 
   const handleField =
     (machineIndex: number, field: keyof MachineProductionSummary) => (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -198,6 +254,55 @@ export default function ProductionSummaryStep({
           </Paper>
         ))}
       </Box>
+
+      {machineCumulativeWithToday.length > 0 && (
+        <Paper sx={{ p: 2, mt: 2, border: "1px solid #90caf9" }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, color: "#1565c0", mb: 1 }}>
+            Bu tarihe kadar makine iş özeti (kayıtlı + bugün form)
+          </Typography>
+          <Box sx={{ overflowX: "auto" }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><strong>Makine</strong></TableCell>
+                  <TableCell align="right"><strong>Kazık (Ad.)</strong></TableCell>
+                  <TableCell align="right"><strong>Toplam boy (m)</strong></TableCell>
+                  <TableCell align="right"><strong>Metre birim</strong></TableCell>
+                  <TableCell align="right"><strong>Hakediş</strong></TableCell>
+                  <TableCell align="right"><strong>Makine harcaması</strong></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {machineCumulativeWithToday.map((row) => {
+                  const cur = normalizeSiteCurrency(row.billingCurrency)
+                  return (
+                    <TableRow key={row.machineName}>
+                      <TableCell>{row.machineName}</TableCell>
+                      <TableCell align="right">{row.pileCount}</TableCell>
+                      <TableCell align="right">{row.totalMeters.toFixed(2)}</TableCell>
+                      <TableCell align="right">
+                        {row.costPerMeter != null && row.costPerMeter > 0
+                          ? `${row.costPerMeter.toLocaleString("tr-TR")} ${pricePerMeterLabel(cur)}`
+                          : "—"}
+                      </TableCell>
+                      <TableCell align="right">
+                        {row.earnedAmount != null && row.earnedAmount > 0 ? formatMoney(row.earnedAmount, cur) : "—"}
+                      </TableCell>
+                      <TableCell align="right">
+                        {(row.expenseTotalUsd ?? 0) > 0
+                          ? formatMoney(row.expenseTotalUsd!, "USD")
+                          : (row.expenseTotalIqd ?? 0) > 0
+                            ? `${row.expenseTotalIqd!.toLocaleString("tr-TR")} IQD`
+                            : "—"}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </Box>
+        </Paper>
+      )}
 
       <Paper sx={{ p: 2, mt: 2, background: "linear-gradient(135deg, #e1f5fe 0%, #b3e5fc 100%)", border: "1px solid #03a9f4" }}>
         <Box

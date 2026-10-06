@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import { useState, useEffect } from "react"
+import { Fragment, useState, useEffect } from "react"
 import {
   Box, Typography, Button, Paper, Table, TableHead, TableBody, TableRow, TableCell,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField, FormControl,
@@ -12,6 +12,8 @@ import {
   Person, SwapHoriz, CheckCircleOutline, BuildOutlined,
 } from "@mui/icons-material"
 import { useAuth } from "@/contexts/auth-context"
+import { formatMoney, normalizeSiteCurrency, pricePerMeterLabel } from "@/lib/site-currency"
+import type { MachineWorkStatRow } from "@/lib/machine-work-stats"
 
 const MACHINE_TYPES = [
   "Kazık Makinesi", "Ekskavatör", "Vinç", "Loader",
@@ -65,18 +67,34 @@ export default function MakineDefteri() {
   const [saving, setSaving] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [form, setForm] = useState(emptyForm)
+  const [workStats, setWorkStats] = useState<MachineWorkStatRow[]>([])
 
   const role = (user?.role != null ? String(user.role).toLowerCase() : "") || ""
   const canManage = role === "super_admin" || role === "admin" || role === "manager"
 
   const load = () => {
     setLoading(true)
-    fetch("/api/idari/makineler")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: MachineRow[]) => setMachines(data))
-      .catch(() => setMachines([]))
+    Promise.all([
+      fetch("/api/idari/makineler").then((r) => (r.ok ? r.json() : [])),
+      fetch("/api/idari/makineler/ozet").then((r) => (r.ok ? r.json() : [])),
+    ])
+      .then(([machineData, stats]) => {
+        setMachines(Array.isArray(machineData) ? machineData : [])
+        setWorkStats(Array.isArray(stats) ? stats : [])
+      })
+      .catch(() => {
+        setMachines([])
+        setWorkStats([])
+      })
       .finally(() => setLoading(false))
   }
+
+  const statsForMachine = (m: MachineRow) =>
+    workStats.filter(
+      (s) =>
+        s.machineId === m.id ||
+        s.machineName.trim().toLocaleLowerCase("tr-TR") === m.name.trim().toLocaleLowerCase("tr-TR"),
+    )
 
   useEffect(() => {
     load()
@@ -175,8 +193,11 @@ export default function MakineDefteri() {
           </TableRow>
         </TableHead>
         <TableBody>
-          {list.map((m) => (
-            <TableRow key={m.id} hover>
+          {list.map((m) => {
+            const jobs = statsForMachine(m)
+            return (
+            <Fragment key={m.id}>
+            <TableRow hover>
               <TableCell>
                 <Typography fontWeight={600} variant="body2">{m.name}</Typography>
                 {m.model && <Typography variant="caption" color="text.secondary">{m.model}</Typography>}
@@ -223,7 +244,57 @@ export default function MakineDefteri() {
                 </TableCell>
               )}
             </TableRow>
-          ))}
+            {jobs.length > 0 && (
+              <TableRow>
+                <TableCell colSpan={canManage ? 6 : 5} sx={{ py: 1.5, bgcolor: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, color: "var(--icsp-lacivert)", display: "block", mb: 1 }}>
+                    Şantiye bazında iş özeti (günlük raporlardan)
+                  </Typography>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell><strong>Şantiye</strong></TableCell>
+                        <TableCell align="right"><strong>Kazık (Ad.)</strong></TableCell>
+                        <TableCell align="right"><strong>Toplam boy (m)</strong></TableCell>
+                        <TableCell align="right"><strong>Hakediş</strong></TableCell>
+                        <TableCell align="right"><strong>Makine harcaması</strong></TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {jobs.map((j) => {
+                        const cur = normalizeSiteCurrency(j.billingCurrency)
+                        return (
+                          <TableRow key={`${m.id}-${j.siteId}`}>
+                            <TableCell>{j.siteName} ({j.siteCode})</TableCell>
+                            <TableCell align="right">{j.pileCount}</TableCell>
+                            <TableCell align="right">{j.totalMeters.toFixed(2)}</TableCell>
+                            <TableCell align="right">
+                              {j.earnedAmount != null && j.earnedAmount > 0
+                                ? formatMoney(j.earnedAmount, cur)
+                                : j.costPerMeter != null && j.costPerMeter > 0
+                                  ? `— (${j.costPerMeter.toLocaleString("tr-TR")} ${pricePerMeterLabel(cur)}/m)`
+                                  : "—"}
+                            </TableCell>
+                            <TableCell align="right">
+                              {j.expenseTotalUsd > 0
+                                ? formatMoney(j.expenseTotalUsd, "USD")
+                                : j.expenseTotalIqd > 0
+                                  ? `${j.expenseTotalIqd.toLocaleString("tr-TR")} IQD`
+                                  : "—"}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                    Makine harcaması: Harcamalar listesinde masraf yeri makine adıyla eşleşen kayıtlar.
+                  </Typography>
+                </TableCell>
+              </TableRow>
+            )}
+            </Fragment>
+          )})}
         </TableBody>
       </Table>
     </Box>

@@ -6,7 +6,7 @@ import { useLanguage } from "@/contexts/language-context"
 import LanguageSelector from "@/components/language-selector"
 import { useFormDraft, loadDraft, clearDraft } from "@/lib/use-form-draft"
 import BasicInfoStep, { type SiteSummaryForForm } from "@/components/steps/basic-info-step"
-import ProductionSummaryStep from "@/components/steps/production-summary-step"
+import ProductionSummaryStep, { type MachineCumulativeRow } from "@/components/steps/production-summary-step"
 import PileDetailsStep from "@/components/steps/pile-details-step"
 import PersonnelStep from "@/components/steps/personnel-step"
 import VehiclesStep from "@/components/steps/vehicles-step"
@@ -147,6 +147,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     pile_depths?: Array<{ depth?: string | number; onForaj?: boolean; bosForaj?: boolean }>
   }
   const [operatorEntriesForDate, setOperatorEntriesForDate] = useState<OperatorEntryRow[]>([])
+  const [machineCumulativeBeforeToday, setMachineCumulativeBeforeToday] = useState<MachineCumulativeRow[]>([])
   const [reportMachineOptions, setReportMachineOptions] = useState<Machine[]>(AVAILABLE_MACHINES)
   const [machineReloadToken, setMachineReloadToken] = useState(0)
   const [draftSnack, setDraftSnack] = useState<{ open: boolean; savedAt?: number }>({ open: false })
@@ -421,6 +422,30 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     return () => { cancelled = true }
   }, [formData.basicInfo?.siteId, formData.basicInfo?.date])
 
+  useEffect(() => {
+    const siteId = formData.basicInfo?.siteId
+    const reportDate = formData.basicInfo?.date?.slice(0, 10)
+    if (siteId == null || !reportDate) {
+      setMachineCumulativeBeforeToday([])
+      return
+    }
+    const prev = new Date(`${reportDate}T12:00:00Z`)
+    prev.setUTCDate(prev.getUTCDate() - 1)
+    const beforeDate = prev.toISOString().slice(0, 10)
+    let cancelled = false
+    fetch(`/api/sites/${siteId}/machine-cumulative?date=${beforeDate}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((rows: MachineCumulativeRow[]) => {
+        if (!cancelled) setMachineCumulativeBeforeToday(Array.isArray(rows) ? rows : [])
+      })
+      .catch(() => {
+        if (!cancelled) setMachineCumulativeBeforeToday([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [formData.basicInfo.siteId, formData.basicInfo.date])
+
   const handleNext = () => {
     setStepErrors([])
     if (isRestricted) {
@@ -622,6 +647,7 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
           siteConcreteTotalLength={formData.siteConcreteTotalLength ?? ""}
           onSiteConcreteTotalLengthChange={(v) => setFormData((p) => ({ ...p, siteConcreteTotalLength: v }))}
           pileDetailsConcreteMeters={sumConcretePouredDrilledMeters(formData.pileDetails)}
+          machineCumulativeBeforeToday={machineCumulativeBeforeToday}
           machinesAvailableToAdd={reportMachineOptions}
           onAddMachine={(machine) => {
             const newProductionSummary: MachineProductionSummary = {

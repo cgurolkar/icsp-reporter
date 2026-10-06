@@ -86,7 +86,18 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid site id" }, { status: 400 })
     }
     const body = await request.json()
-    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, initialEmptyBorehole, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, budget, timezone, contractUnitPrice, iqdPerUsd, billingCurrency, initialConcreteMeters, releaseMachinesFromSite: releaseMachinesFlag } = body
+    const { name, code, emailList, isActive, totalPiles, region, city, country, authorizedPerson, employer, projectStartDate, isOngoing, initialPilesDone, initialEmptyBorehole, assignedMachineIds, assignedOperatorIds, assignedMachineOperators, assignedMachineUnitPrices, budget, timezone, contractUnitPrice, iqdPerUsd, billingCurrency, initialConcreteMeters, releaseMachinesFromSite: releaseMachinesFlag } = body
+    const unitPricesParsed: Record<string, number> | undefined =
+      assignedMachineUnitPrices && typeof assignedMachineUnitPrices === "object" && !Array.isArray(assignedMachineUnitPrices)
+        ? Object.fromEntries(
+            Object.entries(assignedMachineUnitPrices as Record<string, unknown>)
+              .map(([k, v]) => {
+                const n = typeof v === "number" ? v : Number(v)
+                return [String(k).trim(), n] as const
+              })
+              .filter(([k, n]) => k !== "" && Number.isFinite(n) && n >= 0),
+          )
+        : undefined
     const site = await updateSite(siteId, {
       ...(name !== undefined && { name }),
       ...(code !== undefined && { code }),
@@ -111,6 +122,7 @@ export async function PUT(
       ...(assignedMachineIds !== undefined && { assignedMachineIds: Array.isArray(assignedMachineIds) ? assignedMachineIds.filter((x: unknown) => typeof x === "string") : [] }),
       ...(assignedOperatorIds !== undefined && { assignedOperatorIds: Array.isArray(assignedOperatorIds) ? assignedOperatorIds.map((x: unknown) => typeof x === "number" ? x : parseInt(String(x), 10)).filter((n: number) => !Number.isNaN(n)) : [] }),
       ...(assignedMachineOperators !== undefined && { assignedMachineOperators: Array.isArray(assignedMachineOperators) ? assignedMachineOperators.filter((x: unknown) => x != null && typeof (x as any).machineId === "string" && typeof (x as any).personelId === "number") : [] }),
+      ...(unitPricesParsed !== undefined && { assignedMachineUnitPrices: unitPricesParsed }),
       ...(budget !== undefined && { budget: budget != null && !Number.isNaN(Number(budget)) ? Number(budget) : null }),
       ...(timezone !== undefined && { timezone: timezone != null ? String(timezone).trim() || null : undefined }),
       ...(session.role === "super_admin" && contractUnitPrice !== undefined && { contractUnitPrice: contractUnitPrice != null && !Number.isNaN(Number(contractUnitPrice)) ? Number(contractUnitPrice) : null }),

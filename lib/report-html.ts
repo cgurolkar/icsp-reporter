@@ -163,6 +163,17 @@ export function generatePDFMainReport(
     cumulativeConcretePiles?: number | null
     /** Şantiye proje toplam kazık (sites.total_piles) */
     projectTotalPiles?: number | null
+    /** Makine bazında bu tarihe kadar kümülatif iş (şantiye raporu) */
+    machineWorkCumulative?: Array<{
+      machineName: string
+      pileCount: number
+      totalMeters: number
+      earnedAmount?: number | null
+      costPerMeter?: number | null
+      billingCurrency?: string | null
+      expenseTotalUsd?: number
+      expenseTotalIqd?: number
+    }>
     operatorEntries?: Array<{
       machine_name?: string; machine_hours?: string; used_fuel?: string; work_done?: string; note?: string; username?: string;
       daily_pile_count?: string; total_production?: string; empty_borehole?: string; pre_borehole?: string; concrete_poured?: string;
@@ -471,7 +482,7 @@ export function generatePDFMainReport(
     </div>
     <div class="stat-card orange">
       <div class="stat-label">Delgisi Yapılmayan</div>
-      <div class="stat-value">${notDrilledNum != null ? String(notDrilledNum) : (remainingPiles != null && remainingPiles !== "" ? String(remainingPiles) : "—")}</div>
+      <div class="stat-value">${notDrilledNum != null ? String(notDrilledNum) : (remainingPiles != null ? String(remainingPiles) : "—")}</div>
       <div class="stat-unit">adet</div>
     </div>
   </div>
@@ -576,6 +587,28 @@ export function generatePDFMainReport(
             }
             if (html) return html
             return "<p style='color:#94a3b8;font-size:10px;'>Makine bilgisi girilmedi.</p>"
+          })()}
+          ${(() => {
+            const rows = opts?.machineWorkCumulative ?? []
+            if (!rows.length) return ""
+            const cur = normalizeSiteCurrency(rows[0]?.billingCurrency)
+            return `<div style="margin-top:10px;font-size:10px;font-weight:700;color:#475569;">Bu tarihe kadar makine iş özeti (kümülatif)</div>
+              <table>
+                <thead><tr>
+                  <th>Makine</th><th>Kazık (Ad.)</th><th>Toplam boy (m)</th>
+                  <th>Metre birim</th><th>Hakediş</th><th>Makine harcaması (USD)</th>
+                </tr></thead>
+                <tbody>
+                  ${rows.map((r) => `<tr>
+                    <td style="font-weight:600;">${r.machineName ?? ""}</td>
+                    <td class="td-center">${r.pileCount ?? 0}</td>
+                    <td class="td-center">${Number(r.totalMeters ?? 0).toFixed(2)}</td>
+                    <td class="td-center">${r.costPerMeter != null && r.costPerMeter > 0 ? `${Number(r.costPerMeter).toLocaleString("tr-TR")} ${pricePerMeterLabel(cur)}` : "—"}</td>
+                    <td class="td-center">${r.earnedAmount != null && r.earnedAmount > 0 ? formatMoney(r.earnedAmount, cur) : "—"}</td>
+                    <td class="td-center">${r.expenseTotalUsd != null && r.expenseTotalUsd > 0 ? formatMoney(r.expenseTotalUsd, "USD") : "—"}</td>
+                  </tr>`).join("")}
+                </tbody>
+              </table>`
           })()}
         </div>
       </div>
