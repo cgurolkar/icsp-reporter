@@ -75,6 +75,37 @@ function uniqueTierPrice(rates: HakedisRate[], tier: PriceTier): { rate: Hakedis
   return hits[0]
 }
 
+/**
+ * BAGH001 tarifeleri silinip 134/135/136 olarak yeniden açılınca raporda kalan id'ler.
+ * 4–40: eski tek tarife (Ø1000, etiket 1000) → Eski.
+ * 108: yalnız 1. fiyat → Demirsiz. 109: 1. ve 2. fiyat → Demirli.
+ */
+const REPLACED_RATE_LABEL_BY_ID: Record<string, string> = {
+  "4": "Eski",
+  "6": "Eski",
+  "9": "Eski",
+  "12": "Eski",
+  "20": "Eski",
+  "28": "Eski",
+  "39": "Eski",
+  "40": "Eski",
+  "108": "Demirsiz",
+  "109": "Demirli",
+}
+
+/** Raporda yanlış tarifeye yazılmış kazıklar: tarih|not → doğru etiket ve fiyat tipi. */
+const PILE_TARIFF_CORRECTIONS: Record<string, { label: string; tier: PriceTier }> = {
+  "2026-10-22|P73": { label: "Demirli", tier: "primary" },
+  "2026-10-22|P77": { label: "Demirli", tier: "primary" },
+  "2026-10-20|P100": { label: "Demirsiz", tier: "primary" },
+}
+
+function rateByLabel(pool: HakedisRate[], label: string): HakedisRate | undefined {
+  const key = label.trim().toLocaleLowerCase("tr-TR")
+  const hits = pool.filter((r) => rateLabel(r).trim().toLocaleLowerCase("tr-TR") === key)
+  return hits.length === 1 ? hits[0] : undefined
+}
+
 function resolvePileRate(
   rates: HakedisRate[],
   rateId: string,
@@ -85,6 +116,11 @@ function resolvePileRate(
   if (rateId) {
     const byId = pool.find((r) => String(r.id) === rateId) ?? rates.find((r) => String(r.id) === rateId)
     if (byId) return byId
+    const replacedLabel = REPLACED_RATE_LABEL_BY_ID[rateId]
+    if (replacedLabel) {
+      const byReplaced = rateByLabel(pool, replacedLabel)
+      if (byReplaced) return byReplaced
+    }
     const asMm = Number(rateId)
     if (Number.isFinite(asMm)) {
       const byMm = pool.filter((r) => r.diameter_mm === asMm)
@@ -200,6 +236,7 @@ export function computeDayHakedis(
   rates: HakedisRate[],
   fallbackUnitPrice: number | null,
   concreteTotalLengthFallback?: string | number | null,
+  reportDate?: string | null,
 ): HakedisBreakdown {
   const lineMap = new Map<string, HakedisLine>()
   let fromRows = 0
@@ -235,20 +272,32 @@ export function computeDayHakedis(
       (p as { rateLabel?: unknown }).rateLabel ??
       (p as { rate_label?: unknown }).rate_label ??
       (p as { diameterLabel?: unknown }).diameterLabel
+    const noteKey = String((p as { notes?: unknown }).notes ?? "").trim().toLocaleUpperCase("tr-TR")
     let rate = resolvePileRate(rates, rateId, {
       diameterMm: Number.isFinite(diameterHint) ? diameterHint : null,
       label: labelHint != null ? String(labelHint) : null,
-      notes: (p as { notes?: unknown }).notes != null ? String((p as { notes?: unknown }).notes) : null,
+      notes: noteKey,
     })
     if (!rate && isSingleTariffSite(rates) && activeRates[0]) {
       rate = activeRates[0]
     }
     const tierRaw =
       (p as { priceTier?: unknown }).priceTier ?? (p as { price_tier?: unknown }).price_tier
-    const tierExplicit = tierRaw === "secondary" || tierRaw === "primary"
-    const tier = (tierRaw === "secondary" ? "secondary" : "primary") as PriceTier
+    let tierExplicit = tierRaw === "secondary" || tierRaw === "primary"
+    let tier = (tierRaw === "secondary" ? "secondary" : "primary") as PriceTier
+    const correction = reportDate ? PILE_TARIFF_CORRECTIONS[`${reportDate}|${noteKey}`] : undefined
+    let ignoreSnapshot = false
+    if (correction) {
+      const corrected = rateByLabel(activeRates.length > 0 ? activeRates : rates, correction.label)
+      if (corrected) {
+        rate = corrected
+        tier = correction.tier
+        tierExplicit = true
+        ignoreSnapshot = true
+      }
+    }
     const multiTariff = !isSingleTariffSite(rates)
-    const snapshot = storedUnitPrice(p)
+    const snapshot = ignoreSnapshot ? null : storedUnitPrice(p)
     let unit = snapshot
     if (unit == null) unit = unitPriceFor(rate, tier, multiTariff ? null : fallbackUnitPrice)
     if (unit == null && rate) unit = tierPrice(rate, tier)
@@ -385,7 +434,7 @@ export function computeDayHakedis(
 
 /** Birden fazla rapor kaydından kümülatif hakediş. */
 export function computeHakedisFromReports(
-  reports: Array<{ pile_details?: unknown; concrete_total_length?: unknown }>,
+  reports: Array<{ pile_details?: unknown; concrete_total_length?: unknown; date?: unknown }>,
   rates: HakedisRate[],
   fallbackUnitPrice: number | null,
 ): HakedisBreakdown {
@@ -404,11 +453,13 @@ export function computeHakedisFromReports(
         piles = []
       }
     }
+    const reportDate = typeof r.date === "string" ? r.date.slice(0, 10) : null
     const day = computeDayHakedis(
       piles,
       rates,
       fallbackUnitPrice,
       r.concrete_total_length as string | number | null | undefined,
+      reportDate,
     )
     if (day.usedRates) usedRates = true
     for (const line of day.lines) mergeLines(lineMap, line)

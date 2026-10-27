@@ -2526,7 +2526,8 @@ export async function getCumulativeHakedisBreakdown(
       is_active: r.is_active !== false,
     }))
     const reports = await client.query(
-      `SELECT pile_details, concrete_total_length, concrete_poured
+      `SELECT pile_details, concrete_total_length, concrete_poured,
+              to_char(date::date, 'YYYY-MM-DD') AS report_date
        FROM work_reports
        WHERE site_id = $1 AND date <= $2
        ORDER BY date ASC, id ASC`,
@@ -2536,6 +2537,7 @@ export async function getCumulativeHakedisBreakdown(
       reports.rows.map((r) => ({
         pile_details: r.pile_details,
         concrete_total_length: r.concrete_total_length,
+        date: r.report_date,
       })),
       rates,
       fallbackPrice,
