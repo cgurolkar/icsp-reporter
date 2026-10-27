@@ -320,7 +320,7 @@ export function generatePDFMainReport(
           : t === "pre_report"
             ? "Rapor öncesi"
             : t === "unassigned"
-              ? "Çap seçilmemiş"
+              ? "Tarife seçilmemiş"
               : "Tek fiyat"
   const hakedisLinesHtml =
     showHakedis && hakedisBreakdown && hakedisBreakdown.lines.length > 0

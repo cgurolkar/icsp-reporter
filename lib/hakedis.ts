@@ -78,7 +78,7 @@ function uniqueTierPrice(rates: HakedisRate[], tier: PriceTier): { rate: Hakedis
 function resolvePileRate(
   rates: HakedisRate[],
   rateId: string,
-  hints: { diameterMm?: number | null; label?: string | null },
+  hints: { diameterMm?: number | null; label?: string | null; notes?: string | null },
 ): HakedisRate | undefined {
   const active = rates.filter((r) => r.is_active !== false)
   const pool = active.length > 0 ? active : rates
@@ -91,14 +91,16 @@ function resolvePileRate(
       if (byMm.length === 1) return byMm[0]
     }
   }
+  const textHints = [hints.label, hints.notes]
+    .map((v) => String(v ?? "").trim().toLocaleLowerCase("tr-TR"))
+    .filter(Boolean)
+  if (textHints.length > 0) {
+    const byLabel = pool.filter((r) => textHints.includes(rateLabel(r).trim().toLocaleLowerCase("tr-TR")))
+    if (byLabel.length === 1) return byLabel[0]
+  }
   if (hints.diameterMm != null && Number.isFinite(hints.diameterMm)) {
     const byMm = pool.filter((r) => r.diameter_mm === hints.diameterMm)
     if (byMm.length === 1) return byMm[0]
-  }
-  const label = String(hints.label ?? "").trim().toLocaleLowerCase("tr-TR")
-  if (label) {
-    const byLabel = pool.filter((r) => rateLabel(r).trim().toLocaleLowerCase("tr-TR") === label)
-    if (byLabel.length === 1) return byLabel[0]
   }
   return undefined
 }
@@ -207,6 +209,7 @@ export function computeDayHakedis(
     let rate = resolvePileRate(rates, rateId, {
       diameterMm: Number.isFinite(diameterHint) ? diameterHint : null,
       label: labelHint != null ? String(labelHint) : null,
+      notes: (p as { notes?: unknown }).notes != null ? String((p as { notes?: unknown }).notes) : null,
     })
     if (!rate && isSingleTariffSite(rates) && activeRates[0]) {
       rate = activeRates[0]
@@ -236,7 +239,7 @@ export function computeDayHakedis(
         fromRows += meters
         mergeLines(lineMap, {
           diameterMm: null,
-          label: "Çap seçilmemiş",
+          label: "Tarife seçilmemiş",
           priceTier: "unassigned",
           unitPrice: 0,
           meters,
@@ -280,7 +283,7 @@ export function computeDayHakedis(
       } else if (!isSingleTariffSite(rates) && rates.filter((r) => r.is_active !== false).length > 1) {
         mergeLines(lineMap, {
           diameterMm: null,
-          label: "Çap seçilmemiş",
+          label: "Tarife seçilmemiş",
           priceTier: "unassigned",
           unitPrice: 0,
           meters,

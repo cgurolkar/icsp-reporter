@@ -2559,7 +2559,7 @@ function AdminPanel() {
                     hakedisSummary.sites.map((site) => {
                       const open = hakedisExpandedId === site.id
                       const tierLabel = (t: string) =>
-                        t === "secondary" ? "2. fiyat" : t === "primary" ? "1. fiyat" : t === "pre_report" ? "Rapor öncesi" : t === "unassigned" ? "Çap seçilmemiş" : "Tek fiyat"
+                        t === "secondary" ? "2. fiyat" : t === "primary" ? "1. fiyat" : t === "pre_report" ? "Rapor öncesi" : t === "unassigned" ? "Tarife seçilmemiş" : "Tek fiyat"
                       return (
                         <Fragment key={site.id}>
                           <TableRow hover sx={{ "& > *": { borderBottom: open ? "unset" : undefined } }}>
