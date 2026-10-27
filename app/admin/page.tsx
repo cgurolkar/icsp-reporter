@@ -328,7 +328,7 @@ function AdminPanel() {
     billingCurrency: string
     contractUnitPrice: string
     /** Çap tarifeleri: diameterMm, label, pricePrimary, priceSecondary */
-    pileRates: { diameterMm: string; label: string; pricePrimary: string; priceSecondary: string }[]
+    pileRates: { id?: number; diameterMm: string; label: string; pricePrimary: string; priceSecondary: string }[]
     authorizedPerson: string
     employer: string
     projectStartDate: string
@@ -2071,7 +2071,7 @@ function AdminPanel() {
                         }
                       }
                     } catch { /* ignore */ }
-                    let pileRates: { diameterMm: string; label: string; pricePrimary: string; priceSecondary: string }[] = []
+                    let pileRates: { id?: number; diameterMm: string; label: string; pricePrimary: string; priceSecondary: string }[] = []
                     let siteRow: Record<string, unknown> = site as Record<string, unknown>
                     try {
                       const sr = await fetch(`/api/sites/${site.id}`)
@@ -2080,6 +2080,7 @@ function AdminPanel() {
                         siteRow = full as Record<string, unknown>
                         const rawRates = Array.isArray(full.pile_rates) ? full.pile_rates : []
                         pileRates = rawRates.map((row: Record<string, unknown>) => ({
+                          id: row.id != null && Number.isFinite(Number(row.id)) ? Number(row.id) : undefined,
                           diameterMm: String(row.diameter_mm ?? row.diameterMm ?? ""),
                           label: String(row.label ?? ""),
                           pricePrimary: String(row.price_primary ?? row.pricePrimary ?? ""),
@@ -2558,7 +2559,7 @@ function AdminPanel() {
                     hakedisSummary.sites.map((site) => {
                       const open = hakedisExpandedId === site.id
                       const tierLabel = (t: string) =>
-                        t === "secondary" ? "2. fiyat" : t === "primary" ? "1. fiyat" : t === "pre_report" ? "Rapor öncesi" : "Tek fiyat"
+                        t === "secondary" ? "2. fiyat" : t === "primary" ? "1. fiyat" : t === "pre_report" ? "Rapor öncesi" : t === "unassigned" ? "Çap seçilmemiş" : "Tek fiyat"
                       return (
                         <Fragment key={site.id}>
                           <TableRow hover sx={{ "& > *": { borderBottom: open ? "unset" : undefined } }}>
@@ -3292,6 +3293,7 @@ function AdminPanel() {
                               : null,
                             pileRates: (siteDialogData.pileRates || [])
                               .map((r) => ({
+                                id: r.id,
                                 diameterMm: Number(r.diameterMm),
                                 label: r.label.trim() || null,
                                 pricePrimary: Number(r.pricePrimary),
@@ -3396,6 +3398,7 @@ function AdminPanel() {
                           : null,
                         pileRates: (siteDialogData.pileRates || [])
                           .map((r) => ({
+                            id: r.id,
                             diameterMm: Number(r.diameterMm),
                             label: r.label.trim() || null,
                             pricePrimary: Number(r.pricePrimary),

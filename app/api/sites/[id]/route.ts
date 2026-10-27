@@ -5,6 +5,7 @@ import { publicPileRateOptions } from "@/lib/hakedis"
 import { normalizeSiteCurrency } from "@/lib/site-currency"
 
 function parsePileRatesBody(body: unknown): Array<{
+  id?: number | null
   diameterMm: number
   label?: string | null
   pricePrimary: number
@@ -19,6 +20,7 @@ function parsePileRatesBody(body: unknown): Array<{
     .map((row, idx) => {
       const r = row as Record<string, unknown>
       return {
+        id: r.id != null && Number.isFinite(Number(r.id)) ? Number(r.id) : null,
         diameterMm: Number(r.diameterMm ?? r.diameter_mm),
         label: r.label != null ? String(r.label) : null,
         pricePrimary: Number(r.pricePrimary ?? r.price_primary),

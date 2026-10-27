@@ -317,9 +317,11 @@ export function generatePDFMainReport(
       ? "2. fiyat"
       : t === "primary"
         ? "1. fiyat"
-        : t === "pre_report"
-          ? "Rapor öncesi"
-          : "Tek fiyat"
+          : t === "pre_report"
+            ? "Rapor öncesi"
+            : t === "unassigned"
+              ? "Çap seçilmemiş"
+              : "Tek fiyat"
   const hakedisLinesHtml =
     showHakedis && hakedisBreakdown && hakedisBreakdown.lines.length > 0
       ? `<div style="margin-top:6px;width:100%;">

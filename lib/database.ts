@@ -2376,7 +2376,7 @@ export async function getSitePileRates(siteId: number, opts?: { activeOnly?: boo
   }
 }
 
-/** Şantiye tarifelerini tamamen değiştir (super_admin). Boş dizi tüm tarifeleri siler. */
+/** Şantiye tarifelerini günceller. Gelen id varsa satır korunur (raporlardaki çap seçimi bozulmasın). Listede olmayan id silinir. */
 export async function replaceSitePileRates(
   siteId: number,
   rates: Array<{
@@ -2392,7 +2392,9 @@ export async function replaceSitePileRates(
   const client = await pool.connect()
   try {
     await client.query("BEGIN")
-    await client.query(`DELETE FROM site_pile_rates WHERE site_id = $1`, [siteId])
+    const existing = await client.query<{ id: number }>(`SELECT id FROM site_pile_rates WHERE site_id = $1`, [siteId])
+    const existingIds = new Set(existing.rows.map((r) => Number(r.id)))
+    const kept = new Set<number>()
     let order = 0
     for (const rate of rates) {
       const diameter = Number(rate.diameterMm)
@@ -2403,20 +2405,30 @@ export async function replaceSitePileRates(
         rate.priceSecondary != null && String(rate.priceSecondary).trim() !== "" && Number.isFinite(Number(rate.priceSecondary))
           ? Number(rate.priceSecondary)
           : null
-      await client.query(
-        `INSERT INTO site_pile_rates (site_id, diameter_mm, label, price_primary, price_secondary, sort_order, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          siteId,
-          Math.round(diameter),
-          rate.label != null && String(rate.label).trim() ? String(rate.label).trim() : null,
-          primary,
-          secondary,
-          rate.sortOrder != null ? Number(rate.sortOrder) : order,
-          rate.isActive !== false,
-        ],
-      )
+      const label = rate.label != null && String(rate.label).trim() ? String(rate.label).trim() : null
+      const sortOrder = rate.sortOrder != null ? Number(rate.sortOrder) : order
+      const isActive = rate.isActive !== false
+      const incomingId = rate.id != null ? Number(rate.id) : NaN
+      if (Number.isFinite(incomingId) && existingIds.has(incomingId)) {
+        await client.query(
+          `UPDATE site_pile_rates
+           SET diameter_mm = $1, label = $2, price_primary = $3, price_secondary = $4, sort_order = $5, is_active = $6
+           WHERE id = $7 AND site_id = $8`,
+          [Math.round(diameter), label, primary, secondary, sortOrder, isActive, incomingId, siteId],
+        )
+        kept.add(incomingId)
+      } else {
+        await client.query(
+          `INSERT INTO site_pile_rates (site_id, diameter_mm, label, price_primary, price_secondary, sort_order, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [siteId, Math.round(diameter), label, primary, secondary, sortOrder, isActive],
+        )
+      }
       order += 1
+    }
+    const removed = [...existingIds].filter((id) => !kept.has(id))
+    if (removed.length > 0) {
+      await client.query(`DELETE FROM site_pile_rates WHERE site_id = $1 AND id = ANY($2::int[])`, [siteId, removed])
     }
     await client.query("COMMIT")
   } catch (e) {

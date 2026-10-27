@@ -146,19 +146,33 @@ export function computeDayHakedis(
     const tierRaw =
       (p as { priceTier?: unknown }).priceTier ?? (p as { price_tier?: unknown }).price_tier
     const tier = (tierRaw === "secondary" ? "secondary" : "primary") as PriceTier
-    let unit = unitPriceFor(rate, tier, fallbackUnitPrice)
-    // contract_unit_price boşsa bile tarife fiyatını kullan
+    const multiTariff = !isSingleTariffSite(rates)
+    // Birden fazla çap varken sözleşme tek fiyatı veya ilk tarife tüm kazıklara uygulanmaz.
+    let unit = unitPriceFor(rate, tier, multiTariff ? null : fallbackUnitPrice)
     if (unit == null && rate) {
       unit =
         tier === "secondary" && rate.price_secondary != null
           ? Number(rate.price_secondary)
           : Number(rate.price_primary) || null
     }
-    if (unit == null && activeRates[0]) {
+    if (unit == null && !multiTariff && activeRates[0]) {
       unit = Number(activeRates[0].price_primary) || null
       if (unit != null && !rate) rate = activeRates[0]
     }
-    if (unit == null) continue
+    if (unit == null) {
+      if (multiTariff) {
+        fromRows += meters
+        mergeLines(lineMap, {
+          diameterMm: null,
+          label: "Çap seçilmemiş",
+          priceTier: "unassigned",
+          unitPrice: 0,
+          meters,
+          amount: 0,
+        })
+      }
+      continue
+    }
     fromRows += meters
     mergeLines(lineMap, {
       diameterMm: rate?.diameter_mm ?? null,
@@ -175,22 +189,34 @@ export function computeDayHakedis(
     const meters = parseMeters(concreteTotalLengthFallback)
     if (meters > 0) {
       const active = rates.filter((r) => r.is_active !== false)
-      const rate = isSingleTariffSite(rates) ? active[0] : undefined
-      let unit = unitPriceFor(rate, "primary", fallbackUnitPrice)
-      if (unit == null && active[0]) {
-        unit = Number(active[0].price_primary) || null
-      }
-      if (unit != null) {
-        const labelRate = rate ?? active[0]
+      if (!isSingleTariffSite(rates) && active.length > 1) {
         mergeLines(lineMap, {
-          diameterMm: labelRate?.diameter_mm ?? null,
-          label: labelRate ? `${rateLabel(labelRate)} (toplam boy)` : "Tek fiyat",
-          priceTier: labelRate ? "primary" : "default",
-          unitPrice: unit,
+          diameterMm: null,
+          label: "Çap seçilmemiş",
+          priceTier: "unassigned",
+          unitPrice: 0,
           meters,
-          amount: meters * unit,
+          amount: 0,
         })
         fromRows = meters
+      } else {
+        const rate = isSingleTariffSite(rates) ? active[0] : undefined
+        let unit = unitPriceFor(rate, "primary", fallbackUnitPrice)
+        if (unit == null && active[0]) {
+          unit = Number(active[0].price_primary) || null
+        }
+        if (unit != null) {
+          const labelRate = rate ?? active[0]
+          mergeLines(lineMap, {
+            diameterMm: labelRate?.diameter_mm ?? null,
+            label: labelRate ? `${rateLabel(labelRate)} (toplam boy)` : "Tek fiyat",
+            priceTier: labelRate ? "primary" : "default",
+            unitPrice: unit,
+            meters,
+            amount: meters * unit,
+          })
+          fromRows = meters
+        }
       }
     }
   }
@@ -237,7 +263,46 @@ export function computeHakedisFromReports(
     for (const line of day.lines) mergeLines(lineMap, line)
   }
 
-  const lines = [...lineMap.values()].sort((a, b) => (a.diameterMm ?? 0) - (b.diameterMm ?? 0) || a.priceTier.localeCompare(b.priceTier))
+  const activeRates = rates.filter((r) => r.is_active !== false)
+  if (activeRates.length > 1) {
+    for (const rate of activeRates) {
+      const hasPrimary = [...lineMap.values()].some(
+        (l) => l.diameterMm === rate.diameter_mm && l.priceTier === "primary",
+      )
+      if (!hasPrimary) {
+        mergeLines(lineMap, {
+          diameterMm: rate.diameter_mm,
+          label: rateLabel(rate),
+          priceTier: "primary",
+          unitPrice: Number(rate.price_primary) || 0,
+          meters: 0,
+          amount: 0,
+        })
+      }
+      const secondary = rate.price_secondary
+      if (secondary != null && Number.isFinite(Number(secondary))) {
+        const hasSecondary = [...lineMap.values()].some(
+          (l) => l.diameterMm === rate.diameter_mm && l.priceTier === "secondary",
+        )
+        if (!hasSecondary) {
+          mergeLines(lineMap, {
+            diameterMm: rate.diameter_mm,
+            label: rateLabel(rate),
+            priceTier: "secondary",
+            unitPrice: Number(secondary),
+            meters: 0,
+            amount: 0,
+          })
+        }
+      }
+    }
+  }
+
+  const lines = [...lineMap.values()].sort((a, b) => {
+    if (a.priceTier === "unassigned") return 1
+    if (b.priceTier === "unassigned") return -1
+    return (a.diameterMm ?? 0) - (b.diameterMm ?? 0) || a.priceTier.localeCompare(b.priceTier)
+  })
   return {
     totalMeters: lines.reduce((s, l) => s + l.meters, 0),
     totalAmount: lines.reduce((s, l) => s + l.amount, 0),
