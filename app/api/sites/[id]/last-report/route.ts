@@ -8,6 +8,18 @@ import {
 } from "@/lib/database"
 import { publicPileRateOptions } from "@/lib/hakedis"
 
+/** pg Date → yerel YYYY-MM-DD. String(date).slice(0,10) "Wed Oct 06" üretir ve sorguyu bozar. */
+function reportDateOnly(v: unknown): string {
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    const y = v.getFullYear()
+    const m = String(v.getMonth() + 1).padStart(2, "0")
+    const d = String(v.getDate()).padStart(2, "0")
+    return `${y}-${m}-${d}`
+  }
+  const s = String(v ?? "").trim()
+  return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : ""
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -26,27 +38,32 @@ export async function GET(
     let remainingPiles = last?.remainingPiles ?? null
     if (remainingPiles != null && String(remainingPiles).trim() === "") remainingPiles = null
     let concreteCompletedToDate: number | null = null
-    if (last?.date) {
-      const asOf = String(last.date).slice(0, 10)
-      const piles = await getCumulativePileCounts(siteId, asOf)
-      concreteCompletedToDate = piles.concrete
-      if (totalPiles != null) {
-        remainingPiles = String(Math.max(0, Number(totalPiles) - piles.concrete))
-      }
-    } else if (totalPiles != null && site.is_ongoing) {
-      const piles = await getCumulativePileCounts(siteId, new Date().toISOString().slice(0, 10))
-      if (piles.concrete > 0) {
+    const lastDate = reportDateOnly(last?.date)
+    try {
+      if (lastDate) {
+        const piles = await getCumulativePileCounts(siteId, lastDate)
         concreteCompletedToDate = piles.concrete
-        remainingPiles = String(Math.max(0, Number(totalPiles) - piles.concrete))
-      } else if (site.initial_piles_done != null) {
-        concreteCompletedToDate = Number(site.initial_piles_done) || 0
-        remainingPiles = String(Number(totalPiles) - concreteCompletedToDate)
+        if (totalPiles != null) {
+          remainingPiles = String(Math.max(0, Number(totalPiles) - piles.concrete))
+        }
+      } else if (totalPiles != null && site.is_ongoing) {
+        const today = reportDateOnly(new Date())
+        const piles = await getCumulativePileCounts(siteId, today)
+        if (piles.concrete > 0) {
+          concreteCompletedToDate = piles.concrete
+          remainingPiles = String(Math.max(0, Number(totalPiles) - piles.concrete))
+        } else if (site.initial_piles_done != null) {
+          concreteCompletedToDate = Number(site.initial_piles_done) || 0
+          remainingPiles = String(Number(totalPiles) - concreteCompletedToDate)
+        }
       }
+    } catch (cumErr) {
+      console.error("last-report cumulative piles:", cumErr)
     }
     const rates = await getSitePileRates(siteId, { activeOnly: true })
     return NextResponse.json({
       totalPiles,
-      lastDate: last?.date ?? null,
+      lastDate: lastDate || null,
       remainingPiles,
       projectStartDate: site.project_start_date ?? null,
       isOngoing: site.is_ongoing === true,

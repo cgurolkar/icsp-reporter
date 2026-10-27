@@ -221,19 +221,31 @@ export default function ReportForm({ initialSiteId, initialSiteName, lockedSiteI
     let cancelled = false
     fetch(`/api/sites/${sid}/last-report`)
       .then((res) => (res.ok ? res.json() : {}))
-      .then((d: { iqd_per_usd?: number | null; pileRates?: { id: number; diameterMm: number; label: string }[] }) => {
+      .then((d: {
+        totalPiles?: number | null
+        lastDate?: string | null
+        remainingPiles?: string | null
+        projectStartDate?: string | null
+        isOngoing?: boolean
+        initialPilesDone?: number | null
+        concreteCompletedToDate?: number | null
+        initialEmptyBorehole?: number | null
+        iqd_per_usd?: number | null
+        pileRates?: { id: number; diameterMm: number; label: string; hasSecondary?: boolean }[]
+      }) => {
         if (cancelled) return
         const iq = d.iqd_per_usd != null && Number(d.iqd_per_usd) > 0 ? Number(d.iqd_per_usd) : 1320
         setSiteSummary((prev) => ({
-          totalPiles: prev?.totalPiles ?? null,
-          lastDate: prev?.lastDate ?? null,
-          remainingPiles: prev?.remainingPiles ?? null,
-          projectStartDate: prev?.projectStartDate ?? null,
-          isOngoing: prev?.isOngoing ?? false,
-          initialPilesDone: prev?.initialPilesDone ?? null,
-          initialEmptyBorehole: prev?.initialEmptyBorehole ?? null,
+          totalPiles: d.totalPiles ?? prev?.totalPiles ?? null,
+          lastDate: d.lastDate ?? prev?.lastDate ?? null,
+          remainingPiles: d.remainingPiles ?? prev?.remainingPiles ?? null,
+          projectStartDate: d.projectStartDate ?? prev?.projectStartDate ?? null,
+          isOngoing: d.isOngoing === true || prev?.isOngoing === true,
+          initialPilesDone: d.initialPilesDone ?? prev?.initialPilesDone ?? null,
+          concreteCompletedToDate: d.concreteCompletedToDate ?? prev?.concreteCompletedToDate ?? null,
+          initialEmptyBorehole: d.initialEmptyBorehole ?? prev?.initialEmptyBorehole ?? null,
           iqdPerUsd: iq,
-          pileRates: Array.isArray(d.pileRates) ? d.pileRates : (prev?.pileRates ?? []),
+          pileRates: Array.isArray(d.pileRates) && d.pileRates.length > 0 ? d.pileRates : (prev?.pileRates ?? d.pileRates ?? []),
         }))
       })
       .catch(() => {})
