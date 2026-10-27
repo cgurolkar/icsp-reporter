@@ -105,8 +105,37 @@ function resolvePileRate(
   return undefined
 }
 
+/**
+ * Tarife seçilmemiş eski raporlar — bugünkü çoklu tarife öncesi hesap:
+ * sözleşme birim fiyatı, yoksa ilk tarifenin fiyatı.
+ */
+function legacyUnassignedPrice(
+  rates: HakedisRate[],
+  fallbackUnitPrice: number | null,
+  tier: PriceTier = "primary",
+): { unit: number; label: string; priceTier: string; diameterMm: number | null } | null {
+  if (fallbackUnitPrice != null && Number.isFinite(fallbackUnitPrice) && fallbackUnitPrice > 0) {
+    const active = rates.filter((r) => r.is_active !== false)
+    const samePrimary = active.filter((r) => tierPrice(r, "primary") === fallbackUnitPrice)
+    if (samePrimary.length === 1) {
+      const rate = samePrimary[0]
+      return { unit: fallbackUnitPrice, label: rateLabel(rate), priceTier: "primary", diameterMm: rate.diameter_mm }
+    }
+    return { unit: fallbackUnitPrice, label: "Tek fiyat", priceTier: "default", diameterMm: null }
+  }
+  const picked = rates.filter((r) => r.is_active !== false)[0]
+  if (!picked) return null
+  const secondary = tier === "secondary" ? tierPrice(picked, "secondary") : null
+  if (secondary != null && secondary > 0) {
+    return { unit: secondary, label: rateLabel(picked), priceTier: "secondary", diameterMm: picked.diameter_mm }
+  }
+  const unit = tierPrice(picked, "primary")
+  if (unit == null || unit <= 0) return null
+  return { unit, label: rateLabel(picked), priceTier: "primary", diameterMm: picked.diameter_mm }
+}
+
 function mergeLines(into: Map<string, HakedisLine>, line: HakedisLine) {
-  const key = `${line.diameterMm ?? "x"}|${line.priceTier}|${line.unitPrice}`
+  const key = `${line.label}|${line.diameterMm ?? "x"}|${line.priceTier}|${line.unitPrice}`
   const prev = into.get(key)
   if (prev) {
     prev.meters += line.meters
@@ -235,15 +264,16 @@ export function computeDayHakedis(
       if (unit != null && !rate) rate = activeRates[0]
     }
     if (unit == null) {
-      if (multiTariff) {
+      const legacy = legacyUnassignedPrice(rates, fallbackUnitPrice, tierExplicit ? tier : "primary")
+      if (legacy) {
         fromRows += meters
         mergeLines(lineMap, {
-          diameterMm: null,
-          label: "Tarife seçilmemiş",
-          priceTier: "unassigned",
-          unitPrice: 0,
+          diameterMm: legacy.diameterMm,
+          label: legacy.label,
+          priceTier: legacy.priceTier,
+          unitPrice: legacy.unit,
           meters,
-          amount: 0,
+          amount: meters * legacy.unit,
         })
       }
       continue
@@ -281,15 +311,18 @@ export function computeDayHakedis(
         })
         fromRows = meters
       } else if (!isSingleTariffSite(rates) && rates.filter((r) => r.is_active !== false).length > 1) {
-        mergeLines(lineMap, {
-          diameterMm: null,
-          label: "Tarife seçilmemiş",
-          priceTier: "unassigned",
-          unitPrice: 0,
-          meters,
-          amount: 0,
-        })
-        fromRows = meters
+        const legacy = legacyUnassignedPrice(rates, fallbackUnitPrice)
+        if (legacy) {
+          mergeLines(lineMap, {
+            diameterMm: legacy.diameterMm,
+            label: legacy.label,
+            priceTier: legacy.priceTier,
+            unitPrice: legacy.unit,
+            meters,
+            amount: meters * legacy.unit,
+          })
+          fromRows = meters
+        }
       } else {
         const active = rates.filter((r) => r.is_active !== false)
         const rate = isSingleTariffSite(rates) ? active[0] : undefined
