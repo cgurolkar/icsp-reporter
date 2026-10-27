@@ -947,10 +947,38 @@ async function seedHarcamaHierarchy(client: { query: (arg0: string, arg1?: any[]
 }
 
 // Work report kaydet
+async function stampPileRateSnapshot(siteId: number | null | undefined, piles: unknown): Promise<unknown> {
+  if (siteId == null || !Array.isArray(piles) || piles.length === 0) return piles
+  const rates = await getSitePileRates(Number(siteId), { activeOnly: false })
+  if (rates.length === 0) return piles
+  return piles.map((raw) => {
+    if (!raw || typeof raw !== "object") return raw
+    const p = raw as Record<string, unknown>
+    const rateId = String(p.diameterRateId ?? p.diameter_rate_id ?? "").trim()
+    const rate = rates.find((r) => String(r.id) === rateId)
+    if (!rate) return raw
+    const tier = p.priceTier === "secondary" || p.price_tier === "secondary" ? "secondary" : "primary"
+    const unit =
+      tier === "secondary" && rate.price_secondary != null
+        ? Number(rate.price_secondary)
+        : Number(rate.price_primary)
+    return {
+      ...p,
+      diameterMm: rate.diameter_mm,
+      rateLabel: rate.label,
+      priceTier: tier,
+      unitPrice: Number.isFinite(unit) ? unit : null,
+    }
+  })
+}
+
 export async function saveWorkReport(reportData: any) {
   const client = await pool.connect()
   
   try {
+    const siteIdForRates =
+      reportData.siteId != null && reportData.siteId !== "" ? Number(reportData.siteId) || null : null
+    reportData.pileDetails = await stampPileRateSnapshot(siteIdForRates, reportData.pileDetails)
     const result = await client.query(`
       INSERT INTO work_reports (
         date, project, site_id, selected_machine_id, selected_machine_name,
