@@ -47,7 +47,7 @@ import {
   CircularProgress,
   Collapse,
 } from "@mui/material"
-import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility, Notifications, NotificationsActive, Close, Engineering, ArrowBack, Construction, Email, PictureAsPdf, ExpandMore, ExpandLess, AttachMoney } from "@mui/icons-material"
+import { Delete, Add, Edit, Assessment, Place, TrendingUp, Refresh, Visibility, Notifications, NotificationsActive, Close, Engineering, ArrowBack, Construction, Email, PictureAsPdf, ExpandMore, ExpandLess, AttachMoney, FileDownload } from "@mui/icons-material"
 import Badge from "@mui/material/Badge"
 import Snackbar from "@mui/material/Snackbar"
 import Alert from "@mui/material/Alert"
@@ -2503,6 +2503,33 @@ function AdminPanel() {
               />
               <Button variant="contained" onClick={() => void loadHakedisSummary()} disabled={hakedisLoading}>
                 {hakedisLoading ? "Yükleniyor..." : "Listele"}
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<FileDownload />}
+                disabled={hakedisLoading}
+                onClick={() => {
+                  const params = new URLSearchParams()
+                  if (hakedisDate) params.set("date", hakedisDate)
+                  const filename = `kaziklar_${hakedisDate || "liste"}.xlsx`
+                  void fetch(`/api/admin/hakedis-piles-export?${params}`)
+                    .then(async (res) => {
+                      if (!res.ok) {
+                        setHakedisError("Kazık listesi dışa aktarılamadı.")
+                        return
+                      }
+                      const blob = await res.blob()
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement("a")
+                      a.href = url
+                      a.download = filename
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    })
+                    .catch(() => setHakedisError("Kazık listesi dışa aktarılamadı."))
+                }}
+              >
+                Kazıkları Excel’e aktar
               </Button>
             </Box>
             {hakedisError && (

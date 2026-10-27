@@ -2556,6 +2556,141 @@ export async function getCumulativeHakedisBreakdown(
   }
 }
 
+export type HakedisPileExportRow = {
+  siteName: string
+  siteCode: string
+  reportDate: string
+  reportId: number | null
+  pileNumber: string
+  notes: string
+  meters: number
+  diameterMm: number | null
+  label: string
+  priceTier: string
+  unitPrice: number
+  amount: number
+  currency: string
+}
+
+/** Seçilen güne kadar raporlardaki betonlu kazıklar, hakediş birim fiyatıyla. */
+export async function listHakedisPileExport(asOfDate: string): Promise<HakedisPileExportRow[]> {
+  const { listPricedConcretePiles, withPreReportMeters } = await import("@/lib/hakedis")
+  const { normalizeSiteCurrency } = await import("@/lib/site-currency")
+  const d = (asOfDate || "").slice(0, 10)
+  const client = await pool.connect()
+  try {
+    const sites = await client.query(
+      `SELECT id, name, code, contract_unit_price, billing_currency, is_ongoing, initial_concrete_meters
+       FROM sites WHERE is_active = true ORDER BY name`,
+    )
+    const ratesResult = await client.query(
+      `SELECT id, site_id, diameter_mm, label, price_primary, price_secondary, is_active
+       FROM site_pile_rates
+       WHERE site_id IN (SELECT id FROM sites WHERE is_active = true)
+       ORDER BY sort_order ASC, diameter_mm ASC, id ASC`,
+    )
+    const reports = await client.query(
+      `SELECT wr.id, wr.site_id, wr.pile_details, to_char(wr.date::date, 'YYYY-MM-DD') AS report_date
+       FROM work_reports wr
+       JOIN sites s ON s.id = wr.site_id
+       WHERE s.is_active = true AND wr.date <= $1
+       ORDER BY s.name, wr.date ASC, wr.id ASC`,
+      [d],
+    )
+    const ratesBySite = new Map<number, Array<{
+      id: number
+      diameter_mm: number
+      label: string | null
+      price_primary: number
+      price_secondary: number | null
+      is_active: boolean
+    }>>()
+    for (const r of ratesResult.rows) {
+      const siteId = Number(r.site_id)
+      const list = ratesBySite.get(siteId) ?? []
+      list.push({
+        id: Number(r.id),
+        diameter_mm: Number(r.diameter_mm),
+        label: r.label != null ? String(r.label) : null,
+        price_primary: Number(r.price_primary) || 0,
+        price_secondary: r.price_secondary != null ? Number(r.price_secondary) : null,
+        is_active: r.is_active !== false,
+      })
+      ratesBySite.set(siteId, list)
+    }
+    const rows: HakedisPileExportRow[] = []
+    for (const site of sites.rows) {
+      const siteId = Number(site.id)
+      const rates = ratesBySite.get(siteId) ?? []
+      const fallbackPrice = site.contract_unit_price != null ? Number(site.contract_unit_price) : null
+      const currency = normalizeSiteCurrency(site.billing_currency)
+      const siteReports = reports.rows.filter((r) => Number(r.site_id) === siteId)
+      for (const report of siteReports) {
+        let pileDetails = report.pile_details
+        if (typeof pileDetails === "string") {
+          try {
+            pileDetails = JSON.parse(pileDetails)
+          } catch {
+            pileDetails = []
+          }
+        }
+        const priced = listPricedConcretePiles(pileDetails, rates, fallbackPrice, report.report_date)
+        for (const pile of priced) {
+          rows.push({
+            siteName: String(site.name ?? ""),
+            siteCode: String(site.code ?? ""),
+            reportDate: String(report.report_date ?? ""),
+            reportId: Number(report.id),
+            pileNumber: pile.pileNumber,
+            notes: pile.notes,
+            meters: pile.meters,
+            diameterMm: pile.diameterMm,
+            label: pile.label,
+            priceTier: pile.priceTier,
+            unitPrice: pile.unitPrice,
+            amount: pile.amount,
+            currency,
+          })
+        }
+      }
+      const initialMeters =
+        site.initial_concrete_meters != null && !Number.isNaN(Number(site.initial_concrete_meters))
+          ? Number(site.initial_concrete_meters)
+          : 0
+      const pre = withPreReportMeters(
+        { totalMeters: 0, totalAmount: 0, lines: [], usedRates: rates.length > 0 },
+        {
+          isOngoing: site.is_ongoing === true,
+          initialConcreteMeters: initialMeters,
+          rates,
+          fallbackUnitPrice: fallbackPrice,
+        },
+      )
+      const preLine = pre.lines.find((l) => l.priceTier === "pre_report" && l.meters > 0)
+      if (preLine) {
+        rows.push({
+          siteName: String(site.name ?? ""),
+          siteCode: String(site.code ?? ""),
+          reportDate: "",
+          reportId: null,
+          pileNumber: "",
+          notes: "Rapor öncesi",
+          meters: preLine.meters,
+          diameterMm: preLine.diameterMm,
+          label: preLine.label,
+          priceTier: preLine.priceTier,
+          unitPrice: preLine.unitPrice,
+          amount: preLine.amount,
+          currency,
+        })
+      }
+    }
+    return rows
+  } finally {
+    client.release()
+  }
+}
+
 export async function getSiteByCode(code: string) {
   const client = await pool.connect()
   try {

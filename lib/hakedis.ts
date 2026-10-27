@@ -95,6 +95,8 @@ const REPLACED_RATE_LABEL_BY_ID: Record<string, string> = {
 
 /** Raporda yanlış tarifeye yazılmış kazıklar: tarih|not → doğru etiket ve fiyat tipi. */
 const PILE_TARIFF_CORRECTIONS: Record<string, { label: string; tier: PriceTier }> = {
+  "2026-09-13|P106": { label: "Eski", tier: "primary" },
+  "2026-09-13|P108": { label: "Eski", tier: "primary" },
   "2026-10-22|P73": { label: "Demirli", tier: "primary" },
   "2026-10-22|P77": { label: "Demirli", tier: "primary" },
   "2026-10-20|P100": { label: "Demirsiz", tier: "primary" },
@@ -230,25 +232,39 @@ export function withPreReportMeters(
   }
 }
 
-/** Tek gün: beton dökülen satırlardan kırılımlı hakediş. */
-export function computeDayHakedis(
+export type PricedConcretePile = {
+  pileNumber: string
+  notes: string
+  meters: number
+  label: string
+  priceTier: string
+  unitPrice: number
+  amount: number
+  diameterMm: number | null
+}
+
+export function hakedisTierLabel(tier: string): string {
+  if (tier === "secondary") return "2. fiyat"
+  if (tier === "primary") return "1. fiyat"
+  if (tier === "pre_report") return "Rapor öncesi"
+  if (tier === "unassigned") return "Tarife seçilmemiş"
+  return "Tek fiyat"
+}
+
+/** Hakedişe giren betonlu kazıklar, sayfadaki birim fiyatla. */
+export function listPricedConcretePiles(
   pileDetails: PileDetail[] | null | undefined,
   rates: HakedisRate[],
   fallbackUnitPrice: number | null,
-  concreteTotalLengthFallback?: string | number | null,
   reportDate?: string | null,
-): HakedisBreakdown {
-  const lineMap = new Map<string, HakedisLine>()
-  let fromRows = 0
+): PricedConcretePile[] {
   const piles = Array.isArray(pileDetails) ? pileDetails : []
-
-  // Eski kayıtlarda concretePoured işareti olmayabilir; hiç işaret yoksa metrajlı satırları say.
   const anyConcreteMarked = piles.some((p) => {
     const v = (p as { concretePoured?: unknown; concrete_poured?: unknown })?.concretePoured
       ?? (p as { concrete_poured?: unknown })?.concrete_poured
     return v === true || v === "true" || v === 1 || v === "1"
   })
-
+  const rows: PricedConcretePile[] = []
   for (const p of piles) {
     const pouredRaw =
       (p as { concretePoured?: unknown; concrete_poured?: unknown })?.concretePoured ??
@@ -273,6 +289,7 @@ export function computeDayHakedis(
       (p as { rate_label?: unknown }).rate_label ??
       (p as { diameterLabel?: unknown }).diameterLabel
     const noteKey = String((p as { notes?: unknown }).notes ?? "").trim().toLocaleUpperCase("tr-TR")
+    const pileNumberRaw = (p as { pileNumber?: unknown }).pileNumber ?? (p as { pile_number?: unknown }).pile_number
     let rate = resolvePileRate(rates, rateId, {
       diameterMm: Number.isFinite(diameterHint) ? diameterHint : null,
       label: labelHint != null ? String(labelHint) : null,
@@ -312,29 +329,52 @@ export function computeDayHakedis(
       unit = tierPrice(activeRates[0], "primary")
       if (unit != null && !rate) rate = activeRates[0]
     }
+    let label = rate ? rateLabel(rate) : tierExplicit ? (tier === "secondary" ? "2. fiyat" : "1. fiyat") : "Tek fiyat"
+    let priceTier: string = rate || tierExplicit ? tier : "default"
+    let diameterMm = rate?.diameter_mm ?? (Number.isFinite(diameterHint) ? diameterHint : null)
     if (unit == null) {
       const legacy = legacyUnassignedPrice(rates, fallbackUnitPrice, tierExplicit ? tier : "primary")
-      if (legacy) {
-        fromRows += meters
-        mergeLines(lineMap, {
-          diameterMm: legacy.diameterMm,
-          label: legacy.label,
-          priceTier: legacy.priceTier,
-          unitPrice: legacy.unit,
-          meters,
-          amount: meters * legacy.unit,
-        })
-      }
-      continue
+      if (!legacy) continue
+      unit = legacy.unit
+      label = legacy.label
+      priceTier = legacy.priceTier
+      diameterMm = legacy.diameterMm
     }
-    fromRows += meters
-    mergeLines(lineMap, {
-      diameterMm: rate?.diameter_mm ?? (Number.isFinite(diameterHint) ? diameterHint : null),
-      label: rate ? rateLabel(rate) : tierExplicit ? (tier === "secondary" ? "2. fiyat" : "1. fiyat") : "Tek fiyat",
-      priceTier: rate || tierExplicit ? tier : "default",
-      unitPrice: unit,
+    rows.push({
+      pileNumber: pileNumberRaw != null ? String(pileNumberRaw) : "",
+      notes: String((p as { notes?: unknown }).notes ?? "").trim(),
       meters,
+      label,
+      priceTier,
+      unitPrice: unit,
       amount: meters * unit,
+      diameterMm,
+    })
+  }
+  return rows
+}
+
+/** Tek gün: beton dökülen satırlardan kırılımlı hakediş. */
+export function computeDayHakedis(
+  pileDetails: PileDetail[] | null | undefined,
+  rates: HakedisRate[],
+  fallbackUnitPrice: number | null,
+  concreteTotalLengthFallback?: string | number | null,
+  reportDate?: string | null,
+): HakedisBreakdown {
+  const lineMap = new Map<string, HakedisLine>()
+  let fromRows = 0
+  const piles = Array.isArray(pileDetails) ? pileDetails : []
+
+  for (const row of listPricedConcretePiles(piles, rates, fallbackUnitPrice, reportDate)) {
+    fromRows += row.meters
+    mergeLines(lineMap, {
+      diameterMm: row.diameterMm,
+      label: row.label,
+      priceTier: row.priceTier,
+      unitPrice: row.unitPrice,
+      meters: row.meters,
+      amount: row.amount,
     })
   }
 
