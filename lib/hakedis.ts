@@ -236,6 +236,7 @@ export type PricedConcretePile = {
   pileNumber: string
   notes: string
   meters: number
+  machineIds: string[]
   label: string
   priceTier: string
   unitPrice: number
@@ -290,6 +291,12 @@ export function listPricedConcretePiles(
       (p as { diameterLabel?: unknown }).diameterLabel
     const noteKey = String((p as { notes?: unknown }).notes ?? "").trim().toLocaleUpperCase("tr-TR")
     const pileNumberRaw = (p as { pileNumber?: unknown }).pileNumber ?? (p as { pile_number?: unknown }).pile_number
+    const machineRaw = (p as { machineIds?: unknown }).machineIds ?? (p as { machine_ids?: unknown }).machine_ids
+    const machineIds = Array.isArray(machineRaw)
+      ? machineRaw.map((id) => String(id).trim()).filter(Boolean)
+      : machineRaw != null && String(machineRaw).trim()
+        ? [String(machineRaw).trim()]
+        : []
     let rate = resolvePileRate(rates, rateId, {
       diameterMm: Number.isFinite(diameterHint) ? diameterHint : null,
       label: labelHint != null ? String(labelHint) : null,
@@ -343,6 +350,7 @@ export function listPricedConcretePiles(
     rows.push({
       pileNumber: pileNumberRaw != null ? String(pileNumberRaw) : "",
       notes: String((p as { notes?: unknown }).notes ?? "").trim(),
+      machineIds,
       meters,
       label,
       priceTier,

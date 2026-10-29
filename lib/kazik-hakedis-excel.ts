@@ -8,6 +8,7 @@ export type KazikHakedisExportRow = {
   reportId: number | null
   pileNumber: string
   notes: string
+  machineName: string
   meters: number
   diameterMm: number | null
   label: string
@@ -24,6 +25,7 @@ const HEADERS = [
   "Rapor no",
   "Kazık no",
   "Not",
+  "Makine",
   "Metraj (m)",
   "Çap (mm)",
   "Etiket",
@@ -41,6 +43,7 @@ export function buildKazikHakedisWorkbook(rows: KazikHakedisExportRow[], asOfDat
     r.reportId ?? "",
     r.pileNumber,
     r.notes,
+    r.machineName,
     r.meters,
     r.diameterMm ?? "",
     r.label,
@@ -62,6 +65,7 @@ export function buildKazikHakedisWorkbook(rows: KazikHakedisExportRow[], asOfDat
     { wch: 12 },
     { wch: 12 },
     { wch: 22 },
+    { wch: 28 },
     { wch: 12 },
     { wch: 12 },
     { wch: 16 },

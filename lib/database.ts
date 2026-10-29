@@ -2563,6 +2563,7 @@ export type HakedisPileExportRow = {
   reportId: number | null
   pileNumber: string
   notes: string
+  machineName: string
   meters: number
   diameterMm: number | null
   label: string
@@ -2589,8 +2590,16 @@ export async function listHakedisPileExport(asOfDate: string): Promise<HakedisPi
        WHERE site_id IN (SELECT id FROM sites WHERE is_active = true)
        ORDER BY sort_order ASC, diameter_mm ASC, id ASC`,
     )
+    const machines = await client.query(`SELECT id, name FROM machines`)
+    const machineNameById = new Map<string, string>()
+    for (const m of machines.rows) {
+      if (m.name != null && String(m.name).trim()) machineNameById.set(String(m.id), String(m.name).trim())
+    }
     const reports = await client.query(
-      `SELECT wr.id, wr.site_id, wr.pile_details, to_char(wr.date::date, 'YYYY-MM-DD') AS report_date
+      `SELECT wr.id, wr.site_id, wr.pile_details, wr.selected_machine_id, wr.selected_machine_name,
+              to_char(wr.date::date, 'YYYY-MM-DD') AS report_date,
+              (SELECT string_agg(ms.machine_name, ', ' ORDER BY ms.is_primary DESC NULLS LAST, ms.id)
+               FROM machine_selections ms WHERE ms.report_id = wr.id) AS machine_names_list
        FROM work_reports wr
        JOIN sites s ON s.id = wr.site_id
        WHERE s.is_active = true AND wr.date <= $1
@@ -2635,7 +2644,14 @@ export async function listHakedisPileExport(asOfDate: string): Promise<HakedisPi
           }
         }
         const priced = listPricedConcretePiles(pileDetails, rates, fallbackPrice, report.report_date)
+        const reportMachines = String(report.machine_names_list ?? "").trim()
+          || String(report.selected_machine_name ?? "").trim()
+          || machineNameById.get(String(report.selected_machine_id ?? ""))
+          || ""
         for (const pile of priced) {
+          const named = pile.machineIds
+            .map((id) => machineNameById.get(id) || id)
+            .filter(Boolean)
           rows.push({
             siteName: String(site.name ?? ""),
             siteCode: String(site.code ?? ""),
@@ -2643,6 +2659,7 @@ export async function listHakedisPileExport(asOfDate: string): Promise<HakedisPi
             reportId: Number(report.id),
             pileNumber: pile.pileNumber,
             notes: pile.notes,
+            machineName: named.length > 0 ? named.join(", ") : reportMachines,
             meters: pile.meters,
             diameterMm: pile.diameterMm,
             label: pile.label,
@@ -2675,6 +2692,7 @@ export async function listHakedisPileExport(asOfDate: string): Promise<HakedisPi
           reportId: null,
           pileNumber: "",
           notes: "Rapor öncesi",
+          machineName: "",
           meters: preLine.meters,
           diameterMm: preLine.diameterMm,
           label: preLine.label,
